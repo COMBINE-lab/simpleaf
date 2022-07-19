@@ -1,0 +1,61 @@
+name: simpleaf-check
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check_formatting:
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2.4.2
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt
+      
+      - name: Check format
+        run: cargo fmt -- --check
+
+  build:
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - name: Build
+      run: cargo build --verbose --release
+  
+  test-simpleaf:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: conda-incubator/setup-miniconda@v2.1.1
+      with:
+        python-version: 3.7
+        mamba-version: "*"
+        channels: conda-forge,bioconda
+        channel-priority: true
+        activate-environment: anaconda-client-env
+        environment-file: simpleaf_conda_env.yml
+    - name: Test simpleaf
+      shell: bash -l {0}
+      run: |
+        cd scripts
+        chmod +x test_simpleaf.sh
+        ./test_simpleaf.sh
+    - name: Check job status
+      run: echo "This job's status is ${{ job.status }}."
