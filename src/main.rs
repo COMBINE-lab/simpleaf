@@ -2,7 +2,7 @@ extern crate env_logger;
 #[macro_use]
 extern crate log;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context};
 use clap::{ArgGroup, Parser, Subcommand};
 use cmd_lib::run_fun;
 use env_logger::Env;
@@ -139,63 +139,6 @@ struct Cli {
     command: Commands,
 }
 
-enum Chemistry {
-    TenxV2,
-    TenxV3,
-    Other(String),
-}
-
-enum PermitListResult {
-    DownloadSuccessful(PathBuf),
-    AlreadyPresent(PathBuf),
-    UnregisteredChemistry,
-}
-
-fn get_permit_if_absent(chem: Chemistry) -> Result<PermitListResult> {
-    let chem_file;
-    let dl_url;
-    match chem {
-        Chemistry::TenxV2 => {
-            chem_file = "10x_v2_permit.txt";
-            dl_url = "https://umd.box.com/shared/static/jbs2wszgbj7k4ic2hass9ts6nhqkwq1p";
-        }
-        Chemistry::TenxV3 => {
-            chem_file = "10x_v3_permit.txt";
-            dl_url = "https://umd.box.com/shared/static/eo0qlkfqf2v24ws6dfnxty6gqk1otf2h";
-        }
-        _ => {
-            return Ok(PermitListResult::UnregisteredChemistry);
-        }
-    }
-    match env::var("ALEVIN_FRY_HOME") {
-        Ok(p) => {
-            let odir = PathBuf::from(p).join("plist");
-            if odir.join(chem_file).exists() {
-                Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)))
-            } else {
-                run_fun!(mkdir -p $odir)?;
-                let mut dl_cmd = std::process::Command::new("wget");
-                dl_cmd
-                    .arg("-v")
-                    .arg("-O")
-                    .arg(odir.join(chem_file).to_string_lossy().to_string())
-                    .arg("-L")
-                    .arg(dl_url);
-                let r = dl_cmd.output()?;
-                if !r.status.success() {
-                    return Err(anyhow!("failed to download permit list {:?}", r.status));
-                }
-                Ok(PermitListResult::DownloadSuccessful(odir.join(chem_file)))
-            }
-        }
-        Err(e) => {
-            return Err(anyhow!(
-                "could not resolve $ALEVIN_FRY_HOME environment variable : {}",
-                e
-            ));
-        }
-    }
-}
 
 fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
@@ -435,7 +378,7 @@ fn main() -> anyhow::Result<()> {
             // based on the filtering method
             if unfiltered_pl {
                 // check the chemistry
-                let pl_res = get_permit_if_absent(chem)?;
+                let pl_res = get_permit_if_absent(&af_home_path, chem)?;
                 let min_cells = 10usize;
                 match pl_res {
                     PermitListResult::DownloadSuccessful(p)
