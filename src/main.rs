@@ -463,17 +463,7 @@ fn main() -> anyhow::Result<()> {
             salmon_quant_cmd.arg("--sketch");
 
             // setting the technology / chemistry
-            match chemistry.as_str() {
-                "10xv2" => {
-                    salmon_quant_cmd.arg("--chromium");
-                }
-                "10xv3" => {
-                    salmon_quant_cmd.arg("--chromiumV3");
-                }
-                s => {
-                    salmon_quant_cmd.arg(format!("--{}", s));
-                }
-            };
+            add_chemistry_to_args(chemistry.as_str(), &mut salmon_quant_cmd)?;
 
             info!("cmd : {:?}", salmon_quant_cmd);
             let map_start = Instant::now();

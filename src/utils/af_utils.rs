@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use cmd_lib::run_fun;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -42,7 +43,7 @@ pub fn add_to_args(fm: &CellFilterMethod, cmd: &mut std::process::Command) {
                 .arg(format!("{}", m));
         }
         CellFilterMethod::KneeFinding => {
-            cmd.arg("--knee");
+            cmd.arg("--knee-distance");
         }
     }
 }
@@ -57,6 +58,68 @@ pub enum PermitListResult {
     DownloadSuccessful(PathBuf),
     AlreadyPresent(PathBuf),
     UnregisteredChemistry,
+}
+
+pub fn add_chemistry_to_args(chem_str: &str, cmd: &mut std::process::Command) -> Result<()> {
+    let known_chem_map = HashMap::from([
+        ("10xv2", "--chromium"),
+        ("10xv3", "--chromiumV3"),
+        ("dropseq", "--dropseq"),
+        ("indropv2", "--indropV2"),
+        ("citeseq", "--citeseq"),
+        ("gemcode", "--gemcode"),
+        ("celseq", "--celseq"),
+        ("celseq2", "--celseq2"),
+        ("splitseqv1", "--splitseqV1"),
+        ("splitseqv2", "--splitseqV2"),
+        ("sciseq3", "--sciseq3"),
+    ]);
+
+    match known_chem_map.get(chem_str) {
+        Some(v) => {
+            cmd.arg(v);
+            return Ok(());
+        }
+        None => {
+            if chem_str.contains(";") {
+                // parse this as a custom
+                let v: Vec<&str> = chem_str.split(';').collect();
+                // one string must start with 'B', one with 'U' and one with 'R'
+                if v.len() != 3 {
+                    return Err(anyhow!(
+                        "custom geometry should have 3 components (R,U,B), but {} were found",
+                        v.len()
+                    ));
+                }
+                for e in v {
+                    let (t, ar) = e.split_at(1);
+                    match t {
+                        "B" => {
+                            cmd.arg("--bc-geometry");
+                            cmd.arg(ar);
+                        }
+                        "U" => {
+                            cmd.arg("--umi-geometry");
+                            cmd.arg(ar);
+                        }
+                        "R" => {
+                            cmd.arg("--read-geometry");
+                            cmd.arg(ar);
+                        }
+                        _ => {
+                            return Err(anyhow!("Could not parse custom geometry, found descriptor type {}, but it must be of type (R,U,B)", t));
+                        }
+                    }
+                }
+                return Ok(());
+            }
+        }
+    }
+
+    Err(anyhow!(
+        "Could not recognize {} as either a known or custom chemistry!",
+        chem_str
+    ))
 }
 
 pub fn get_permit_if_absent(af_home: &Path, chem: Chemistry) -> Result<PermitListResult> {
