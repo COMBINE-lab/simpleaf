@@ -139,7 +139,6 @@ struct Cli {
     command: Commands,
 }
 
-
 fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     const AF_HOME: &str = "ALEVIN_FRY_HOME";
