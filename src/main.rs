@@ -91,7 +91,7 @@ enum Commands {
         unfiltered_pl: bool,
 
         /// use a filtered, explicit permit list
-        #[clap(short, long, value_parser)]
+        #[clap(short = 'x', long, value_parser)]
         explicit_pl: Option<PathBuf>,
 
         /// use forced number of cells
