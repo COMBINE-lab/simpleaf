@@ -42,8 +42,9 @@ jobs:
           channel-priority: true
           activate-environment: anaconda-client-env
           environment-file: simpleaf_conda_env.yml
-          # until pyroe 0.6.2 shows up in bioconda
-          run: pip3 install pyroe
+      # until pyroe 0.6.2 shows up in bioconda  
+      - name: Install pyroe
+        run: pip3 install pyroe
       - name: Test simpleaf
         shell: bash -l {0}
         run: |
