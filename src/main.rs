@@ -361,17 +361,47 @@ fn main() -> anyhow::Result<()> {
 
             info!("prog info = {:?}", rp);
 
-            let mut filter_meth_opt = None;
+            // do we have a custom chemistry file
+            let custom_chem_p = af_home_path.join("custom_chemistries.json");
+            let custom_chem_exists = custom_chem_p.is_file();
+
             let chem = match chemistry.as_str() {
                 "10xv2" => Chemistry::TenxV2,
                 "10xv3" => Chemistry::TenxV3,
-                s => Chemistry::Other(s.to_string()),
+                s => {
+                    if custom_chem_exists {
+                        // parse the custom chemistry json file
+                        let custom_chem_file =
+                            std::fs::File::open(&custom_chem_p).with_context({
+                                || {
+                                    format!(
+                                        "couldn't open the custom chemistry file {}",
+                                        custom_chem_p.display()
+                                    )
+                                }
+                            })?;
+                        let custom_chem_reader = BufReader::new(custom_chem_file);
+                        let v: serde_json::Value = serde_json::from_reader(custom_chem_reader)?;
+                        let rchem = match v[s.to_string()].as_str() {
+                            Some(chem_str) => {
+                                info!("custom chemistry {} maps to geometry {}", s, &chem_str);
+                                Chemistry::Other(chem_str.to_string())
+                            }
+                            None => Chemistry::Other(s.to_string()),
+                        };
+                        rchem
+                    } else {
+                        // pass along whatever the user gave us
+                        Chemistry::Other(s.to_string())
+                    }
+                }
             };
 
+            let mut filter_meth_opt = None;
             // based on the filtering method
             if unfiltered_pl {
                 // check the chemistry
-                let pl_res = get_permit_if_absent(&af_home_path, chem)?;
+                let pl_res = get_permit_if_absent(&af_home_path, &chem)?;
                 let min_cells = 10usize;
                 match pl_res {
                     PermitListResult::DownloadSuccessful(p)
@@ -384,7 +414,7 @@ fn main() -> anyhow::Result<()> {
                     PermitListResult::UnregisteredChemistry => {
                         bail!(
                             "Cannot use unrecognized chemistry {} with unfiltered permit list.",
-                            chemistry.as_str()
+                            chem.as_str()
                         );
                     }
                 }
@@ -448,7 +478,7 @@ fn main() -> anyhow::Result<()> {
             salmon_quant_cmd.arg("--sketch");
 
             // setting the technology / chemistry
-            add_chemistry_to_args(chemistry.as_str(), &mut salmon_quant_cmd)?;
+            add_chemistry_to_args(chem.as_str(), &mut salmon_quant_cmd)?;
 
             info!("cmd : {:?}", salmon_quant_cmd);
             let map_start = Instant::now();
