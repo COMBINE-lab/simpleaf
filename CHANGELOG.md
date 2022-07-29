@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/COMBINE-lab/simpleaf/compare/v0.2.0...v0.2.1) (2022-07-29)
+
+
+### Bug Fixes
+
+* fix Cargo.toml ([179dfdc](https://github.com/COMBINE-lab/simpleaf/commit/179dfdc945ff707fd538e35028817493dcecb9ba))
+
 ## [0.2.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.1.1...v0.2.0) (2022-07-29)
 
 
