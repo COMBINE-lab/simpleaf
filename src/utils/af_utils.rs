@@ -54,6 +54,16 @@ pub enum Chemistry {
     Other(String),
 }
 
+impl Chemistry {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Chemistry::TenxV2 => "10xv2",
+            Chemistry::TenxV3 => "10xv3",
+            Chemistry::Other(s) => s.as_str(),
+        }
+    }
+}
+
 pub enum PermitListResult {
     DownloadSuccessful(PathBuf),
     AlreadyPresent(PathBuf),
@@ -81,7 +91,7 @@ pub fn add_chemistry_to_args(chem_str: &str, cmd: &mut std::process::Command) ->
             return Ok(());
         }
         None => {
-            if chem_str.contains(";") {
+            if chem_str.contains(';') {
                 // parse this as a custom
                 let v: Vec<&str> = chem_str.split(';').collect();
                 // one string must start with 'B', one with 'U' and one with 'R'
@@ -122,7 +132,7 @@ pub fn add_chemistry_to_args(chem_str: &str, cmd: &mut std::process::Command) ->
     ))
 }
 
-pub fn get_permit_if_absent(af_home: &Path, chem: Chemistry) -> Result<PermitListResult> {
+pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitListResult> {
     let chem_file;
     let dl_url;
     match chem {
