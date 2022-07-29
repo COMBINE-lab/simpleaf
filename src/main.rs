@@ -592,5 +592,6 @@ fn main() -> anyhow::Result<()> {
             .with_context(|| format!("could not write {}", af_quant_info_file.display()))?;
         }
     }
+    // success
     Ok(())
 }
