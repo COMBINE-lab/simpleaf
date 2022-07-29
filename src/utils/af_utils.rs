@@ -81,7 +81,7 @@ pub fn add_chemistry_to_args(chem_str: &str, cmd: &mut std::process::Command) ->
             return Ok(());
         }
         None => {
-            if chem_str.contains(";") {
+            if chem_str.contains(';') {
                 // parse this as a custom
                 let v: Vec<&str> = chem_str.split(';').collect();
                 // one string must start with 'B', one with 'U' and one with 'R'

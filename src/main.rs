@@ -248,21 +248,15 @@ fn main() -> anyhow::Result<()> {
             }
 
             // extra spliced sequence
-            match spliced {
-                Some(es) => {
-                    cmd.arg(String::from("--extra-spliced"));
-                    cmd.arg(format!("{}", es.display()));
-                }
-                None => {}
+            if let Some(es) = spliced {
+                cmd.arg(String::from("--extra-spliced"));
+                cmd.arg(format!("{}", es.display()));
             }
 
             // extra unspliced sequence
-            match unspliced {
-                Some(eu) => {
-                    cmd.arg(String::from("--extra-unspliced"));
-                    cmd.arg(format!("{}", eu.display()));
-                }
-                None => {}
+            if let Some(eu) = unspliced {
+                cmd.arg(String::from("--extra-unspliced"));
+                cmd.arg(format!("{}", eu.display()));
             }
 
             cmd.arg(fasta)
@@ -395,25 +389,16 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
             } else {
-                match explicit_pl {
-                    Some(filtered_path) => {
-                        filter_meth_opt = Some(CellFilterMethod::ExplicitList(
-                            filtered_path.to_string_lossy().into_owned(),
-                        ));
-                    }
-                    None => {}
+                if let Some(filtered_path) = explicit_pl {
+                    filter_meth_opt = Some(CellFilterMethod::ExplicitList(
+                        filtered_path.to_string_lossy().into_owned(),
+                    ));
                 };
-                match forced_cells {
-                    Some(num_forced) => {
-                        filter_meth_opt = Some(CellFilterMethod::ForceCells(num_forced));
-                    }
-                    None => {}
+                if let Some(num_forced) = forced_cells {
+                    filter_meth_opt = Some(CellFilterMethod::ForceCells(num_forced));
                 };
-                match expect_cells {
-                    Some(num_expected) => {
-                        filter_meth_opt = Some(CellFilterMethod::ExpectCells(num_expected));
-                    }
-                    None => {}
+                if let Some(num_expected) = expect_cells {
+                    filter_meth_opt = Some(CellFilterMethod::ExpectCells(num_expected));
                 };
             }
             // otherwise it must have been knee;
