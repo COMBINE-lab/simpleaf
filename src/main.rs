@@ -583,6 +583,8 @@ fn main() -> anyhow::Result<()> {
                 }
             });
 
+            // write the relevant info about
+            // our run to file.
             std::fs::write(
                 &af_quant_info_file,
                 serde_json::to_string_pretty(&af_quant_info).unwrap(),
