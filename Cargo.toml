@@ -1,7 +1,32 @@
 [package]
 name = "simpleaf"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
+authors = [
+  "Rob Patro <rob@cs.umd.edu>",
+  "Dongze He <dhe17@umd.edu>",
+]
+description = "A rust framework to make using alevin-fry even simpler."
+license-file = "LICENSE"
+readme = "README.md"
+repository = "https://github.com/COMBINE-lab/simpleaf"
+homepage = "https://github.com/COMBINE-lab/simpleaf"
+#documentation = "https://alevin-fry.readthedocs.io/en/latest/"
+include = [
+  "/src/*.rs",
+  "/Cargo.toml",
+  "/Cargo.lock",
+  "/README.md",
+  "/LICENSE",
+]
+keywords = [
+  "single-cell",
+  "preprocessing",
+  "RNA-seq",
+  "single-nucleus",
+  "RNA-velocity",
+]
+categories = ["command-line-utilities", "science"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
