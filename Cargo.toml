@@ -1,6 +1,6 @@
 [package]
 name = "simpleaf"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = [
   "Rob Patro <rob@cs.umd.edu>",
@@ -14,6 +14,7 @@ homepage = "https://github.com/COMBINE-lab/simpleaf"
 #documentation = "https://alevin-fry.readthedocs.io/en/latest/"
 include = [
   "/src/*.rs",
+  "/src/utils/*.rs",
   "/Cargo.toml",
   "/Cargo.lock",
   "/README.md",
