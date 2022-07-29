@@ -66,13 +66,11 @@ pub fn get_which_executable(prog_name: &str) -> Result<PathBuf> {
             println!("found `{}` in the PATH at {}", prog_name, p.display());
             Ok(p)
         }
-        Err(e) => {
-            Err(anyhow!(
-                "could not find `{}` in your path: {}",
-                prog_name,
-                e
-            ))
-        }
+        Err(e) => Err(anyhow!(
+            "could not find `{}` in your path: {}",
+            prog_name,
+            e
+        )),
     }
 }
 
