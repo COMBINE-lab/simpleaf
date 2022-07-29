@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/COMBINE-lab/simpleaf/compare/v0.1.0...v0.1.1) (2022-07-29)
+
+
+### Bug Fixes
+
+* try to force cargo publish ([1f13cb5](https://github.com/COMBINE-lab/simpleaf/commit/1f13cb51d197556b5ccd808becbe1cb4aff67596))
+
 ## 0.1.0 (2022-07-29)
 
 
