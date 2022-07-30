@@ -156,6 +156,7 @@ fn main() -> anyhow::Result<()> {
     let cli_args = Cli::parse();
 
     match cli_args.command {
+        // set the paths where the relevant tools live
         Commands::SetPaths {
             salmon,
             alevin_fry,
@@ -182,6 +183,8 @@ fn main() -> anyhow::Result<()> {
             )
             .with_context(|| format!("could not write {}", simpleaf_info_file.display()))?;
         }
+
+        // if we are building the reference and indexing
         Commands::Index {
             fasta,
             gtf,
@@ -330,6 +333,8 @@ fn main() -> anyhow::Result<()> {
             )
             .with_context(|| format!("could not write {}", index_log_file.display()))?;
         }
+
+        // if we are running mapping and quantification
         Commands::Quant {
             index,
             reads1,
