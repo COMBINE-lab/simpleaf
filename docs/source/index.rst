@@ -11,7 +11,7 @@ What is simpleaf?
 
 `simpleaf` is a program to simplify and customize the running and 
 configuration of single-cell processing with `alevin-fry <https://github.com/COMBINE-lab/alevin-fry/>`_.
-
+This documentation covers the main commands of `simpleaf`, and how the program works.
 
 .. toctree::
    :maxdepth: 2
