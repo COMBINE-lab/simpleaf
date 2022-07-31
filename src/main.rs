@@ -59,10 +59,7 @@ enum Commands {
         threads: u32,
     },
     /// inspect the current configuration
-    #[clap(arg_required_else_help = true)]
-    Inspect {
-      
-    },
+    Inspect {},
     /// quantify a sample
     #[clap(arg_required_else_help = true)]
     #[clap(group(
@@ -189,7 +186,7 @@ fn main() -> anyhow::Result<()> {
             .with_context(|| format!("could not write {}", simpleaf_info_file.display()))?;
         }
 
-        Commands::Inspect{} => {
+        Commands::Inspect {} => {
             let af_info_p = af_home_path.join("simpleaf_info.json");
             let simpleaf_info_file = std::fs::File::open(&af_info_p).with_context({
                 ||
@@ -201,7 +198,25 @@ fn main() -> anyhow::Result<()> {
             // Read the JSON contents of the file as an instance of `User`.
             let v: serde_json::Value = serde_json::from_reader(simpleaf_info_reader)?;
             //let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
-            println!("{:?}", v);
+            println!("{}", serde_json::to_string_pretty(&v).unwrap());
+
+            // do we have a custom chemistry file
+            let custom_chem_p = af_home_path.join("custom_chemistries.json");
+            if custom_chem_p.is_file() {
+                println!("Custom chemistries exist at {}", custom_chem_p.display());
+                // parse the custom chemistry json file
+                let custom_chem_file = std::fs::File::open(&custom_chem_p).with_context({
+                    || {
+                        format!(
+                            "couldn't open the custom chemistry file {}",
+                            custom_chem_p.display()
+                        )
+                    }
+                })?;
+                let custom_chem_reader = BufReader::new(custom_chem_file);
+                let v: serde_json::Value = serde_json::from_reader(custom_chem_reader)?;
+                println!("{}", serde_json::to_string_pretty(&v).unwrap());
+            }
         }
         // if we are building the reference and indexing
         Commands::Index {
