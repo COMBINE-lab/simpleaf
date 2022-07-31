@@ -58,6 +58,11 @@ enum Commands {
         #[clap(short, long, default_value_t = 16, value_parser)]
         threads: u32,
     },
+    /// inspect the current configuration
+    #[clap(arg_required_else_help = true)]
+    Inspect {
+      
+    },
     /// quantify a sample
     #[clap(arg_required_else_help = true)]
     #[clap(group(
@@ -184,6 +189,20 @@ fn main() -> anyhow::Result<()> {
             .with_context(|| format!("could not write {}", simpleaf_info_file.display()))?;
         }
 
+        Commands::Inspect{} => {
+            let af_info_p = af_home_path.join("simpleaf_info.json");
+            let simpleaf_info_file = std::fs::File::open(&af_info_p).with_context({
+                ||
+                format!("Could not open file {}; please run the set-paths command before using `index` or `quant`", af_info_p.display())
+            })?;
+
+            let simpleaf_info_reader = BufReader::new(simpleaf_info_file);
+
+            // Read the JSON contents of the file as an instance of `User`.
+            let v: serde_json::Value = serde_json::from_reader(simpleaf_info_reader)?;
+            //let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+            println!("{:?}", v);
+        }
         // if we are building the reference and indexing
         Commands::Index {
             fasta,
