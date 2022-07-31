@@ -17,6 +17,7 @@ This documentation covers the main commands of `simpleaf`, and how the program w
    :maxdepth: 2
    :caption: Contents:
 
+   set-paths.rst
    LICENSE.rst
 
 Indices and tables
