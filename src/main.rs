@@ -206,8 +206,6 @@ fn main() -> anyhow::Result<()> {
                 serde_json::to_string_pretty(&v).unwrap()
             );
 
-            println!("{}", serde_json::to_string_pretty(&v).unwrap());
-
             // do we have a custom chemistry file
             let custom_chem_p = af_home_path.join("custom_chemistries.json");
             if custom_chem_p.is_file() {
