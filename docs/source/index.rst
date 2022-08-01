@@ -39,7 +39,7 @@ That's it for initial notes.  Use the menu below to learn more about the `simple
    :caption: Contents:
 
    set-paths.rst
-   add-chemistry-commnad.rst
+   add-chemistry-command.rst
    inspect-command.rst
    index-command.rst
    quant-command.rst
