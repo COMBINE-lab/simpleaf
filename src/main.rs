@@ -54,7 +54,7 @@ enum Commands {
         #[clap(short = 'p', long = "sparse", action)]
         sparse: bool,
 
-        /// number of threads to use when running [default: min(16, num cores)]"
+        /// number of threads to use when running
         #[clap(short, long, default_value_t = 16, value_parser)]
         threads: u32,
     },
@@ -80,7 +80,7 @@ enum Commands {
         #[clap(short = '2', long = "reads2", value_parser)]
         reads2: Vec<PathBuf>,
 
-        /// number of threads to use when running [default: min(16, num cores)]"
+        /// number of threads to use when running
         #[clap(short, long, default_value_t = 16, value_parser)]
         threads: u32,
 
@@ -382,7 +382,7 @@ fn main() -> anyhow::Result<()> {
             index,
             reads1,
             reads2,
-            threads,
+            mut threads,
             knee,
             unfiltered_pl,
             explicit_pl,
@@ -515,6 +515,19 @@ fn main() -> anyhow::Result<()> {
                 .collect::<Vec<String>>()
                 .join(",");
             salmon_quant_cmd.arg("-1").arg(r1_str).arg("-2").arg(r2_str);
+
+            // if the user requested more threads than can be used
+            if let Ok(max_threads_usize) = std::thread::available_parallelism() {
+                let max_threads = max_threads_usize.get() as u32;
+                if threads > max_threads {
+                    warn!(
+                        "The maximum available parallelism is {}, but {} threads were requested.",
+                        max_threads, threads
+                    );
+                    warn!("setting number of threads to {}", max_threads);
+                    threads = max_threads;
+                }
+            }
 
             // location of outptu directory, number of threads
             let map_output = output.join("af_map");
