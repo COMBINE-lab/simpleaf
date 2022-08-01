@@ -70,6 +70,56 @@ pub enum PermitListResult {
     UnregisteredChemistry,
 }
 
+pub fn check_geometry(geo: &str) -> Result<()> {
+    if geo.contains(';') {
+        // parse this as a custom
+        let v: Vec<&str> = geo.split(';').collect();
+        // one string must start with 'B', one with 'U' and one with 'R'
+        if v.len() != 3 {
+            return Err(anyhow!(
+                "custom geometry should have 3 components (R,U,B), but {} were found",
+                v.len()
+            ));
+        }
+
+        let mut found_b = false;
+        let mut found_u = false;
+        let mut found_r = false;
+
+        for e in v {
+            let (t, _ar) = e.split_at(1);
+            match t {
+                "B" => {
+                    found_b = true;
+                }
+                "U" => {
+                    found_u = true;
+                }
+                "R" => {
+                    found_r = true;
+                }
+                _ => {
+                    return Err(anyhow!("Could not parse custom geometry, found descriptor type {}, but it must be of type (R,U,B)", t));
+                }
+            }
+        }
+
+        if found_b && found_u && found_r {
+            return Ok(());
+        } else {
+            return Err(anyhow!(
+                "Require B, U and R components: Status B ({:?}), U ({:?}), R ({:?})",
+                found_b,
+                found_u,
+                found_r
+            ));
+        }
+    }
+    Err(anyhow!(
+        "custom geometry string doesn't contain ';' character"
+    ))
+}
+
 pub fn add_chemistry_to_args(chem_str: &str, cmd: &mut std::process::Command) -> Result<()> {
     let known_chem_map = HashMap::from([
         ("10xv2", "--chromium"),

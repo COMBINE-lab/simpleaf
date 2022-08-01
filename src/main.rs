@@ -11,6 +11,8 @@ use time::Instant;
 
 use std::env;
 use std::io::BufReader;
+use std::io::Write;
+use std::io::{Seek, SeekFrom};
 use std::path::PathBuf;
 
 mod utils;
@@ -54,10 +56,22 @@ enum Commands {
         #[clap(short = 'p', long = "sparse", action)]
         sparse: bool,
 
-        /// number of threads to use when running [default: min(16, num cores)]"
+        /// number of threads to use when running
         #[clap(short, long, default_value_t = 16, value_parser)]
         threads: u32,
     },
+    /// add a new custom chemistry to geometry mapping
+    #[clap(arg_required_else_help = true)]
+    AddChemistry {
+        /// the name to give the chemistry
+        #[clap(short, long, value_parser)]
+        name: String,
+        /// the geometry to which the chemistry maps
+        #[clap(short, long, value_parser)]
+        geometry: String,
+    },
+    /// inspect the current configuration
+    Inspect {},
     /// quantify a sample
     #[clap(arg_required_else_help = true)]
     #[clap(group(
@@ -78,7 +92,7 @@ enum Commands {
         #[clap(short = '2', long = "reads2", value_parser)]
         reads2: Vec<PathBuf>,
 
-        /// number of threads to use when running [default: min(16, num cores)]"
+        /// number of threads to use when running
         #[clap(short, long, default_value_t = 16, value_parser)]
         threads: u32,
 
@@ -156,6 +170,7 @@ fn main() -> anyhow::Result<()> {
     let cli_args = Cli::parse();
 
     match cli_args.command {
+        // set the paths where the relevant tools live
         Commands::SetPaths {
             salmon,
             alevin_fry,
@@ -182,6 +197,91 @@ fn main() -> anyhow::Result<()> {
             )
             .with_context(|| format!("could not write {}", simpleaf_info_file.display()))?;
         }
+
+        Commands::AddChemistry { name, geometry } => {
+            // check geometry string, if no good then
+            // propagate error.
+            check_geometry(&geometry)?;
+
+            // do we have a custom chemistry file
+            let custom_chem_p = af_home_path.join("custom_chemistries.json");
+
+            let mut custom_chem_file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .open(&custom_chem_p)
+                .with_context({
+                    || {
+                        format!(
+                            "couldn't open the custom chemistry file {}",
+                            custom_chem_p.display()
+                        )
+                    }
+                })?;
+
+            let custom_chem_reader = BufReader::new(&custom_chem_file);
+            let mut v: serde_json::Value = serde_json::from_reader(custom_chem_reader)?;
+
+            if let Some(g) = v.get_mut(&name) {
+                let gs = g.as_str().unwrap();
+                info!("chemistry {} already existed, with geometry {}; overwriting geometry specification", name, gs);
+                *g = json!(geometry);
+            } else {
+                info!("inserting chemistry {} with geometry {}", name, geometry);
+                v[name] = json!(geometry);
+            }
+
+            custom_chem_file.set_len(0)?;
+            custom_chem_file.seek(SeekFrom::Start(0))?;
+
+            custom_chem_file
+                .write_all(serde_json::to_string_pretty(&v).unwrap().as_bytes())
+                .with_context(|| format!("could not write {}", custom_chem_p.display()))?;
+        }
+
+        Commands::Inspect {} => {
+            let af_info_p = af_home_path.join("simpleaf_info.json");
+            let simpleaf_info_file = std::fs::File::open(&af_info_p).with_context({
+                || {
+                    format!(
+                        "Could not open file {}; please run the set-paths command",
+                        af_info_p.display()
+                    )
+                }
+            })?;
+
+            let simpleaf_info_reader = BufReader::new(simpleaf_info_file);
+
+            // Read the JSON contents of the file as an instance of `User`.
+            let v: serde_json::Value = serde_json::from_reader(simpleaf_info_reader)?;
+            println!(
+                "\n----- simpleaf info -----\n{}",
+                serde_json::to_string_pretty(&v).unwrap()
+            );
+
+            // do we have a custom chemistry file
+            let custom_chem_p = af_home_path.join("custom_chemistries.json");
+            if custom_chem_p.is_file() {
+                println!(
+                    "\nCustom chemistries exist at path: {}\n----- custom chemistries -----\n",
+                    custom_chem_p.display()
+                );
+                // parse the custom chemistry json file
+                let custom_chem_file = std::fs::File::open(&custom_chem_p).with_context({
+                    || {
+                        format!(
+                            "couldn't open the custom chemistry file {}",
+                            custom_chem_p.display()
+                        )
+                    }
+                })?;
+                let custom_chem_reader = BufReader::new(custom_chem_file);
+                let v: serde_json::Value = serde_json::from_reader(custom_chem_reader)?;
+                println!("{}", serde_json::to_string_pretty(&v).unwrap());
+            }
+        }
+        // if we are building the reference and indexing
         Commands::Index {
             fasta,
             gtf,
@@ -330,11 +430,13 @@ fn main() -> anyhow::Result<()> {
             )
             .with_context(|| format!("could not write {}", index_log_file.display()))?;
         }
+
+        // if we are running mapping and quantification
         Commands::Quant {
             index,
             reads1,
             reads2,
-            threads,
+            mut threads,
             knee,
             unfiltered_pl,
             explicit_pl,
@@ -467,6 +569,19 @@ fn main() -> anyhow::Result<()> {
                 .collect::<Vec<String>>()
                 .join(",");
             salmon_quant_cmd.arg("-1").arg(r1_str).arg("-2").arg(r2_str);
+
+            // if the user requested more threads than can be used
+            if let Ok(max_threads_usize) = std::thread::available_parallelism() {
+                let max_threads = max_threads_usize.get() as u32;
+                if threads > max_threads {
+                    warn!(
+                        "The maximum available parallelism is {}, but {} threads were requested.",
+                        max_threads, threads
+                    );
+                    warn!("setting number of threads to {}", max_threads);
+                    threads = max_threads;
+                }
+            }
 
             // location of outptu directory, number of threads
             let map_output = output.join("af_map");
