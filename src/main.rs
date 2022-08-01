@@ -11,6 +11,8 @@ use time::Instant;
 
 use std::env;
 use std::io::BufReader;
+use std::io::Write;
+use std::io::{Seek, SeekFrom};
 use std::path::PathBuf;
 
 mod utils;
@@ -57,6 +59,16 @@ enum Commands {
         /// number of threads to use when running
         #[clap(short, long, default_value_t = 16, value_parser)]
         threads: u32,
+    },
+    /// add a new custom chemistry to geometry mapping
+    #[clap(arg_required_else_help = true)]
+    AddChemistry {
+        /// the name to give the chemistry
+        #[clap(short, long, value_parser)]
+        name: String,
+        /// the geometry to which the chemistry maps
+        #[clap(short, long, value_parser)]
+        geometry: String,
     },
     /// inspect the current configuration
     Inspect {},
@@ -184,6 +196,48 @@ fn main() -> anyhow::Result<()> {
                 serde_json::to_string_pretty(&simpleaf_info).unwrap(),
             )
             .with_context(|| format!("could not write {}", simpleaf_info_file.display()))?;
+        }
+
+        Commands::AddChemistry { name, geometry } => {
+            // check geometry string, if no good then
+            // propagate error.
+            check_geometry(&geometry)?;
+
+            // do we have a custom chemistry file
+            let custom_chem_p = af_home_path.join("custom_chemistries.json");
+
+            let mut custom_chem_file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .open(&custom_chem_p)
+                .with_context({
+                    || {
+                        format!(
+                            "couldn't open the custom chemistry file {}",
+                            custom_chem_p.display()
+                        )
+                    }
+                })?;
+
+            let custom_chem_reader = BufReader::new(&custom_chem_file);
+            let mut v: serde_json::Value = serde_json::from_reader(custom_chem_reader)?;
+
+            if let Some(g) = v.get_mut(&name) {
+                let gs = g.as_str().unwrap();
+                info!("chemistry {} already existed, with geometry {}; overwriting geometry specification", name, gs);
+                *g = json!(geometry);
+            } else {
+                info!("inserting chemistry {} with geometry {}", name, geometry);
+                v[name] = json!(geometry);
+            }
+
+            custom_chem_file.set_len(0)?;
+            custom_chem_file.seek(SeekFrom::Start(0))?;
+
+            custom_chem_file
+                .write_all(serde_json::to_string_pretty(&v).unwrap().as_bytes())
+                .with_context(|| format!("could not write {}", custom_chem_p.display()))?;
         }
 
         Commands::Inspect {} => {
