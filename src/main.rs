@@ -201,7 +201,7 @@ fn main() -> anyhow::Result<()> {
         Commands::AddChemistry { name, geometry } => {
             // check geometry string, if no good then
             // propagate error.
-            check_geometry(&geometry)?;
+            let _cg = extract_geometry(&geometry)?;
 
             // do we have a custom chemistry file
             let custom_chem_p = af_home_path.join("custom_chemistries.json");
@@ -221,7 +221,13 @@ fn main() -> anyhow::Result<()> {
                 })?;
 
             let custom_chem_reader = BufReader::new(&custom_chem_file);
-            let mut v: serde_json::Value = serde_json::from_reader(custom_chem_reader)?;
+            let mut v: serde_json::Value = match serde_json::from_reader(custom_chem_reader) {
+                Ok(sv) => sv,
+                Err(_) => {
+                    // the file was empty so here return an empty json object
+                    json!({})
+                }
+            };
 
             if let Some(g) = v.get_mut(&name) {
                 let gs = g.as_str().unwrap();

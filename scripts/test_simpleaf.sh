@@ -38,6 +38,13 @@ ${SIMPLEAF} set-paths"
 eval $set_paths_cmd
 status=$?
 
+#echo "  - Setting custom chemistry"
+#add_chem_cmd="ALEVIN_FRY_HOME=$ALEVIN_FRY_HOME \
+#${SIMPLEAF} add-chemistry --name flarb_flub --geometry "\""B1[1-16];U1[17-28];R2[1-end]"\"
+#echo $add_chem_cmd
+#eval $add_chem_cmd
+#status=$?
+
 if [ $status -ne 0 ]; then
         echo "ERROR when running simpleaf set-paths"
         exit 1
@@ -83,6 +90,6 @@ else
 fi
 # register the cleanup function to be called on the EXIT signal
 status=$?
-[ "$status" -eq 0 ] && rm -rf $WORK_DIR
+[ "$status" -eq 0 ] && rm -rf $WORK_DIR 
 
 echo "simpleaf works!"
