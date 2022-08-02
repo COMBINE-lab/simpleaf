@@ -9,7 +9,9 @@ echo "Testing simpleaf using a toy read-reference set"
 # the temp directory used, within $DIR
 # omit the -p parameter to create a temporal directory in the default location
 # WORK_DIR=`mktemp -d -p "$DIR"`
-WORK_DIR=`mktemp -d`
+TEMP_BASE=test_temp
+mkdir -p $TEMP_BASE
+WORK_DIR=`mktemp -d --tmpdir=${TEMP_BASE}`
 LOG_DIR="${WORK_DIR}/simpleaf_logs"
 ALEVIN_FRY_HOME="${WORK_DIR}/alevin_fry_home"
 mkdir -p $ALEVIN_FRY_HOME
@@ -37,6 +39,13 @@ set_paths_cmd="ALEVIN_FRY_HOME=$ALEVIN_FRY_HOME \
 ${SIMPLEAF} set-paths"
 eval $set_paths_cmd
 status=$?
+
+#echo "  - Setting custom chemistry"
+#add_chem_cmd="ALEVIN_FRY_HOME=$ALEVIN_FRY_HOME \
+#${SIMPLEAF} add-chemistry --name flarb_flub --geometry "\""B1[1-16];U1[17-28];R2[1-end]"\"
+#echo $add_chem_cmd
+#eval $add_chem_cmd
+#status=$?
 
 if [ $status -ne 0 ]; then
         echo "ERROR when running simpleaf set-paths"
@@ -83,6 +92,6 @@ else
 fi
 # register the cleanup function to be called on the EXIT signal
 status=$?
-[ "$status" -eq 0 ] && rm -rf $WORK_DIR
+[ "$status" -eq 0 ] && rm -rf $WORK_DIR && rm -fr $TEMP_BASE
 
 echo "simpleaf works!"

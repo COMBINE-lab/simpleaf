@@ -70,7 +70,26 @@ pub enum PermitListResult {
     UnregisteredChemistry,
 }
 
-pub fn check_geometry(geo: &str) -> Result<()> {
+pub struct CustomGeometry {
+    barcode_desc: String,
+    umi_desc: String,
+    read_desc: String,
+}
+
+impl CustomGeometry {
+    fn add_to_args(&self, cmd: &mut std::process::Command) {
+        cmd.arg("--bc-geometry");
+        cmd.arg(&self.barcode_desc);
+
+        cmd.arg("--umi-geometry");
+        cmd.arg(&self.umi_desc);
+
+        cmd.arg("--read-geometry");
+        cmd.arg(&self.read_desc);
+    }
+}
+
+pub fn extract_geometry(geo: &str) -> Result<CustomGeometry> {
     if geo.contains(';') {
         // parse this as a custom
         let v: Vec<&str> = geo.split(';').collect();
@@ -82,21 +101,30 @@ pub fn check_geometry(geo: &str) -> Result<()> {
             ));
         }
 
-        let mut found_b = false;
-        let mut found_u = false;
-        let mut found_r = false;
+        let mut b_desc: Option<&str> = None;
+        let mut u_desc: Option<&str> = None;
+        let mut r_desc: Option<&str> = None;
 
         for e in v {
-            let (t, _ar) = e.split_at(1);
+            let (t, ar) = e.split_at(1);
             match t {
                 "B" => {
-                    found_b = true;
+                    if let Some(prev_desc) = b_desc {
+                        return Err(anyhow!("A description of the barcode geometry seems to appear > 1 time; previous desc = {}!", prev_desc));
+                    }
+                    b_desc = Some(ar);
                 }
                 "U" => {
-                    found_u = true;
+                    if let Some(prev_desc) = u_desc {
+                        return Err(anyhow!("A description of the umi geometry seems to appear > 1 time; previous desc = {}!", prev_desc));
+                    }
+                    u_desc = Some(ar);
                 }
                 "R" => {
-                    found_r = true;
+                    if let Some(prev_desc) = r_desc {
+                        return Err(anyhow!("A description of the read geometry seems to appear > 1 time; previous desc = {}!", prev_desc));
+                    }
+                    r_desc = Some(ar);
                 }
                 _ => {
                     return Err(anyhow!("Could not parse custom geometry, found descriptor type {}, but it must be of type (R,U,B)", t));
@@ -104,14 +132,18 @@ pub fn check_geometry(geo: &str) -> Result<()> {
             }
         }
 
-        if found_b && found_u && found_r {
-            return Ok(());
+        if let (Some(barcode_desc), Some(umi_desc), Some(read_desc)) = (&b_desc, &u_desc, &r_desc) {
+            return Ok(CustomGeometry {
+                barcode_desc: barcode_desc.to_string(),
+                umi_desc: umi_desc.to_string(),
+                read_desc: read_desc.to_string(),
+            });
         } else {
             return Err(anyhow!(
                 "Require B, U and R components: Status B ({:?}), U ({:?}), R ({:?})",
-                found_b,
-                found_u,
-                found_r
+                b_desc,
+                u_desc,
+                r_desc
             ));
         }
     }
@@ -138,48 +170,13 @@ pub fn add_chemistry_to_args(chem_str: &str, cmd: &mut std::process::Command) ->
     match known_chem_map.get(chem_str) {
         Some(v) => {
             cmd.arg(v);
-            return Ok(());
         }
         None => {
-            if chem_str.contains(';') {
-                // parse this as a custom
-                let v: Vec<&str> = chem_str.split(';').collect();
-                // one string must start with 'B', one with 'U' and one with 'R'
-                if v.len() != 3 {
-                    return Err(anyhow!(
-                        "custom geometry should have 3 components (R,U,B), but {} were found",
-                        v.len()
-                    ));
-                }
-                for e in v {
-                    let (t, ar) = e.split_at(1);
-                    match t {
-                        "B" => {
-                            cmd.arg("--bc-geometry");
-                            cmd.arg(ar);
-                        }
-                        "U" => {
-                            cmd.arg("--umi-geometry");
-                            cmd.arg(ar);
-                        }
-                        "R" => {
-                            cmd.arg("--read-geometry");
-                            cmd.arg(ar);
-                        }
-                        _ => {
-                            return Err(anyhow!("Could not parse custom geometry, found descriptor type {}, but it must be of type (R,U,B)", t));
-                        }
-                    }
-                }
-                return Ok(());
-            }
+            let custom_geo = extract_geometry(chem_str)?;
+            custom_geo.add_to_args(cmd);
         }
     }
-
-    Err(anyhow!(
-        "Could not recognize {} as either a known or custom chemistry!",
-        chem_str
-    ))
+    Ok(())
 }
 
 pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitListResult> {

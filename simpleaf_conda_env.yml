@@ -8,7 +8,7 @@ channels:
 dependencies:
   # - python>=3.9
   - bioconda::salmon>=1.8.0
-  - bioconda::alevin-fry>=0.6.0
+  - bioconda::alevin-fry>=0.7.0
   - bioconda::pyroe>=0.6.2
   - bioconda::bedtools>=2.30.0
   - bioconda::gffread>=0.12.7
