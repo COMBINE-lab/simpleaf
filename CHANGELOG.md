@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.2.1...v0.3.0) (2022-08-02)
+
+
+### Features
+
+* add chemistries command ([75e3dbe](https://github.com/COMBINE-lab/simpleaf/commit/75e3dbeb5e9caeab2d7f5fa2e3311cc1dfb744ae))
+
+
+### Bug Fixes
+
+* doc and usage ([a52f866](https://github.com/COMBINE-lab/simpleaf/commit/a52f866c337a21bd75f870c65fca2a5026f18ef5))
+
 ## [0.2.1](https://github.com/COMBINE-lab/simpleaf/compare/v0.2.0...v0.2.1) (2022-07-29)
 
 
