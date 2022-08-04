@@ -129,15 +129,25 @@ enum Commands {
             ))]
     Quant {
         /// path to index
-        #[clap(short, long, value_parser)]
+        #[clap(short, long, help_heading = "mapping options", value_parser)]
         index: PathBuf,
 
         /// path to read 1 files
-        #[clap(short = '1', long = "reads1", value_parser)]
+        #[clap(
+            short = '1',
+            long = "reads1",
+            help_heading = "mapping options",
+            value_parser
+        )]
         reads1: Vec<PathBuf>,
 
         /// path to read 2 files
-        #[clap(short = '2', long = "reads2", value_parser)]
+        #[clap(
+            short = '2',
+            long = "reads2",
+            help_heading = "mapping options",
+            value_parser
+        )]
         reads2: Vec<PathBuf>,
 
         /// number of threads to use when running
@@ -146,31 +156,51 @@ enum Commands {
 
         /// use selective-alignment for mapping (instead of pseudoalignment with structural
         /// constraints).
-        #[clap(short = 's', long, action)]
+        #[clap(short = 's', long, help_heading = "mapping options", action)]
         use_selective_alignment: bool,
 
         /// use knee filtering mode
-        #[clap(short, long, action)]
+        #[clap(short, long, help_heading = "permit list generation options", action)]
         knee: bool,
 
         /// use unfiltered permit list
-        #[clap(short, long, value_parser)]
+        #[clap(
+            short,
+            long,
+            help_heading = "permit list generation options",
+            value_parser
+        )]
         unfiltered_pl: Option<Option<PathBuf>>,
 
         /// use a filtered, explicit permit list
-        #[clap(short = 'x', long, value_parser)]
+        #[clap(
+            short = 'x',
+            long,
+            help_heading = "permit list generation options",
+            value_parser
+        )]
         explicit_pl: Option<PathBuf>,
 
         /// use forced number of cells
-        #[clap(short, long, value_parser)]
+        #[clap(
+            short,
+            long,
+            help_heading = "permit list generation options",
+            value_parser
+        )]
         forced_cells: Option<usize>,
 
         /// use expected number of cells
-        #[clap(short, long, value_parser)]
+        #[clap(
+            short,
+            long,
+            help_heading = "permit list generation options",
+            value_parser
+        )]
         expect_cells: Option<usize>,
 
         /// resolution mode
-        #[clap(short, long, value_parser = clap::builder::PossibleValuesParser::new(["cr-like", "cr-like-em", "parsimony", "parsimony-em", "parsimony-gene", "parsimony-gene-em"]))]
+        #[clap(short, long, help_heading = "UMI resolution options", value_parser = clap::builder::PossibleValuesParser::new(["cr-like", "cr-like-em", "parsimony", "parsimony-em", "parsimony-gene", "parsimony-gene-em"]))]
         resolution: String,
 
         /// chemistry
@@ -178,7 +208,12 @@ enum Commands {
         chemistry: String,
 
         /// transcript to gene map
-        #[clap(short = 'm', long, value_parser)]
+        #[clap(
+            short = 'm',
+            long,
+            help_heading = "UMI resolution options",
+            value_parser
+        )]
         t2g_map: PathBuf,
 
         /// output directory
