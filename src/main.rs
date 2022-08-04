@@ -23,34 +23,82 @@ use utils::prog_utils::*;
 enum Commands {
     /// build the splici index
     #[clap(arg_required_else_help = true)]
+    #[clap(group(
+             ArgGroup::new("reftype")
+             .required(true)
+             .args(&["fasta", "refseq"])
+    ))]
     Index {
-        /// reference genome
-        #[clap(short, long, value_parser)]
-        fasta: PathBuf,
+        /// reference genome to be used for splici construction
+        #[clap(short, long, help_heading = "splici-ref", display_order = 1, requires_all(&["gtf", "rlen"]), value_parser)]
+        fasta: Option<PathBuf>,
 
         /// reference GTF file
-        #[clap(short, long, value_parser)]
-        gtf: PathBuf,
+        #[clap(
+            short,
+            long,
+            help_heading = "splici-ref",
+            display_order = 2,
+            requires = "fasta",
+            value_parser
+        )]
+        gtf: Option<PathBuf>,
 
         /// the target read length the index will be built for
-        #[clap(short, long, value_parser)]
-        rlen: u32,
-
-        /// path to output directory (will be created if it doesn't exist)
-        #[clap(short, long, value_parser)]
-        output: PathBuf,
+        #[clap(
+            short,
+            long,
+            help_heading = "splici-ref",
+            display_order = 3,
+            requires = "fasta",
+            value_parser
+        )]
+        rlen: Option<u32>,
 
         /// path to FASTA file with extra spliced sequence to add to the index
-        #[clap(short, long, value_parser)]
+        #[clap(
+            short,
+            long,
+            help_heading = "splici-ref",
+            display_order = 4,
+            requires = "fasta",
+            value_parser
+        )]
         spliced: Option<PathBuf>,
 
         /// path to FASTA file with extra unspliced sequence to add to the index
-        #[clap(short, long, value_parser)]
+        #[clap(
+            short,
+            long,
+            help_heading = "splici-ref",
+            display_order = 5,
+            requires = "fasta",
+            value_parser
+        )]
         unspliced: Option<PathBuf>,
 
         /// deduplicate identical sequences inside the R script when building the splici reference
-        #[clap(short = 'd', long = "dedup", action)]
+        #[clap(
+            short = 'd',
+            long = "dedup",
+            help_heading = "splici-ref",
+            display_order = 6,
+            requires = "fasta",
+            action
+        )]
         dedup: bool,
+
+        /// target sequences (provide target sequences directly; avoid splici construction)
+        #[clap(long, help_heading = "direct-ref", display_order = 7, value_parser)]
+        refseq: Option<PathBuf>,
+
+        /// path to output directory (will be created if it doesn't exist)
+        #[clap(short, long, display_order = 8, value_parser)]
+        output: PathBuf,
+
+        /// the value of k that should be used to construct the index
+        #[clap(short = 'k', long = "kmer-length", default_value_t = 31, value_parser)]
+        kmer_length: u32,
 
         /// if this flag is passed, build the sparse rather than dense index for mapping
         #[clap(short = 'p', long = "sparse", action)]
@@ -81,43 +129,78 @@ enum Commands {
             ))]
     Quant {
         /// path to index
-        #[clap(short, long, value_parser)]
+        #[clap(short, long, help_heading = "mapping options", value_parser)]
         index: PathBuf,
 
         /// path to read 1 files
-        #[clap(short = '1', long = "reads1", value_parser)]
+        #[clap(
+            short = '1',
+            long = "reads1",
+            help_heading = "mapping options",
+            value_parser
+        )]
         reads1: Vec<PathBuf>,
 
         /// path to read 2 files
-        #[clap(short = '2', long = "reads2", value_parser)]
+        #[clap(
+            short = '2',
+            long = "reads2",
+            help_heading = "mapping options",
+            value_parser
+        )]
         reads2: Vec<PathBuf>,
 
         /// number of threads to use when running
         #[clap(short, long, default_value_t = 16, value_parser)]
         threads: u32,
 
+        /// use selective-alignment for mapping (instead of pseudoalignment with structural
+        /// constraints).
+        #[clap(short = 's', long, help_heading = "mapping options", action)]
+        use_selective_alignment: bool,
+
         /// use knee filtering mode
-        #[clap(short, long, action)]
+        #[clap(short, long, help_heading = "permit list generation options", action)]
         knee: bool,
 
         /// use unfiltered permit list
-        #[clap(short, long, action)]
-        unfiltered_pl: bool,
+        #[clap(
+            short,
+            long,
+            help_heading = "permit list generation options",
+            value_parser
+        )]
+        unfiltered_pl: Option<Option<PathBuf>>,
 
         /// use a filtered, explicit permit list
-        #[clap(short = 'x', long, value_parser)]
+        #[clap(
+            short = 'x',
+            long,
+            help_heading = "permit list generation options",
+            value_parser
+        )]
         explicit_pl: Option<PathBuf>,
 
         /// use forced number of cells
-        #[clap(short, long, value_parser)]
+        #[clap(
+            short,
+            long,
+            help_heading = "permit list generation options",
+            value_parser
+        )]
         forced_cells: Option<usize>,
 
         /// use expected number of cells
-        #[clap(short, long, value_parser)]
+        #[clap(
+            short,
+            long,
+            help_heading = "permit list generation options",
+            value_parser
+        )]
         expect_cells: Option<usize>,
 
         /// resolution mode
-        #[clap(short, long, value_parser = clap::builder::PossibleValuesParser::new(["cr-like", "cr-like-em", "parsimony", "parsimony-em", "parsimony-gene", "parsimony-gene-em"]))]
+        #[clap(short, long, help_heading = "UMI resolution options", value_parser = clap::builder::PossibleValuesParser::new(["cr-like", "cr-like-em", "parsimony", "parsimony-em", "parsimony-gene", "parsimony-gene-em"]))]
         resolution: String,
 
         /// chemistry
@@ -125,7 +208,12 @@ enum Commands {
         chemistry: String,
 
         /// transcript to gene map
-        #[clap(short = 'm', long, value_parser)]
+        #[clap(
+            short = 'm',
+            long,
+            help_heading = "UMI resolution options",
+            value_parser
+        )]
         t2g_map: PathBuf,
 
         /// output directory
@@ -292,10 +380,12 @@ fn main() -> anyhow::Result<()> {
             fasta,
             gtf,
             rlen,
-            output,
             spliced,
             unspliced,
             dedup,
+            refseq,
+            output,
+            kmer_length,
             sparse,
             mut threads,
         } => {
@@ -308,83 +398,121 @@ fn main() -> anyhow::Result<()> {
 
             let simpleaf_info_reader = BufReader::new(simpleaf_info_file);
 
-            // Read the JSON contents of the file as an instance of `User`.
+            // Read the JSON contents of the file
             let v: serde_json::Value = serde_json::from_reader(simpleaf_info_reader)?;
             let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
-            run_fun!(mkdir -p $output)?;
-            let ref_file = format!("splici_fl{}.fa", rlen - 5);
-
-            let outref = output.join("ref");
-            run_fun!(mkdir -p $outref)?;
-
-            let t2g_file = outref.join(format!("splici_fl{}_t2g_3col.tsv", rlen - 5));
             let info_file = output.join("index_info.json");
-            let index_info = json!({
+            let mut index_info = json!({
                 "command" : "index",
                 "version_info" : rp,
-                "t2g_file" : t2g_file,
                 "args" : {
-                    "fasta" : fasta,
-                    "gtf" : gtf,
-                    "rlen" : rlen,
                     "output" : output,
-                    "spliced" : spliced,
-                    "unspliced" : unspliced,
-                    "dedup" : dedup,
                     "sparse" : sparse,
                     "threads" : threads
                 }
             });
 
-            std::fs::write(
-                &info_file,
-                serde_json::to_string_pretty(&index_info).unwrap(),
-            )
-            .with_context(|| format!("could not write {}", info_file.display()))?;
+            run_fun!(mkdir -p $output)?;
 
-            let mut cmd =
-                std::process::Command::new(format!("{}", rp.pyroe.unwrap().exe_path.display()));
-            // we will run the make-splici command
-            cmd.arg("make-splici");
+            // wow, the compiler is smart enough to
+            // figure out that this one need not be
+            // mutable because it is set once in either
+            // branch of the conditional below.
+            let reference_sequence;
+            // these may or may not be set, so must be
+            // mutable.
+            let mut splici_t2g = None;
+            let mut pyroe_duration = None;
 
-            // if the user wants to dedup output sequences
-            if dedup {
-                cmd.arg(String::from("--dedup-seqs"));
-            }
+            // if we are generating a splici reference
+            if let (Some(fasta), Some(gtf), Some(rlen)) = (fasta, gtf, rlen) {
+                let ref_file = format!("splici_fl{}.fa", rlen - 5);
+                let outref = output.join("ref");
+                run_fun!(mkdir -p $outref)?;
 
-            // extra spliced sequence
-            if let Some(es) = spliced {
-                cmd.arg(String::from("--extra-spliced"));
-                cmd.arg(format!("{}", es.display()));
-            }
+                let t2g_file = outref.join(format!("splici_fl{}_t2g_3col.tsv", rlen - 5));
 
-            // extra unspliced sequence
-            if let Some(eu) = unspliced {
-                cmd.arg(String::from("--extra-unspliced"));
-                cmd.arg(format!("{}", eu.display()));
-            }
+                index_info["t2g_file"] = json!(&t2g_file);
+                index_info["args"]["fasta"] = json!(&fasta);
+                index_info["args"]["gtf"] = json!(&gtf);
+                index_info["args"]["spliced"] = json!(&spliced);
+                index_info["args"]["unspliced"] = json!(&unspliced);
+                index_info["args"]["dedup"] = json!(dedup);
 
-            cmd.arg(fasta)
-                .arg(gtf)
-                .arg(format!("{}", rlen))
-                .arg(&outref);
+                std::fs::write(
+                    &info_file,
+                    serde_json::to_string_pretty(&index_info).unwrap(),
+                )
+                .with_context(|| format!("could not write {}", info_file.display()))?;
 
-            let pyroe_start = Instant::now();
-            let cres = cmd.output()?;
-            let pyroe_duration = pyroe_start.elapsed();
+                // set the splici_t2g option
+                splici_t2g = Some(t2g_file);
 
-            if !cres.status.success() {
-                bail!("pyroe failed to return succesfully {:?}", cres.status);
+                let mut cmd =
+                    std::process::Command::new(format!("{}", rp.pyroe.unwrap().exe_path.display()));
+                // we will run the make-splici command
+                cmd.arg("make-splici");
+
+                // if the user wants to dedup output sequences
+                if dedup {
+                    cmd.arg(String::from("--dedup-seqs"));
+                }
+
+                // extra spliced sequence
+                if let Some(es) = spliced {
+                    cmd.arg(String::from("--extra-spliced"));
+                    cmd.arg(format!("{}", es.display()));
+                }
+
+                // extra unspliced sequence
+                if let Some(eu) = unspliced {
+                    cmd.arg(String::from("--extra-unspliced"));
+                    cmd.arg(format!("{}", eu.display()));
+                }
+
+                cmd.arg(fasta)
+                    .arg(gtf)
+                    .arg(format!("{}", rlen))
+                    .arg(&outref);
+
+                let pyroe_start = Instant::now();
+                let cres = cmd.output()?;
+                pyroe_duration = Some(pyroe_start.elapsed());
+
+                if !cres.status.success() {
+                    bail!("pyroe failed to return succesfully {:?}", cres.status);
+                }
+
+                reference_sequence = Some(outref.join(ref_file));
+            } else {
+                // we are running on a set of references directly
+
+                // in this path (due to the argument parser requiring
+                // either --fasta or --refseq, refseq should be safe to
+                // unwrap).
+                index_info["args"]["refseq"] = json!(refseq.clone().unwrap());
+
+                std::fs::write(
+                    &info_file,
+                    serde_json::to_string_pretty(&index_info).unwrap(),
+                )
+                .with_context(|| format!("could not write {}", info_file.display()))?;
+
+                reference_sequence = refseq;
             }
 
             let mut salmon_index_cmd =
                 std::process::Command::new(format!("{}", rp.salmon.unwrap().exe_path.display()));
-            let ref_seq = outref.join(ref_file);
+            let ref_seq = reference_sequence.expect(
+                "reference sequence should either be generated from --fasta by make-splici or set with --refseq",
+            );
 
             let output_index_dir = output.join("index");
             salmon_index_cmd
                 .arg("index")
+                .arg("-k")
+                .arg(kmer_length.to_string())
                 .arg("-i")
                 .arg(&output_index_dir)
                 .arg("-t")
@@ -419,16 +547,28 @@ fn main() -> anyhow::Result<()> {
             let index_duration = index_start.elapsed();
 
             // copy over the t2g file to the index
-            let index_t2g_path = output_index_dir.join("t2g_3col.tsv");
-            std::fs::copy(t2g_file, index_t2g_path)?;
+            if let Some(t2g_file) = splici_t2g {
+                let index_t2g_path = output_index_dir.join("t2g_3col.tsv");
+                std::fs::copy(t2g_file, index_t2g_path)?;
+            }
 
             let index_log_file = output.join("simpleaf_index_log.json");
-            let index_log_info = json!({
-                "time_info" : {
-                    "pyroe_time" : pyroe_duration,
-                    "index_time" : index_duration
-                }
-            });
+            let index_log_info = if let Some(pyroe_duration) = pyroe_duration {
+                // if we ran make-splici
+                json!({
+                    "time_info" : {
+                        "pyroe_time" : pyroe_duration,
+                        "index_time" : index_duration
+                    }
+                })
+            } else {
+                // if we indexed provided sequences directly
+                json!({
+                    "time_info" : {
+                        "index_time" : index_duration
+                    }
+                })
+            };
 
             std::fs::write(
                 &index_log_file,
@@ -443,6 +583,7 @@ fn main() -> anyhow::Result<()> {
             reads1,
             reads2,
             mut threads,
+            use_selective_alignment,
             knee,
             unfiltered_pl,
             explicit_pl,
@@ -506,24 +647,52 @@ fn main() -> anyhow::Result<()> {
             };
 
             let mut filter_meth_opt = None;
+
             // based on the filtering method
-            if unfiltered_pl {
-                // check the chemistry
-                let pl_res = get_permit_if_absent(&af_home_path, &chem)?;
-                let min_cells = 10usize;
-                match pl_res {
-                    PermitListResult::DownloadSuccessful(p)
-                    | PermitListResult::AlreadyPresent(p) => {
+            if let Some(pl_file) = unfiltered_pl {
+                // NOTE: unfiltered_pl is of type Option<Option<PathBuf>> so being in here
+                // tells us nothing about the inner option.  We handle that now.
+
+                // if the -u flag is passed and some file is provided, then the inner
+                // Option is Some(PathBuf)
+                if let Some(pl_file) = pl_file {
+                    // the user has explicily passed a file along, so try
+                    // to use that
+                    if pl_file.is_file() {
+                        let min_cells = 10usize;
                         filter_meth_opt = Some(CellFilterMethod::UnfilteredExternalList(
-                            p.to_string_lossy().into_owned(),
+                            pl_file.to_string_lossy().into_owned(),
                             min_cells,
                         ));
-                    }
-                    PermitListResult::UnregisteredChemistry => {
+                    } else {
                         bail!(
-                            "Cannot use unrecognized chemistry {} with unfiltered permit list.",
-                            chem.as_str()
+                            "The provided path {} does not exist as a regular file.",
+                            pl_file.display()
                         );
+                    }
+                } else {
+                    // here, the -u flag is provided
+                    // but no file is provided, then the
+                    // inner option is None and we will try to get the permit list automatically if
+                    // using 10xv2 or 10xv3
+
+                    // check the chemistry
+                    let pl_res = get_permit_if_absent(&af_home_path, &chem)?;
+                    let min_cells = 10usize;
+                    match pl_res {
+                        PermitListResult::DownloadSuccessful(p)
+                        | PermitListResult::AlreadyPresent(p) => {
+                            filter_meth_opt = Some(CellFilterMethod::UnfilteredExternalList(
+                                p.to_string_lossy().into_owned(),
+                                min_cells,
+                            ));
+                        }
+                        PermitListResult::UnregisteredChemistry => {
+                            bail!(
+                                    "Cannot automatically obtain an unfiltered permit list for non-Chromium chemistry: {}.",
+                                    chem.as_str()
+                                    );
+                        }
                     }
                 }
             } else {
@@ -596,7 +765,15 @@ fn main() -> anyhow::Result<()> {
                 .arg(format!("{}", threads))
                 .arg("-o")
                 .arg(&map_output);
-            salmon_quant_cmd.arg("--sketch");
+
+            // if the user explicitly requested to use selective-alignment
+            // then enable that
+            if use_selective_alignment {
+                salmon_quant_cmd.arg("--rad");
+            } else {
+                // otherwise default to sketch mode
+                salmon_quant_cmd.arg("--sketch");
+            }
 
             // setting the technology / chemistry
             add_chemistry_to_args(chem.as_str(), &mut salmon_quant_cmd)?;
