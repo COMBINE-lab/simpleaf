@@ -30,29 +30,58 @@ enum Commands {
     ))]
     Index {
         /// reference genome to be used for splici construction
-        #[clap(short, long, display_order = 1, requires_all(&["gtf", "rlen"]), value_parser)]
+        #[clap(short, long, help_heading = "splici-ref", display_order = 1, requires_all(&["gtf", "rlen"]), value_parser)]
         fasta: Option<PathBuf>,
 
         /// reference GTF file
-        #[clap(short, long, display_order = 2, requires = "fasta", value_parser)]
+        #[clap(
+            short,
+            long,
+            help_heading = "splici-ref",
+            display_order = 2,
+            requires = "fasta",
+            value_parser
+        )]
         gtf: Option<PathBuf>,
 
         /// the target read length the index will be built for
-        #[clap(short, long, display_order = 3, requires = "fasta", value_parser)]
+        #[clap(
+            short,
+            long,
+            help_heading = "splici-ref",
+            display_order = 3,
+            requires = "fasta",
+            value_parser
+        )]
         rlen: Option<u32>,
 
         /// path to FASTA file with extra spliced sequence to add to the index
-        #[clap(short, long, display_order = 4, requires = "fasta", value_parser)]
+        #[clap(
+            short,
+            long,
+            help_heading = "splici-ref",
+            display_order = 4,
+            requires = "fasta",
+            value_parser
+        )]
         spliced: Option<PathBuf>,
 
         /// path to FASTA file with extra unspliced sequence to add to the index
-        #[clap(short, long, display_order = 5, requires = "fasta", value_parser)]
+        #[clap(
+            short,
+            long,
+            help_heading = "splici-ref",
+            display_order = 5,
+            requires = "fasta",
+            value_parser
+        )]
         unspliced: Option<PathBuf>,
 
         /// deduplicate identical sequences inside the R script when building the splici reference
         #[clap(
             short = 'd',
             long = "dedup",
+            help_heading = "splici-ref",
             display_order = 6,
             requires = "fasta",
             action
@@ -60,7 +89,7 @@ enum Commands {
         dedup: bool,
 
         /// target sequences (provide target sequences directly; avoid splici construction)
-        #[clap(long, display_order = 7, value_parser)]
+        #[clap(long, help_heading = "direct-ref", display_order = 7, value_parser)]
         refseq: Option<PathBuf>,
 
         /// path to output directory (will be created if it doesn't exist)
@@ -125,8 +154,8 @@ enum Commands {
         knee: bool,
 
         /// use unfiltered permit list
-        #[clap(short, long, action)]
-        unfiltered_pl: bool,
+        #[clap(short, long, value_parser)]
+        unfiltered_pl: Option<Option<PathBuf>>,
 
         /// use a filtered, explicit permit list
         #[clap(short = 'x', long, value_parser)]
@@ -583,24 +612,52 @@ fn main() -> anyhow::Result<()> {
             };
 
             let mut filter_meth_opt = None;
+
             // based on the filtering method
-            if unfiltered_pl {
-                // check the chemistry
-                let pl_res = get_permit_if_absent(&af_home_path, &chem)?;
-                let min_cells = 10usize;
-                match pl_res {
-                    PermitListResult::DownloadSuccessful(p)
-                    | PermitListResult::AlreadyPresent(p) => {
+            if let Some(pl_file) = unfiltered_pl {
+                // NOTE: unfiltered_pl is of type Option<Option<PathBuf>> so being in here
+                // tells us nothing about the inner option.  We handle that now.
+
+                // if the -u flag is passed and some file is provided, then the inner
+                // Option is Some(PathBuf)
+                if let Some(pl_file) = pl_file {
+                    // the user has explicily passed a file along, so try
+                    // to use that
+                    if pl_file.is_file() {
+                        let min_cells = 10usize;
                         filter_meth_opt = Some(CellFilterMethod::UnfilteredExternalList(
-                            p.to_string_lossy().into_owned(),
+                            pl_file.to_string_lossy().into_owned(),
                             min_cells,
                         ));
-                    }
-                    PermitListResult::UnregisteredChemistry => {
+                    } else {
                         bail!(
-                            "Cannot use unrecognized chemistry {} with unfiltered permit list.",
-                            chem.as_str()
+                            "The provided path {} does not exist as a regular file.",
+                            pl_file.display()
                         );
+                    }
+                } else {
+                    // here, the -u flag is provided
+                    // but no file is provided, then the
+                    // inner option is None and we will try to get the permit list automatically if
+                    // using 10xv2 or 10xv3
+
+                    // check the chemistry
+                    let pl_res = get_permit_if_absent(&af_home_path, &chem)?;
+                    let min_cells = 10usize;
+                    match pl_res {
+                        PermitListResult::DownloadSuccessful(p)
+                        | PermitListResult::AlreadyPresent(p) => {
+                            filter_meth_opt = Some(CellFilterMethod::UnfilteredExternalList(
+                                p.to_string_lossy().into_owned(),
+                                min_cells,
+                            ));
+                        }
+                        PermitListResult::UnregisteredChemistry => {
+                            bail!(
+                                    "Cannot automatically obtain an unfiltered permit list for non-Chromium chemistry: {}.",
+                                    chem.as_str()
+                                    );
+                        }
                     }
                 }
             } else {
