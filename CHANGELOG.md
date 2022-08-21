@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.4.0...v0.5.0) (2022-08-21)
+
+
+### Features
+
+* added ability to set expected-ori in `quant` ([66aab95](https://github.com/COMBINE-lab/simpleaf/commit/66aab95ed7a66b9a8cfe2349d007662eb944b978))
+
 ## [0.4.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.3.0...v0.4.0) (2022-08-04)
 
 
