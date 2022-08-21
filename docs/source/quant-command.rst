@@ -2,8 +2,7 @@
 =================
 
 
-The ``quant`` command takes as input the index, reads, and relevant information about the experiment (e.g. the chemistry), and runs all of the steps of the ``alevin-fry`` pipeline, from mapping with 
-``salmon`` through quantification with ``alevin-fry``. 
+The ``quant`` command takes as input the index, reads, and relevant information about the experiment (e.g. the chemistry), and runs all of the steps of the ``alevin-fry`` pipeline, from mapping with ``salmon`` through quantification with ``alevin-fry``. **Note**: If you use the unfiltered-permit-list ``-u`` mode for permit-list generation, and you are using either ``10xv2`` or ``10xv3`` chemistry, you can provide the flag by itself, and ``simpleaf`` will automatically fetch and apply the appropriate unifltered permit list.  However, if you are using ``-u`` with any other chemistry, you must explicitly provide a path to the unfiltered permit list to be used.  The ``-d``/``--expected-ori`` flag allows controlling the like-named option that is passed to the ``generate-permit-list`` command of ``alevin-fry``. This is an "optional" option.  If it is not provided explicitly, it is set to "both" (allowing reads aligning in both orientations to pass through), unless the chemistry is set as ``10xv2`` or ``10xv3``, in which case it is set as "fw".  Regardless of the chemistry, if the user sets this option explicitly, this choice is respected.
 
 A note on the ``--chemistry`` flag
 ----------------------------------
@@ -24,21 +23,30 @@ The relevant options (which you can obtain by running ``simpleaf quant -h``) are
 
 .. code-block:: bash
 
-  USAGE:
-    simpleaf quant [OPTIONS] --index <INDEX> --resolution <RESOLUTION> --chemistry <CHEMISTRY> --t2g-map <T2G_MAP> --output <OUTPUT> <--knee|--unfiltered-pl|--forced-cells <FORCED_CELLS>|--expect-cells <EXPECT_CELLS>>
+   USAGE:
+    simpleaf quant [OPTIONS] --index <INDEX> --resolution <RESOLUTION> --chemistry <CHEMISTRY> --t2g-map <T2G_MAP> --output <OUTPUT> <--knee|--unfiltered-pl [<UNFILTERED_PL>]|--forced-cells <FORCED_CELLS>|--expect-cells <EXPECT_CELLS>>
 
-  OPTIONS:
-    -1, --reads1 <READS1>                path to read 1 files
-    -2, --reads2 <READS2>                path to read 2 files
-    -c, --chemistry <CHEMISTRY>          chemistry
-    -e, --expect-cells <EXPECT_CELLS>    use expected number of cells
-    -f, --forced-cells <FORCED_CELLS>    use forced number of cells
-    -h, --help                           Print help information
-    -i, --index <INDEX>                  path to index
-    -k, --knee                           use knee filtering mode
-    -m, --t2g-map <T2G_MAP>              transcript to gene map
-    -o, --output <OUTPUT>                output directory
-    -r, --resolution <RESOLUTION>        resolution mode [possible values: cr-like, cr-like-em, parsimony, parsimony-em, parsimony-gene, parsimony-gene-em]
-    -t, --threads <THREADS>              number of threads to use when running [default: 16]
-    -u, --unfiltered-pl                  use unfiltered permit list
-    -x, --explicit-pl <EXPLICIT_PL>      use a filtered, explicit permit list
+    OPTIONS:
+        -c, --chemistry <CHEMISTRY>    chemistry
+        -h, --help                     Print help information
+        -o, --output <OUTPUT>          output directory
+        -t, --threads <THREADS>        number of threads to use when running [default: 16]
+
+    mapping options:
+        -1, --reads1 <READS1>            path to read 1 files
+        -2, --reads2 <READS2>            path to read 2 files
+        -i, --index <INDEX>              path to index
+        -s, --use-selective-alignment    use selective-alignment for mapping (instead of pseudoalignment with structural constraints)
+
+    permit list generation options:
+        -d, --expected-ori <EXPECTED_ORI>        The expected direction/orientation of alignments in the chemistry being processed. If not provided, will default to `fw` for 10xv2/10xv3, otherwise `both` [possible values:
+                                                 fw, rc, both]
+        -e, --expect-cells <EXPECT_CELLS>        use expected number of cells
+        -f, --forced-cells <FORCED_CELLS>        use forced number of cells
+        -k, --knee                               use knee filtering mode
+        -u, --unfiltered-pl [<UNFILTERED_PL>]    use unfiltered permit list
+        -x, --explicit-pl <EXPLICIT_PL>          use a filtered, explicit permit list
+
+    UMI resolution options:
+        -m, --t2g-map <T2G_MAP>          transcript to gene map
+        -r, --resolution <RESOLUTION>    resolution mode [possible values: cr-like, cr-like-em, parsimony, parsimony-em, parsimony-gene, parsimony-gene-em] 

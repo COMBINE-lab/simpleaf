@@ -159,6 +159,11 @@ enum Commands {
         #[clap(short = 's', long, help_heading = "mapping options", action)]
         use_selective_alignment: bool,
 
+        /// The expected direction/orientation of alignments in the chemistry being processed. If
+        /// not provided, will default to `fw` for 10xv2/10xv3, otherwise `both`.
+        #[clap(short = 'd', long, help_heading="permit list generation options", value_parser = clap::builder::PossibleValuesParser::new(["fw", "rc", "both"]))]
+        expected_ori: Option<String>,
+
         /// use knee filtering mode
         #[clap(short, long, help_heading = "permit list generation options", action)]
         knee: bool,
@@ -584,6 +589,7 @@ fn main() -> anyhow::Result<()> {
             reads2,
             mut threads,
             use_selective_alignment,
+            expected_ori,
             knee,
             unfiltered_pl,
             explicit_pl,
@@ -645,6 +651,25 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
             };
+
+            let ori;
+            // if the user set the orientation, then
+            // use that explicitly
+            if let Some(o) = expected_ori {
+                ori = o;
+            } else {
+                // otherwise, this was not set explicitly. In that case
+                // if we have 10xv2 or 10xv3 chemistry, set ori = "fw"
+                // otherwise set ori = "both"
+                match chem {
+                    Chemistry::TenxV2 | Chemistry::TenxV3 => {
+                        ori = "fw".to_string();
+                    }
+                    _ => {
+                        ori = "both".to_string();
+                    }
+                }
+            }
 
             let mut filter_meth_opt = None;
 
@@ -796,7 +821,7 @@ fn main() -> anyhow::Result<()> {
 
             alevin_gpl_cmd.arg("generate-permit-list");
             alevin_gpl_cmd.arg("-i").arg(&map_output);
-            alevin_gpl_cmd.arg("-d").arg("fw");
+            alevin_gpl_cmd.arg("-d").arg(&ori);
 
             // add the filter mode
             add_to_args(&filter_meth, &mut alevin_gpl_cmd);
