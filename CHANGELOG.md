@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.3.0...v0.4.0) (2022-08-04)
+
+
+### Features
+
+* allow index to take targets directly ([20750a6](https://github.com/COMBINE-lab/simpleaf/commit/20750a6505e802382f2922b5832ee68c25000933))
+* can pass -u flag to quant with file ([f795940](https://github.com/COMBINE-lab/simpleaf/commit/f7959408cfd65dfa7fee5fc0fd7621d206f2cbe8))
+
 ## [0.3.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.2.1...v0.3.0) (2022-08-02)
 
 
