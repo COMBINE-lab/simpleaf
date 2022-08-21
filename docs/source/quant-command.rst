@@ -2,7 +2,7 @@
 =================
 
 
-The ``quant`` command takes as input the index, reads, and relevant information about the experiment (e.g. the chemistry), and runs all of the steps of the ``alevin-fry`` pipeline, from mapping with ``salmon`` through quantification with ``alevin-fry``. **Note**: If you use the unfiltered-permit-list ``-u`` mode for permit-list generation, and you are using either ``10xv2`` or ``10xv3`` chemistry, you can provide the flag by itself, and ``simpleaf`` will automatically fetch and apply the appropriate unifltered permit list.  However, if you are using ``-u`` with any other chemistry, you must explicitly provide a path to the unfiltered permit list to be used.
+The ``quant`` command takes as input the index, reads, and relevant information about the experiment (e.g. the chemistry), and runs all of the steps of the ``alevin-fry`` pipeline, from mapping with ``salmon`` through quantification with ``alevin-fry``. **Note**: If you use the unfiltered-permit-list ``-u`` mode for permit-list generation, and you are using either ``10xv2`` or ``10xv3`` chemistry, you can provide the flag by itself, and ``simpleaf`` will automatically fetch and apply the appropriate unifltered permit list.  However, if you are using ``-u`` with any other chemistry, you must explicitly provide a path to the unfiltered permit list to be used.  The ``-d``/``--expected-ori`` flag allows controlling the like-named option that is passed to the ``generate-permit-list`` command of ``alevin-fry``. This is an "optional" option.  If it is not provided explicitly, it is set to "both" (allowing reads aligning in both orientations to pass through), unless the chemistry is set as ``10xv2`` or ``10xv3``, in which case it is set as "fw".  Regardless of the chemistry, if the user sets this option explicitly, this choice is respected.
 
 A note on the ``--chemistry`` flag
 ----------------------------------
@@ -39,6 +39,8 @@ The relevant options (which you can obtain by running ``simpleaf quant -h``) are
         -s, --use-selective-alignment    use selective-alignment for mapping (instead of pseudoalignment with structural constraints)
 
     permit list generation options:
+        -d, --expected-ori <EXPECTED_ORI>        The expected direction/orientation of alignments in the chemistry being processed. If not provided, will default to `fw` for 10xv2/10xv3, otherwise `both` [possible values:
+                                                 fw, rc, both]
         -e, --expect-cells <EXPECT_CELLS>        use expected number of cells
         -f, --forced-cells <FORCED_CELLS>        use forced number of cells
         -k, --knee                               use knee filtering mode
