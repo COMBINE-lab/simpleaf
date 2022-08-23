@@ -762,7 +762,7 @@ fn main() -> anyhow::Result<()> {
                 .arg("A");
 
             // location of the reads
-            // note: salmon uses space so separate 
+            // note: salmon uses space so separate
             // these, not commas, so build the proper
             // strings here.
             assert_eq!(reads1.len(), reads2.len());
