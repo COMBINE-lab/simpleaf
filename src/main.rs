@@ -137,6 +137,8 @@ enum Commands {
             short = '1',
             long = "reads1",
             help_heading = "mapping options",
+            use_value_delimiter = true,
+            value_delimiter = ',',
             value_parser
         )]
         reads1: Vec<PathBuf>,
@@ -146,6 +148,8 @@ enum Commands {
             short = '2',
             long = "reads2",
             help_heading = "mapping options",
+            use_value_delimiter = true,
+            value_delimiter = ',',
             value_parser
         )]
         reads2: Vec<PathBuf>,
@@ -758,17 +762,19 @@ fn main() -> anyhow::Result<()> {
                 .arg("A");
 
             // location of the reads
-            let r1_str = reads1
-                .iter()
-                .map(|x| format!("{}", x.display()))
-                .collect::<Vec<String>>()
-                .join(",");
-            let r2_str = reads2
-                .iter()
-                .map(|x| format!("{}", x.display()))
-                .collect::<Vec<String>>()
-                .join(",");
-            salmon_quant_cmd.arg("-1").arg(r1_str).arg("-2").arg(r2_str);
+            // note: salmon uses space so separate 
+            // these, not commas, so build the proper
+            // strings here.
+            assert_eq!(reads1.len(), reads2.len());
+
+            salmon_quant_cmd.arg("-1");
+            for rf in &reads1 {
+                salmon_quant_cmd.arg(rf);
+            }
+            salmon_quant_cmd.arg("-2");
+            for rf in &reads2 {
+                salmon_quant_cmd.arg(rf);
+            }
 
             // if the user requested more threads than can be used
             if let Ok(max_threads_usize) = std::thread::available_parallelism() {
