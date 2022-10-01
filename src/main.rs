@@ -245,6 +245,7 @@ enum Commands {
 
 /// simplifying alevin-fry workflows
 #[derive(Debug, Parser)]
+#[clap(version)]
 struct Cli {
     #[clap(subcommand)]
     command: Commands,
