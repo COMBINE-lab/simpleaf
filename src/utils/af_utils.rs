@@ -28,10 +28,10 @@ pub enum CellFilterMethod {
 pub fn add_to_args(fm: &CellFilterMethod, cmd: &mut std::process::Command) {
     match fm {
         CellFilterMethod::ForceCells(nc) => {
-            cmd.arg("--force").arg(format!("{}", nc));
+            cmd.arg("--force-cells").arg(format!("{}", nc));
         }
         CellFilterMethod::ExpectCells(nc) => {
-            cmd.arg("--force").arg(format!("{}", nc));
+            cmd.arg("--expect-cells").arg(format!("{}", nc));
         }
         CellFilterMethod::ExplicitList(l) => {
             cmd.arg("--valid-bc").arg(l);
