@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.2](https://github.com/COMBINE-lab/simpleaf/compare/v0.5.1...v0.5.2) (2022-10-01)
+
+
+### Bug Fixes
+
+* add version flag ([786df29](https://github.com/COMBINE-lab/simpleaf/commit/786df297d228af758a9291ef7c6166252ddfccc3))
+
+## [0.5.1](https://github.com/COMBINE-lab/simpleaf/compare/v0.5.0...v0.5.1) (2022-08-23)
+
+
+### Bug Fixes
+
+* parsing of multiple files for quant ([349642e](https://github.com/COMBINE-lab/simpleaf/commit/349642e05f537ed18243a3599bc770c20ca6f325))
+
 ## [0.5.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.4.0...v0.5.0) (2022-08-21)
 
 
