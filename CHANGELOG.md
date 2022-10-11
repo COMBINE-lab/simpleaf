@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/COMBINE-lab/simpleaf/compare/v0.5.2...v0.5.3) (2022-10-11)
+
+
+### Bug Fixes
+
+* expect cells ([c163249](https://github.com/COMBINE-lab/simpleaf/commit/c163249fb6751aa4f445bd99e9a3c4df9a0da476))
+
 ## [0.5.2](https://github.com/COMBINE-lab/simpleaf/compare/v0.5.1...v0.5.2) (2022-10-01)
 
 
