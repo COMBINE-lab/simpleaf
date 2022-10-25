@@ -9,7 +9,7 @@ use env_logger::Env;
 use serde_json::json;
 use time::Instant;
 
-use std::env;
+use std::{env,fs};
 use std::io::BufReader;
 use std::io::Write;
 use std::io::{Seek, SeekFrom};
@@ -274,6 +274,12 @@ fn main() -> anyhow::Result<()> {
             alevin_fry,
             pyroe,
         } => {
+            // create AF_HOME if needed
+            if !af_home_path.as_path().is_dir() {
+                info!("The {} directory, {}, doesn't exist, creating...", AF_HOME, af_home_path.display());
+                fs::create_dir_all(af_home_path.as_path())?;
+            }
+
             let rp = get_required_progs_from_paths(salmon, alevin_fry, pyroe)?;
 
             if rp.salmon.is_none() {
