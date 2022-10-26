@@ -9,11 +9,11 @@ use env_logger::Env;
 use serde_json::json;
 use time::Instant;
 
-use std::{env,fs};
 use std::io::BufReader;
 use std::io::Write;
 use std::io::{Seek, SeekFrom};
 use std::path::PathBuf;
+use std::{env, fs};
 
 mod utils;
 use utils::af_utils::*;
@@ -276,7 +276,11 @@ fn main() -> anyhow::Result<()> {
         } => {
             // create AF_HOME if needed
             if !af_home_path.as_path().is_dir() {
-                info!("The {} directory, {}, doesn't exist, creating...", AF_HOME, af_home_path.display());
+                info!(
+                    "The {} directory, {}, doesn't exist, creating...",
+                    AF_HOME,
+                    af_home_path.display()
+                );
                 fs::create_dir_all(af_home_path.as_path())?;
             }
 
