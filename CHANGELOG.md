@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.5.3...v0.6.0) (2022-10-26)
+
+
+### Features
+
+* create AF_HOME if needed in set-paths ([0d5411b](https://github.com/COMBINE-lab/simpleaf/commit/0d5411be55c7b16bbec76acee3eef93a2640d8d2))
+* create AF_HOME if needed in set-paths ([742c2e2](https://github.com/COMBINE-lab/simpleaf/commit/742c2e2ea2d9caad79178c25a64c83ac27fa664e))
+* create home dir if it doesn't exist ([bae0d42](https://github.com/COMBINE-lab/simpleaf/commit/bae0d42ca358b66eb827f2174f9238bbcb8ad5f2))
+
 ## [0.5.3](https://github.com/COMBINE-lab/simpleaf/compare/v0.5.2...v0.5.3) (2022-10-11)
 
 
