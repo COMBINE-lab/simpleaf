@@ -732,7 +732,7 @@ fn main() -> anyhow::Result<()> {
                     // the user has explicily passed a file along, so try
                     // to use that
                     if pl_file.is_file() {
-                        let min_cells = 10usize;
+                        let min_cells = min_reads;
                         filter_meth_opt = Some(CellFilterMethod::UnfilteredExternalList(
                             pl_file.to_string_lossy().into_owned(),
                             min_cells,
@@ -751,7 +751,7 @@ fn main() -> anyhow::Result<()> {
 
                     // check the chemistry
                     let pl_res = get_permit_if_absent(&af_home_path, &chem)?;
-                    let min_cells = 10usize;
+                    let min_cells = min_reads;
                     match pl_res {
                         PermitListResult::DownloadSuccessful(p)
                         | PermitListResult::AlreadyPresent(p) => {
@@ -888,9 +888,6 @@ fn main() -> anyhow::Result<()> {
                 std::process::Command::new(format!("{}", &alevin_fry.display()));
 
             alevin_gpl_cmd.arg("generate-permit-list");
-            alevin_gpl_cmd
-                .arg("--min_reads")
-                .arg(format!("{}", min_reads));
             alevin_gpl_cmd.arg("-i").arg(&map_output);
             alevin_gpl_cmd.arg("-d").arg(&ori);
 
