@@ -7,7 +7,7 @@ use clap::{ArgGroup, Parser, Subcommand};
 use cmd_lib::run_fun;
 use env_logger::Env;
 use serde_json::json;
-use time::Instant;
+use time::{Duration, Instant};
 
 use std::io::BufReader;
 use std::io::Write;
@@ -127,10 +127,30 @@ enum Commands {
             .required(true)
             .args(&["knee", "unfiltered-pl", "forced-cells", "expect-cells"])
             ))]
+    #[clap(group(
+            ArgGroup::new("raw-read-group")
+            .multiple(true)
+            .args(&["index", "reads1", "reads2"])
+            ))]
+    #[clap(group(
+            ArgGroup::new("input-type")
+            .required(true)
+            .args(&["raw-read-group", "map-dir"])
+            ))]
     Quant {
         /// path to index
-        #[clap(short, long, help_heading = "mapping options", value_parser)]
-        index: PathBuf,
+        #[clap(
+            short = 'i',
+            long = "index",
+            help_heading = "mapping options",
+            requires_all(&["reads1", "reads2"]),
+            value_parser
+        )]
+        index: Option<PathBuf>,
+
+        /// path to a mapped output directory containing a RAD file to be quantified
+        #[clap(long = "map-dir", help_heading = "mapping options", value_parser)]
+        map_dir: Option<PathBuf>,
 
         /// path to read 1 files
         #[clap(
@@ -139,9 +159,10 @@ enum Commands {
             help_heading = "mapping options",
             use_value_delimiter = true,
             value_delimiter = ',',
+            requires("index"),
             value_parser
         )]
-        reads1: Vec<PathBuf>,
+        reads1: Option<Vec<PathBuf>>,
 
         /// path to read 2 files
         #[clap(
@@ -150,9 +171,10 @@ enum Commands {
             help_heading = "mapping options",
             use_value_delimiter = true,
             value_delimiter = ',',
+            requires("index"),
             value_parser
         )]
-        reads2: Vec<PathBuf>,
+        reads2: Option<Vec<PathBuf>>,
 
         /// number of threads to use when running
         #[clap(short, long, default_value_t = 16, value_parser)]
@@ -207,6 +229,15 @@ enum Commands {
             value_parser
         )]
         expect_cells: Option<usize>,
+
+        /// minimum read count threshold for a cell to be retained/processed; only used with --unfiltered-pl
+        #[clap(
+            long,
+            help_heading = "permit list generation options",
+            default_value_t = 10,
+            value_parser
+        )]
+        min_reads: usize,
 
         /// resolution mode
         #[clap(short, long, help_heading = "UMI resolution options", value_parser = clap::builder::PossibleValuesParser::new(["cr-like", "cr-like-em", "parsimony", "parsimony-em", "parsimony-gene", "parsimony-gene-em"]))]
@@ -600,6 +631,7 @@ fn main() -> anyhow::Result<()> {
         // if we are running mapping and quantification
         Commands::Quant {
             index,
+            map_dir,
             reads1,
             reads2,
             mut threads,
@@ -610,6 +642,7 @@ fn main() -> anyhow::Result<()> {
             explicit_pl,
             forced_cells,
             expect_cells,
+            min_reads,
             resolution,
             t2g_map,
             chemistry,
@@ -757,36 +790,6 @@ fn main() -> anyhow::Result<()> {
                 bail!("It seems no valid filtering strategy was provided!");
             }
 
-            // here we must be safe to unwrap
-            let filter_meth = filter_meth_opt.unwrap();
-
-            let mut salmon_quant_cmd =
-                std::process::Command::new(format!("{}", rp.salmon.unwrap().exe_path.display()));
-
-            // set the input index and library type
-            let index_path = format!("{}", index.display());
-            salmon_quant_cmd
-                .arg("alevin")
-                .arg("--index")
-                .arg(index_path)
-                .arg("-l")
-                .arg("A");
-
-            // location of the reads
-            // note: salmon uses space so separate
-            // these, not commas, so build the proper
-            // strings here.
-            assert_eq!(reads1.len(), reads2.len());
-
-            salmon_quant_cmd.arg("-1");
-            for rf in &reads1 {
-                salmon_quant_cmd.arg(rf);
-            }
-            salmon_quant_cmd.arg("-2");
-            for rf in &reads2 {
-                salmon_quant_cmd.arg(rf);
-            }
-
             // if the user requested more threads than can be used
             if let Ok(max_threads_usize) = std::thread::available_parallelism() {
                 let max_threads = max_threads_usize.get() as u32;
@@ -800,35 +803,83 @@ fn main() -> anyhow::Result<()> {
                 }
             }
 
-            // location of outptu directory, number of threads
-            let map_output = output.join("af_map");
-            salmon_quant_cmd
-                .arg("--threads")
-                .arg(format!("{}", threads))
-                .arg("-o")
-                .arg(&map_output);
+            // here we must be safe to unwrap
+            let filter_meth = filter_meth_opt.unwrap();
 
-            // if the user explicitly requested to use selective-alignment
-            // then enable that
-            if use_selective_alignment {
-                salmon_quant_cmd.arg("--rad");
+            let map_output: PathBuf;
+            let map_duration: Duration;
+
+            // if we are mapping against an index
+            if let Some(index) = index {
+                let mut salmon_quant_cmd = std::process::Command::new(format!(
+                    "{}",
+                    rp.salmon.unwrap().exe_path.display()
+                ));
+
+                // set the input index and library type
+                let index_path = format!("{}", index.display());
+                salmon_quant_cmd
+                    .arg("alevin")
+                    .arg("--index")
+                    .arg(index_path)
+                    .arg("-l")
+                    .arg("A");
+
+                let reads1 = reads1.expect(
+                    "since mapping against an index is requested, read1 files must be provded.",
+                );
+                let reads2 = reads2.expect(
+                    "since mapping against an index is requested, read2 files must be provded.",
+                );
+                // location of the reads
+                // note: salmon uses space so separate
+                // these, not commas, so build the proper
+                // strings here.
+                assert_eq!(reads1.len(), reads2.len());
+
+                salmon_quant_cmd.arg("-1");
+                for rf in &reads1 {
+                    salmon_quant_cmd.arg(rf);
+                }
+                salmon_quant_cmd.arg("-2");
+                for rf in &reads2 {
+                    salmon_quant_cmd.arg(rf);
+                }
+
+                // location of outptu directory, number of threads
+                map_output = output.join("af_map");
+                salmon_quant_cmd
+                    .arg("--threads")
+                    .arg(format!("{}", threads))
+                    .arg("-o")
+                    .arg(&map_output);
+
+                // if the user explicitly requested to use selective-alignment
+                // then enable that
+                if use_selective_alignment {
+                    salmon_quant_cmd.arg("--rad");
+                } else {
+                    // otherwise default to sketch mode
+                    salmon_quant_cmd.arg("--sketch");
+                }
+
+                // setting the technology / chemistry
+                add_chemistry_to_args(chem.as_str(), &mut salmon_quant_cmd)?;
+
+                info!("cmd : {:?}", salmon_quant_cmd);
+                let map_start = Instant::now();
+                let map_proc_out = salmon_quant_cmd
+                    .output()
+                    .expect("failed to execute salmon alevin [mapping phase]");
+                map_duration = map_start.elapsed();
+
+                if !map_proc_out.status.success() {
+                    bail!("mapping failed with exit status {:?}", map_proc_out.status);
+                }
             } else {
-                // otherwise default to sketch mode
-                salmon_quant_cmd.arg("--sketch");
-            }
-
-            // setting the technology / chemistry
-            add_chemistry_to_args(chem.as_str(), &mut salmon_quant_cmd)?;
-
-            info!("cmd : {:?}", salmon_quant_cmd);
-            let map_start = Instant::now();
-            let map_proc_out = salmon_quant_cmd
-                .output()
-                .expect("failed to execute salmon alevin [mapping phase]");
-            let map_duration = map_start.elapsed();
-
-            if !map_proc_out.status.success() {
-                bail!("mapping failed with exit status {:?}", map_proc_out.status);
+                map_output = map_dir
+                    .expect("map-dir must be provided, since index, read1 and read2 were not.");
+                map_duration = Duration::new(0, 0);
             }
 
             let alevin_fry = rp.alevin_fry.unwrap().exe_path;
@@ -837,6 +888,9 @@ fn main() -> anyhow::Result<()> {
                 std::process::Command::new(format!("{}", &alevin_fry.display()));
 
             alevin_gpl_cmd.arg("generate-permit-list");
+            alevin_gpl_cmd
+                .arg("--min_reads")
+                .arg(format!("{}", min_reads));
             alevin_gpl_cmd.arg("-i").arg(&map_output);
             alevin_gpl_cmd.arg("-d").arg(&ori);
 
