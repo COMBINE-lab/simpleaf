@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.6.0...v0.7.0) (2022-11-15)
+
+
+### Features
+
+* quant from map and min-reads ([0621a2d](https://github.com/COMBINE-lab/simpleaf/commit/0621a2d9e4ec00a39fe02a8e4e7ef0cf854a1661))
+
 ## [0.6.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.5.3...v0.6.0) (2022-10-26)
 
 
