@@ -3,11 +3,11 @@ extern crate env_logger;
 extern crate log;
 
 use anyhow::{bail, Context};
-use clap::{ArgGroup, Parser, Subcommand};
+use clap::{builder::ArgPredicate, ArgGroup, Parser, Subcommand};
 use cmd_lib::run_fun;
 use env_logger::Env;
 use serde_json::json;
-use time::Instant;
+use time::{Duration, Instant};
 
 use std::io::BufReader;
 use std::io::Write;
@@ -22,232 +22,239 @@ use utils::prog_utils::*;
 #[derive(Debug, Subcommand)]
 enum Commands {
     /// build the splici index
-    #[clap(arg_required_else_help = true)]
-    #[clap(group(
+    #[command(arg_required_else_help = true)]
+    #[command(group(
              ArgGroup::new("reftype")
              .required(true)
-             .args(&["fasta", "refseq"])
+             .args(["fasta", "ref_seq"])
     ))]
     Index {
         /// reference genome to be used for splici construction
-        #[clap(short, long, help_heading = "splici-ref", display_order = 1, requires_all(&["gtf", "rlen"]), value_parser)]
+        #[arg(short, long, help_heading = "splici-ref", display_order = 1, 
+              requires_ifs([
+                (ArgPredicate::IsPresent, "gtf"), 
+                (ArgPredicate::IsPresent, "rlen")
+              ]),
+              conflicts_with = "ref_seq")]
         fasta: Option<PathBuf>,
 
         /// reference GTF file
-        #[clap(
+        #[arg(
             short,
             long,
             help_heading = "splici-ref",
             display_order = 2,
             requires = "fasta",
-            value_parser
+            conflicts_with = "ref_seq"
         )]
         gtf: Option<PathBuf>,
 
         /// the target read length the index will be built for
-        #[clap(
+        #[arg(
             short,
             long,
             help_heading = "splici-ref",
             display_order = 3,
             requires = "fasta",
-            value_parser
+            conflicts_with = "ref_seq"
         )]
         rlen: Option<u32>,
 
         /// path to FASTA file with extra spliced sequence to add to the index
-        #[clap(
+        #[arg(
             short,
             long,
             help_heading = "splici-ref",
             display_order = 4,
             requires = "fasta",
-            value_parser
+            conflicts_with = "ref_seq"
         )]
         spliced: Option<PathBuf>,
 
         /// path to FASTA file with extra unspliced sequence to add to the index
-        #[clap(
+        #[arg(
             short,
             long,
             help_heading = "splici-ref",
             display_order = 5,
             requires = "fasta",
-            value_parser
+            conflicts_with = "ref_seq"
         )]
         unspliced: Option<PathBuf>,
 
         /// deduplicate identical sequences inside the R script when building the splici reference
-        #[clap(
+        #[arg(
             short = 'd',
             long = "dedup",
             help_heading = "splici-ref",
             display_order = 6,
             requires = "fasta",
-            action
+            conflicts_with = "ref-seq"
         )]
         dedup: bool,
 
         /// target sequences (provide target sequences directly; avoid splici construction)
-        #[clap(long, help_heading = "direct-ref", display_order = 7, value_parser)]
-        refseq: Option<PathBuf>,
+        #[arg(long, alias = "refseq", help_heading = "direct-ref", display_order = 7,
+              conflicts_with_all = ["dedup", "unspliced", "spliced", "rlen", "gtf", "fasta"])]
+        ref_seq: Option<PathBuf>,
 
         /// path to output directory (will be created if it doesn't exist)
-        #[clap(short, long, display_order = 8, value_parser)]
+        #[arg(short, long, display_order = 8)]
         output: PathBuf,
 
         /// the value of k that should be used to construct the index
-        #[clap(short = 'k', long = "kmer-length", default_value_t = 31, value_parser)]
+        #[arg(short = 'k', long = "kmer-length", default_value_t = 31)]
         kmer_length: u32,
 
         /// if this flag is passed, build the sparse rather than dense index for mapping
-        #[clap(short = 'p', long = "sparse", action)]
+        #[arg(short = 'p', long = "sparse")]
         sparse: bool,
 
         /// number of threads to use when running
-        #[clap(short, long, default_value_t = 16, value_parser)]
+        #[arg(short, long, default_value_t = 16)]
         threads: u32,
     },
     /// add a new custom chemistry to geometry mapping
-    #[clap(arg_required_else_help = true)]
+    #[command(arg_required_else_help = true)]
     AddChemistry {
         /// the name to give the chemistry
-        #[clap(short, long, value_parser)]
+        #[arg(short, long)]
         name: String,
         /// the geometry to which the chemistry maps
-        #[clap(short, long, value_parser)]
+        #[arg(short, long)]
         geometry: String,
     },
     /// inspect the current configuration
     Inspect {},
     /// quantify a sample
-    #[clap(arg_required_else_help = true)]
-    #[clap(group(
+    #[command(arg_required_else_help = true)]
+    #[command(group(
             ArgGroup::new("filter")
             .required(true)
-            .args(&["knee", "unfiltered-pl", "forced-cells", "expect-cells"])
+            .args(["knee", "unfiltered_pl", "forced_cells", "expect_cells"])
+            ))]
+    #[command(group(
+            ArgGroup::new("input-type")
+            .required(true)
+            .args(["index", "map_dir"])
             ))]
     Quant {
         /// path to index
-        #[clap(short, long, help_heading = "mapping options", value_parser)]
-        index: PathBuf,
+        #[arg(
+            short = 'i',
+            long = "index",
+            help_heading = "mapping options",
+            requires_ifs([
+                (ArgPredicate::IsPresent, "reads1"),
+                (ArgPredicate::IsPresent, "reads2")
+            ])
+        )]
+        index: Option<PathBuf>,
+
+        /// path to a mapped output directory containing a RAD file to be quantified
+        #[arg(long = "map-dir", conflicts_with_all = ["index", "reads1", "reads2"], help_heading = "mapping options")]
+        map_dir: Option<PathBuf>,
 
         /// path to read 1 files
-        #[clap(
+        #[arg(
             short = '1',
             long = "reads1",
             help_heading = "mapping options",
-            use_value_delimiter = true,
             value_delimiter = ',',
-            value_parser
+            requires = "index",
+            conflicts_with = "map_dir"
         )]
-        reads1: Vec<PathBuf>,
+        reads1: Option<Vec<PathBuf>>,
 
         /// path to read 2 files
-        #[clap(
+        #[arg(
             short = '2',
             long = "reads2",
             help_heading = "mapping options",
-            use_value_delimiter = true,
             value_delimiter = ',',
-            value_parser
+            requires = "index",
+            conflicts_with = "map_dir"
         )]
-        reads2: Vec<PathBuf>,
+        reads2: Option<Vec<PathBuf>>,
 
         /// number of threads to use when running
-        #[clap(short, long, default_value_t = 16, value_parser)]
+        #[arg(short, long, default_value_t = 16)]
         threads: u32,
 
         /// use selective-alignment for mapping (instead of pseudoalignment with structural
         /// constraints).
-        #[clap(short = 's', long, help_heading = "mapping options", action)]
+        #[arg(short = 's', long, help_heading = "mapping options")]
         use_selective_alignment: bool,
 
         /// The expected direction/orientation of alignments in the chemistry being processed. If
         /// not provided, will default to `fw` for 10xv2/10xv3, otherwise `both`.
-        #[clap(short = 'd', long, help_heading="permit list generation options", value_parser = clap::builder::PossibleValuesParser::new(["fw", "rc", "both"]))]
+        #[arg(short = 'd', long, help_heading="permit list generation options", value_parser = clap::builder::PossibleValuesParser::new(["fw", "rc", "both"]))]
         expected_ori: Option<String>,
 
         /// use knee filtering mode
-        #[clap(short, long, help_heading = "permit list generation options", action)]
+        #[arg(short, long, help_heading = "permit list generation options")]
         knee: bool,
 
         /// use unfiltered permit list
-        #[clap(
-            short,
-            long,
-            help_heading = "permit list generation options",
-            value_parser
-        )]
+        #[arg(short, long, help_heading = "permit list generation options")]
         unfiltered_pl: Option<Option<PathBuf>>,
 
         /// use a filtered, explicit permit list
-        #[clap(
-            short = 'x',
-            long,
-            help_heading = "permit list generation options",
-            value_parser
-        )]
+        #[arg(short = 'x', long, help_heading = "permit list generation options")]
         explicit_pl: Option<PathBuf>,
 
         /// use forced number of cells
-        #[clap(
-            short,
-            long,
-            help_heading = "permit list generation options",
-            value_parser
-        )]
+        #[arg(short, long, help_heading = "permit list generation options")]
         forced_cells: Option<usize>,
 
         /// use expected number of cells
-        #[clap(
-            short,
-            long,
-            help_heading = "permit list generation options",
-            value_parser
-        )]
+        #[arg(short, long, help_heading = "permit list generation options")]
         expect_cells: Option<usize>,
 
+        /// minimum read count threshold for a cell to be retained/processed; only used with --unfiltered-pl
+        #[arg(
+            long,
+            help_heading = "permit list generation options",
+            default_value_t = 10
+        )]
+        min_reads: usize,
+
         /// resolution mode
-        #[clap(short, long, help_heading = "UMI resolution options", value_parser = clap::builder::PossibleValuesParser::new(["cr-like", "cr-like-em", "parsimony", "parsimony-em", "parsimony-gene", "parsimony-gene-em"]))]
+        #[arg(short, long, help_heading = "UMI resolution options", value_parser = clap::builder::PossibleValuesParser::new(["cr-like", "cr-like-em", "parsimony", "parsimony-em", "parsimony-gene", "parsimony-gene-em"]))]
         resolution: String,
 
         /// chemistry
-        #[clap(short, long, value_parser)]
+        #[arg(short, long)]
         chemistry: String,
 
         /// transcript to gene map
-        #[clap(
-            short = 'm',
-            long,
-            help_heading = "UMI resolution options",
-            value_parser
-        )]
+        #[arg(short = 'm', long, help_heading = "UMI resolution options")]
         t2g_map: PathBuf,
 
         /// output directory
-        #[clap(short, long, value_parser)]
+        #[arg(short, long)]
         output: PathBuf,
     },
     /// set paths to the programs that simpleaf will use
     SetPaths {
         /// path to salmon to use
-        #[clap(short, long, value_parser)]
+        #[arg(short, long)]
         salmon: Option<PathBuf>,
         /// path to alein-fry to use
-        #[clap(short, long, value_parser)]
+        #[arg(short, long)]
         alevin_fry: Option<PathBuf>,
         /// path to pyroe to use
-        #[clap(short, long, value_parser)]
+        #[arg(short, long)]
         pyroe: Option<PathBuf>,
     },
 }
 
 /// simplifying alevin-fry workflows
 #[derive(Debug, Parser)]
-#[clap(version)]
+#[command(author, version, about)]
+#[command(propagate_version = true)]
 struct Cli {
-    #[clap(subcommand)]
+    #[command(subcommand)]
     command: Commands,
 }
 
@@ -403,7 +410,7 @@ fn main() -> anyhow::Result<()> {
             spliced,
             unspliced,
             dedup,
-            refseq,
+            ref_seq,
             output,
             kmer_length,
             sparse,
@@ -509,9 +516,9 @@ fn main() -> anyhow::Result<()> {
                 // we are running on a set of references directly
 
                 // in this path (due to the argument parser requiring
-                // either --fasta or --refseq, refseq should be safe to
+                // either --fasta or --ref-seq, ref-seq should be safe to
                 // unwrap).
-                index_info["args"]["refseq"] = json!(refseq.clone().unwrap());
+                index_info["args"]["ref-seq"] = json!(ref_seq.clone().unwrap());
 
                 std::fs::write(
                     &info_file,
@@ -519,13 +526,13 @@ fn main() -> anyhow::Result<()> {
                 )
                 .with_context(|| format!("could not write {}", info_file.display()))?;
 
-                reference_sequence = refseq;
+                reference_sequence = ref_seq;
             }
 
             let mut salmon_index_cmd =
                 std::process::Command::new(format!("{}", rp.salmon.unwrap().exe_path.display()));
             let ref_seq = reference_sequence.expect(
-                "reference sequence should either be generated from --fasta by make-splici or set with --refseq",
+                "reference sequence should either be generated from --fasta by make-splici or set with --ref-seq",
             );
 
             let output_index_dir = output.join("index");
@@ -600,6 +607,7 @@ fn main() -> anyhow::Result<()> {
         // if we are running mapping and quantification
         Commands::Quant {
             index,
+            map_dir,
             reads1,
             reads2,
             mut threads,
@@ -610,6 +618,7 @@ fn main() -> anyhow::Result<()> {
             explicit_pl,
             forced_cells,
             expect_cells,
+            min_reads,
             resolution,
             t2g_map,
             chemistry,
@@ -699,7 +708,7 @@ fn main() -> anyhow::Result<()> {
                     // the user has explicily passed a file along, so try
                     // to use that
                     if pl_file.is_file() {
-                        let min_cells = 10usize;
+                        let min_cells = min_reads;
                         filter_meth_opt = Some(CellFilterMethod::UnfilteredExternalList(
                             pl_file.to_string_lossy().into_owned(),
                             min_cells,
@@ -718,7 +727,7 @@ fn main() -> anyhow::Result<()> {
 
                     // check the chemistry
                     let pl_res = get_permit_if_absent(&af_home_path, &chem)?;
-                    let min_cells = 10usize;
+                    let min_cells = min_reads;
                     match pl_res {
                         PermitListResult::DownloadSuccessful(p)
                         | PermitListResult::AlreadyPresent(p) => {
@@ -757,36 +766,6 @@ fn main() -> anyhow::Result<()> {
                 bail!("It seems no valid filtering strategy was provided!");
             }
 
-            // here we must be safe to unwrap
-            let filter_meth = filter_meth_opt.unwrap();
-
-            let mut salmon_quant_cmd =
-                std::process::Command::new(format!("{}", rp.salmon.unwrap().exe_path.display()));
-
-            // set the input index and library type
-            let index_path = format!("{}", index.display());
-            salmon_quant_cmd
-                .arg("alevin")
-                .arg("--index")
-                .arg(index_path)
-                .arg("-l")
-                .arg("A");
-
-            // location of the reads
-            // note: salmon uses space so separate
-            // these, not commas, so build the proper
-            // strings here.
-            assert_eq!(reads1.len(), reads2.len());
-
-            salmon_quant_cmd.arg("-1");
-            for rf in &reads1 {
-                salmon_quant_cmd.arg(rf);
-            }
-            salmon_quant_cmd.arg("-2");
-            for rf in &reads2 {
-                salmon_quant_cmd.arg(rf);
-            }
-
             // if the user requested more threads than can be used
             if let Ok(max_threads_usize) = std::thread::available_parallelism() {
                 let max_threads = max_threads_usize.get() as u32;
@@ -800,35 +779,83 @@ fn main() -> anyhow::Result<()> {
                 }
             }
 
-            // location of outptu directory, number of threads
-            let map_output = output.join("af_map");
-            salmon_quant_cmd
-                .arg("--threads")
-                .arg(format!("{}", threads))
-                .arg("-o")
-                .arg(&map_output);
+            // here we must be safe to unwrap
+            let filter_meth = filter_meth_opt.unwrap();
 
-            // if the user explicitly requested to use selective-alignment
-            // then enable that
-            if use_selective_alignment {
-                salmon_quant_cmd.arg("--rad");
+            let map_output: PathBuf;
+            let map_duration: Duration;
+
+            // if we are mapping against an index
+            if let Some(index) = index {
+                let mut salmon_quant_cmd = std::process::Command::new(format!(
+                    "{}",
+                    rp.salmon.unwrap().exe_path.display()
+                ));
+
+                // set the input index and library type
+                let index_path = format!("{}", index.display());
+                salmon_quant_cmd
+                    .arg("alevin")
+                    .arg("--index")
+                    .arg(index_path)
+                    .arg("-l")
+                    .arg("A");
+
+                let reads1 = reads1.expect(
+                    "since mapping against an index is requested, read1 files must be provded.",
+                );
+                let reads2 = reads2.expect(
+                    "since mapping against an index is requested, read2 files must be provded.",
+                );
+                // location of the reads
+                // note: salmon uses space so separate
+                // these, not commas, so build the proper
+                // strings here.
+                assert_eq!(reads1.len(), reads2.len());
+
+                salmon_quant_cmd.arg("-1");
+                for rf in &reads1 {
+                    salmon_quant_cmd.arg(rf);
+                }
+                salmon_quant_cmd.arg("-2");
+                for rf in &reads2 {
+                    salmon_quant_cmd.arg(rf);
+                }
+
+                // location of outptu directory, number of threads
+                map_output = output.join("af_map");
+                salmon_quant_cmd
+                    .arg("--threads")
+                    .arg(format!("{}", threads))
+                    .arg("-o")
+                    .arg(&map_output);
+
+                // if the user explicitly requested to use selective-alignment
+                // then enable that
+                if use_selective_alignment {
+                    salmon_quant_cmd.arg("--rad");
+                } else {
+                    // otherwise default to sketch mode
+                    salmon_quant_cmd.arg("--sketch");
+                }
+
+                // setting the technology / chemistry
+                add_chemistry_to_args(chem.as_str(), &mut salmon_quant_cmd)?;
+
+                info!("cmd : {:?}", salmon_quant_cmd);
+                let map_start = Instant::now();
+                let map_proc_out = salmon_quant_cmd
+                    .output()
+                    .expect("failed to execute salmon alevin [mapping phase]");
+                map_duration = map_start.elapsed();
+
+                if !map_proc_out.status.success() {
+                    bail!("mapping failed with exit status {:?}", map_proc_out.status);
+                }
             } else {
-                // otherwise default to sketch mode
-                salmon_quant_cmd.arg("--sketch");
-            }
-
-            // setting the technology / chemistry
-            add_chemistry_to_args(chem.as_str(), &mut salmon_quant_cmd)?;
-
-            info!("cmd : {:?}", salmon_quant_cmd);
-            let map_start = Instant::now();
-            let map_proc_out = salmon_quant_cmd
-                .output()
-                .expect("failed to execute salmon alevin [mapping phase]");
-            let map_duration = map_start.elapsed();
-
-            if !map_proc_out.status.success() {
-                bail!("mapping failed with exit status {:?}", map_proc_out.status);
+                map_output = map_dir
+                    .expect("map-dir must be provided, since index, read1 and read2 were not.");
+                map_duration = Duration::new(0, 0);
             }
 
             let alevin_fry = rp.alevin_fry.unwrap().exe_path;
