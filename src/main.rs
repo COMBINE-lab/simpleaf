@@ -34,7 +34,8 @@ enum Commands {
               requires_ifs([
                 (ArgPredicate::IsPresent, "gtf"), 
                 (ArgPredicate::IsPresent, "rlen")
-              ]))]
+              ]),
+              conflicts_with = "refseq")]
         fasta: Option<PathBuf>,
 
         /// reference GTF file
@@ -43,7 +44,8 @@ enum Commands {
             long,
             help_heading = "splici-ref",
             display_order = 2,
-            requires = "fasta"
+            requires = "fasta",
+            conflicts_with = "refseq"
         )]
         gtf: Option<PathBuf>,
 
@@ -53,7 +55,8 @@ enum Commands {
             long,
             help_heading = "splici-ref",
             display_order = 3,
-            requires = "fasta"
+            requires = "fasta",
+            conflicts_with = "refseq"
         )]
         rlen: Option<u32>,
 
@@ -63,7 +66,8 @@ enum Commands {
             long,
             help_heading = "splici-ref",
             display_order = 4,
-            requires = "fasta"
+            requires = "fasta",
+            conflicts_with = "refseq"
         )]
         spliced: Option<PathBuf>,
 
@@ -73,7 +77,8 @@ enum Commands {
             long,
             help_heading = "splici-ref",
             display_order = 5,
-            requires = "fasta"
+            requires = "fasta",
+            conflicts_with = "refseq"
         )]
         unspliced: Option<PathBuf>,
 
@@ -83,12 +88,14 @@ enum Commands {
             long = "dedup",
             help_heading = "splici-ref",
             display_order = 6,
-            requires = "fasta"
+            requires = "fasta",
+            conflicts_with = "refseq"
         )]
         dedup: bool,
 
         /// target sequences (provide target sequences directly; avoid splici construction)
-        #[arg(long, help_heading = "direct-ref", display_order = 7)]
+        #[arg(long, help_heading = "direct-ref", display_order = 7,
+              conflicts_with_all = ["dedup", "unspliced", "spliced", "rlen", "gtf", "fasta"])]
         refseq: Option<PathBuf>,
 
         /// path to output directory (will be created if it doesn't exist)
@@ -145,7 +152,7 @@ enum Commands {
         index: Option<PathBuf>,
 
         /// path to a mapped output directory containing a RAD file to be quantified
-        #[arg(long = "map-dir", help_heading = "mapping options")]
+        #[arg(long = "map-dir", conflicts_with_all = ["index", "reads1", "reads2"], help_heading = "mapping options")]
         map_dir: Option<PathBuf>,
 
         /// path to read 1 files
@@ -154,7 +161,8 @@ enum Commands {
             long = "reads1",
             help_heading = "mapping options",
             value_delimiter = ',',
-            requires = "index"
+            requires = "index",
+            conflicts_with = "map_dir"
         )]
         reads1: Option<Vec<PathBuf>>,
 
@@ -164,7 +172,8 @@ enum Commands {
             long = "reads2",
             help_heading = "mapping options",
             value_delimiter = ',',
-            requires = "index"
+            requires = "index",
+            conflicts_with = "map_dir"
         )]
         reads2: Option<Vec<PathBuf>>,
 
