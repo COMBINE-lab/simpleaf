@@ -26,7 +26,7 @@ enum Commands {
     #[command(group(
              ArgGroup::new("reftype")
              .required(true)
-             .args(["fasta", "refseq"])
+             .args(["fasta", "ref_seq"])
     ))]
     Index {
         /// reference genome to be used for splici construction
@@ -35,7 +35,7 @@ enum Commands {
                 (ArgPredicate::IsPresent, "gtf"), 
                 (ArgPredicate::IsPresent, "rlen")
               ]),
-              conflicts_with = "refseq")]
+              conflicts_with = "ref_seq")]
         fasta: Option<PathBuf>,
 
         /// reference GTF file
@@ -45,7 +45,7 @@ enum Commands {
             help_heading = "splici-ref",
             display_order = 2,
             requires = "fasta",
-            conflicts_with = "refseq"
+            conflicts_with = "ref_seq"
         )]
         gtf: Option<PathBuf>,
 
@@ -56,7 +56,7 @@ enum Commands {
             help_heading = "splici-ref",
             display_order = 3,
             requires = "fasta",
-            conflicts_with = "refseq"
+            conflicts_with = "ref_seq"
         )]
         rlen: Option<u32>,
 
@@ -67,7 +67,7 @@ enum Commands {
             help_heading = "splici-ref",
             display_order = 4,
             requires = "fasta",
-            conflicts_with = "refseq"
+            conflicts_with = "ref_seq"
         )]
         spliced: Option<PathBuf>,
 
@@ -78,7 +78,7 @@ enum Commands {
             help_heading = "splici-ref",
             display_order = 5,
             requires = "fasta",
-            conflicts_with = "refseq"
+            conflicts_with = "ref_seq"
         )]
         unspliced: Option<PathBuf>,
 
@@ -89,14 +89,14 @@ enum Commands {
             help_heading = "splici-ref",
             display_order = 6,
             requires = "fasta",
-            conflicts_with = "refseq"
+            conflicts_with = "ref-seq"
         )]
         dedup: bool,
 
         /// target sequences (provide target sequences directly; avoid splici construction)
-        #[arg(long, help_heading = "direct-ref", display_order = 7,
+        #[arg(long, alias = "refseq", help_heading = "direct-ref", display_order = 7,
               conflicts_with_all = ["dedup", "unspliced", "spliced", "rlen", "gtf", "fasta"])]
-        refseq: Option<PathBuf>,
+        ref_seq: Option<PathBuf>,
 
         /// path to output directory (will be created if it doesn't exist)
         #[arg(short, long, display_order = 8)]
@@ -410,7 +410,7 @@ fn main() -> anyhow::Result<()> {
             spliced,
             unspliced,
             dedup,
-            refseq,
+            ref_seq,
             output,
             kmer_length,
             sparse,
@@ -516,9 +516,9 @@ fn main() -> anyhow::Result<()> {
                 // we are running on a set of references directly
 
                 // in this path (due to the argument parser requiring
-                // either --fasta or --refseq, refseq should be safe to
+                // either --fasta or --ref-seq, ref-seq should be safe to
                 // unwrap).
-                index_info["args"]["refseq"] = json!(refseq.clone().unwrap());
+                index_info["args"]["ref-seq"] = json!(ref_seq.clone().unwrap());
 
                 std::fs::write(
                     &info_file,
@@ -526,13 +526,13 @@ fn main() -> anyhow::Result<()> {
                 )
                 .with_context(|| format!("could not write {}", info_file.display()))?;
 
-                reference_sequence = refseq;
+                reference_sequence = ref_seq;
             }
 
             let mut salmon_index_cmd =
                 std::process::Command::new(format!("{}", rp.salmon.unwrap().exe_path.display()));
             let ref_seq = reference_sequence.expect(
-                "reference sequence should either be generated from --fasta by make-splici or set with --refseq",
+                "reference sequence should either be generated from --fasta by make-splici or set with --ref-seq",
             );
 
             let output_index_dir = output.join("index");
