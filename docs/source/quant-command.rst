@@ -6,7 +6,7 @@ The ``quant`` command takes as input **either**:
   1) the index, reads, and relevant information about the experiment (e.g. the chemistry) OR
   2) the directory containing the result of a previous mapping run, and relevant information about the experiemnt (e.g. the chemistry)
 
-and runs all relevant the steps of the ``alevin-fry`` pipeline. When processing a new dataset from scratch, the first option is the one you are likely interested in (you will provide the ``--index``, ``--reads1`` and ``--reads2`` arguments). **If multiple read files are provided to the ``--reads1`` and ``--reads2`` arguments, those files must be comma (,) separated.**
+and runs all relevant the steps of the ``alevin-fry`` pipeline. When processing a new dataset from scratch, the first option is the one you are likely interested in (you will provide the ``--index``, ``--reads1`` and ``--reads2`` arguments). **If multiple read files are provided to the** ``--reads1`` **and** ``--reads2`` **arguments, those files must be comma (,) separated.**
 
 On the other hand, if you have already performed quantification or have, for some other reason, already mapped the reads to produce a RAD file, you can start the process from the mapped read directory directly using the ``--map-dir`` argument instead. This latter approach makes it easy to test out different quantification approaches (e.g. different filtering options or UMI resolution strategies). 
 
