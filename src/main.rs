@@ -155,7 +155,7 @@ enum Commands {
         #[arg(long = "map-dir", conflicts_with_all = ["index", "reads1", "reads2"], help_heading = "mapping options")]
         map_dir: Option<PathBuf>,
 
-        /// path to read 1 files
+        /// comma-separated path to read 1 files
         #[arg(
             short = '1',
             long = "reads1",
@@ -166,7 +166,7 @@ enum Commands {
         )]
         reads1: Option<Vec<PathBuf>>,
 
-        /// path to read 2 files
+        /// comma-separated path to read 2 files
         #[arg(
             short = '2',
             long = "reads2",
