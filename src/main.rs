@@ -442,7 +442,7 @@ fn main() -> anyhow::Result<()> {
                 "version_info" : rp,
                 "args" : {
                     "output" : output,
-                    "keepDuplicates" : keep_duplicates,
+                    "keep_duplicates" : keep_duplicates,
                     "sparse" : sparse,
                     "threads" : threads,
                 }
