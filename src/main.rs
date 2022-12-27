@@ -82,7 +82,7 @@ enum Commands {
         )]
         unspliced: Option<PathBuf>,
 
-        /// deduplicate identical sequences inside the R script when building the splici reference
+        /// deduplicate identical sequences in pyroe when building the splici reference
         #[arg(
             short = 'd',
             long = "dedup",
@@ -92,6 +92,12 @@ enum Commands {
             conflicts_with = "ref-seq"
         )]
         dedup: bool,
+
+        
+        /// keep duplicated identical sequences when constructing the index
+        #[arg(short, long)]
+        keep_duplicates: bool,
+
 
         /// target sequences (provide target sequences directly; avoid splici construction)
         #[arg(long, alias = "refseq", help_heading = "direct-ref", display_order = 7,
@@ -410,6 +416,7 @@ fn main() -> anyhow::Result<()> {
             spliced,
             unspliced,
             dedup,
+            keep_duplicates,
             ref_seq,
             output,
             kmer_length,
@@ -435,8 +442,9 @@ fn main() -> anyhow::Result<()> {
                 "version_info" : rp,
                 "args" : {
                     "output" : output,
+                    "keepDuplicates" : keep_duplicates,
                     "sparse" : sparse,
-                    "threads" : threads
+                    "threads" : threads,
                 }
             });
 
@@ -544,10 +552,15 @@ fn main() -> anyhow::Result<()> {
                 .arg(&output_index_dir)
                 .arg("-t")
                 .arg(ref_seq);
-
+            
             // if the user requested a sparse index.
             if sparse {
                 salmon_index_cmd.arg("--sparse");
+            }
+
+            // if the user requested keeping duplicated sequences.
+            if keep_duplicates {
+                salmon_index_cmd.arg("--keepDuplicates");
             }
 
             // if the user requested more threads than can be used
