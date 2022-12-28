@@ -1,11 +1,10 @@
-extern crate env_logger;
-#[macro_use]
-extern crate log;
+use tracing::{info, warn};
+use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use anyhow::{bail, Context};
 use clap::{builder::ArgPredicate, ArgGroup, Parser, Subcommand};
 use cmd_lib::run_fun;
-use env_logger::Env;
 use serde_json::json;
 use time::{Duration, Instant};
 
@@ -93,11 +92,9 @@ enum Commands {
         )]
         dedup: bool,
 
-        
         /// keep duplicated identical sequences when constructing the index
         #[arg(short, long)]
         keep_duplicates: bool,
-
 
         /// target sequences (provide target sequences directly; avoid splici construction)
         #[arg(long, alias = "refseq", help_heading = "direct-ref", display_order = 7,
@@ -265,7 +262,14 @@ struct Cli {
 }
 
 fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env_lossy(),
+        )
+        .init();
     const AF_HOME: &str = "ALEVIN_FRY_HOME";
     let af_home_path = match env::var(AF_HOME) {
         Ok(p) => PathBuf::from(p),
@@ -552,7 +556,7 @@ fn main() -> anyhow::Result<()> {
                 .arg(&output_index_dir)
                 .arg("-t")
                 .arg(ref_seq);
-            
+
             // if the user requested a sparse index.
             if sparse {
                 salmon_index_cmd.arg("--sparse");
