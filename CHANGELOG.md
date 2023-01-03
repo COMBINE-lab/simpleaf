@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.7.0...v0.8.0) (2023-01-03)
+
+
+### Features
+
+* switch to tracing for logging ([01538c6](https://github.com/COMBINE-lab/simpleaf/commit/01538c623e637387290edd0abf59d7803dfee1c2))
+
+
+### Bug Fixes
+
+* improve helping message ([9a3d851](https://github.com/COMBINE-lab/simpleaf/commit/9a3d85125edeecd6cf24b51997e79089b3fdc9c8))
+
 ## [0.7.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.6.0...v0.7.0) (2022-11-15)
 
 
