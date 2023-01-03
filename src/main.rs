@@ -1,11 +1,10 @@
-extern crate env_logger;
-#[macro_use]
-extern crate log;
+use tracing::{info, warn};
+use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use anyhow::{bail, Context};
 use clap::{builder::ArgPredicate, ArgGroup, Parser, Subcommand};
 use cmd_lib::run_fun;
-use env_logger::Env;
 use serde_json::json;
 use time::{Duration, Instant};
 
@@ -82,7 +81,7 @@ enum Commands {
         )]
         unspliced: Option<PathBuf>,
 
-        /// deduplicate identical sequences inside the R script when building the splici reference
+        /// deduplicate identical sequences in pyroe when building the splici reference
         #[arg(
             short = 'd',
             long = "dedup",
@@ -92,6 +91,10 @@ enum Commands {
             conflicts_with = "ref-seq"
         )]
         dedup: bool,
+
+        /// keep duplicated identical sequences when constructing the index
+        #[arg(short, long)]
+        keep_duplicates: bool,
 
         /// target sequences (provide target sequences directly; avoid splici construction)
         #[arg(long, alias = "refseq", help_heading = "direct-ref", display_order = 7,
@@ -155,7 +158,7 @@ enum Commands {
         #[arg(long = "map-dir", conflicts_with_all = ["index", "reads1", "reads2"], help_heading = "mapping options")]
         map_dir: Option<PathBuf>,
 
-        /// path to read 1 files
+        /// comma-separated list of paths to read 1 files
         #[arg(
             short = '1',
             long = "reads1",
@@ -166,7 +169,7 @@ enum Commands {
         )]
         reads1: Option<Vec<PathBuf>>,
 
-        /// path to read 2 files
+        /// comma-separated list of paths to read 2 files
         #[arg(
             short = '2',
             long = "reads2",
@@ -259,7 +262,14 @@ struct Cli {
 }
 
 fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env_lossy(),
+        )
+        .init();
     const AF_HOME: &str = "ALEVIN_FRY_HOME";
     let af_home_path = match env::var(AF_HOME) {
         Ok(p) => PathBuf::from(p),
@@ -410,6 +420,7 @@ fn main() -> anyhow::Result<()> {
             spliced,
             unspliced,
             dedup,
+            keep_duplicates,
             ref_seq,
             output,
             kmer_length,
@@ -435,8 +446,9 @@ fn main() -> anyhow::Result<()> {
                 "version_info" : rp,
                 "args" : {
                     "output" : output,
+                    "keep_duplicates" : keep_duplicates,
                     "sparse" : sparse,
-                    "threads" : threads
+                    "threads" : threads,
                 }
             });
 
@@ -548,6 +560,11 @@ fn main() -> anyhow::Result<()> {
             // if the user requested a sparse index.
             if sparse {
                 salmon_index_cmd.arg("--sparse");
+            }
+
+            // if the user requested keeping duplicated sequences.
+            if keep_duplicates {
+                salmon_index_cmd.arg("--keepDuplicates");
             }
 
             // if the user requested more threads than can be used
