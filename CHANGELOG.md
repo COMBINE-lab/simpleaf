@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/COMBINE-lab/simpleaf/compare/v0.8.0...v0.8.1) (2023-01-03)
+
+
+### Bug Fixes
+
+* minor dep version bumps ([e3d79fe](https://github.com/COMBINE-lab/simpleaf/commit/e3d79feee4ac51e44c95c12afb6543548edaac14))
+
 ## [0.8.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.7.0...v0.8.0) (2023-01-03)
 
 
