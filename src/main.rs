@@ -466,6 +466,7 @@ fn main() -> anyhow::Result<()> {
 
             // if we are generating a splici reference
             if let (Some(fasta), Some(gtf), Some(rlen)) = (fasta, gtf, rlen) {
+                let mut input_files = vec![fasta.clone(), gtf.clone()];
                 let ref_file = format!("splici_fl{}.fa", rlen - 5);
                 let outref = output.join("ref");
                 run_fun!(mkdir -p $outref)?;
@@ -502,18 +503,22 @@ fn main() -> anyhow::Result<()> {
                 if let Some(es) = spliced {
                     cmd.arg(String::from("--extra-spliced"));
                     cmd.arg(format!("{}", es.display()));
+                    input_files.push(es.clone());
                 }
 
                 // extra unspliced sequence
                 if let Some(eu) = unspliced {
                     cmd.arg(String::from("--extra-unspliced"));
                     cmd.arg(format!("{}", eu.display()));
+                    input_files.push(eu.clone());
                 }
 
                 cmd.arg(fasta)
                     .arg(gtf)
                     .arg(format!("{}", rlen))
                     .arg(&outref);
+
+                check_files_exist(&input_files)?;
 
                 let pyroe_start = Instant::now();
                 let cres = cmd.output()?;

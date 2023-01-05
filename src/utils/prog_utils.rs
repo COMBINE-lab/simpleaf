@@ -4,6 +4,7 @@ use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::PathBuf;
+use tracing::error;
 use which::which;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -166,4 +167,34 @@ pub fn get_required_progs() -> Result<ReqProgs> {
     let pyroe_exe = Some(search_for_executable("PYROE", "pyroe")?);
 
     get_required_progs_from_paths(salmon_exe, alevin_fry_exe, pyroe_exe)
+}
+
+pub fn check_files_exist(file_vec: &Vec<PathBuf>) -> Result<()> {
+    let mut all_valid = true;
+    for fb in file_vec {
+        let er = fb.as_path().try_exists();
+        match er {
+            Ok(true) => {
+                // do nothing
+            }
+            Ok(false) => {
+                error!(
+                    "Required input file at path {} was not found.",
+                    fb.display()
+                );
+                all_valid = false;
+            }
+            Err(e) => {
+                error!("{:#?}", e);
+                all_valid = false;
+            }
+        }
+    }
+
+    if !all_valid {
+        return Err(anyhow!(
+            "Required input files were missing; cannot proceed!"
+        ));
+    }
+    Ok(())
 }
