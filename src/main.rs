@@ -552,6 +552,9 @@ fn main() -> anyhow::Result<()> {
                 "reference sequence should either be generated from --fasta by make-splici or set with --ref-seq",
             );
 
+            let input_files = vec![ref_seq.clone()];
+            check_files_exist(&input_files)?;
+
             let output_index_dir = output.join("index");
             salmon_index_cmd
                 .arg("index")
@@ -865,6 +868,13 @@ fn main() -> anyhow::Result<()> {
                 add_chemistry_to_args(chem.as_str(), &mut salmon_quant_cmd)?;
 
                 info!("cmd : {:?}", salmon_quant_cmd);
+
+                let mut input_files = vec![index.clone()];
+                input_files.extend_from_slice(&reads1);
+                input_files.extend_from_slice(&reads2);
+
+                check_files_exist(&input_files)?;
+
                 let map_start = Instant::now();
                 let map_proc_out = salmon_quant_cmd
                     .output()
@@ -897,6 +907,9 @@ fn main() -> anyhow::Result<()> {
 
             info!("cmd : {:?}", alevin_gpl_cmd);
 
+            let input_files = vec![map_output.clone()];
+            check_files_exist(&input_files)?;
+
             let gpl_start = Instant::now();
             let gpl_proc_out = alevin_gpl_cmd
                 .output()
@@ -922,6 +935,10 @@ fn main() -> anyhow::Result<()> {
             alevin_collate_cmd.arg("-t").arg(format!("{}", threads));
 
             info!("cmd : {:?}", alevin_collate_cmd);
+
+            let input_files = vec![gpl_output.clone(), map_output.clone()];
+            check_files_exist(&input_files)?;
+
             let collate_start = Instant::now();
             let collate_proc_out = alevin_collate_cmd
                 .output()
@@ -948,10 +965,14 @@ fn main() -> anyhow::Result<()> {
                 .arg("-o")
                 .arg(&gpl_output);
             alevin_quant_cmd.arg("-t").arg(format!("{}", threads));
-            alevin_quant_cmd.arg("-m").arg(t2g_map);
+            alevin_quant_cmd.arg("-m").arg(t2g_map.clone());
             alevin_quant_cmd.arg("-r").arg(resolution);
 
             info!("cmd : {:?}", alevin_quant_cmd);
+
+            let input_files = vec![gpl_output.clone(), t2g_map.clone()];
+            check_files_exist(&input_files)?;
+
             let quant_start = Instant::now();
             let quant_proc_out = alevin_quant_cmd
                 .output()
