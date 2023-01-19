@@ -18,9 +18,33 @@ mod utils;
 use utils::af_utils::*;
 use utils::prog_utils::*;
 
+use crate::utils::prog_utils;
+
+#[derive(Clone, Debug)]
+enum ReferenceType {
+    SplicedIntronic,
+    SplicedUnspliced
+}
+
+fn ref_type_parser(s: &str) -> Result<ReferenceType, String> {
+    match s {
+        "spliced+intronic" | "splici" => {
+            Ok(ReferenceType::SplicedIntronic)
+        },
+        "spliced+unspliced" | "spliceu" => {
+            Ok(ReferenceType::SplicedUnspliced)
+        },
+        t => {
+            Err(format!(
+                "Do not recognize reference type {}", t
+            ))
+        }
+    }
+}
+
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// build the splici index
+    /// build the spliced+intronic or spliced+unspliced index
     #[command(arg_required_else_help = true)]
     #[command(group(
              ArgGroup::new("reftype")
@@ -28,8 +52,12 @@ enum Commands {
              .args(["fasta", "ref_seq"])
     ))]
     Index {
-        /// reference genome to be used for splici construction
-        #[arg(short, long, help_heading = "splici-ref", display_order = 1, 
+        /// specify whether the spliced+intronic or spliced+unspliced reference should be built
+        #[arg(long, help_heading="splici-ref", display_order = 1, default_value = "spliced+intronic", value_parser = ref_type_parser)]
+        ref_type: ReferenceType,
+
+        /// reference genome to be used for spliced+intronic or spliced+unspliced construction
+        #[arg(short, long, help_heading = "splici-ref", display_order = 2, 
               requires_ifs([
                 (ArgPredicate::IsPresent, "gtf"), 
                 (ArgPredicate::IsPresent, "rlen")
@@ -42,7 +70,7 @@ enum Commands {
             short,
             long,
             help_heading = "splici-ref",
-            display_order = 2,
+            display_order = 3,
             requires = "fasta",
             conflicts_with = "ref_seq"
         )]
@@ -53,7 +81,7 @@ enum Commands {
             short,
             long,
             help_heading = "splici-ref",
-            display_order = 3,
+            display_order = 4,
             requires = "fasta",
             conflicts_with = "ref_seq"
         )]
@@ -64,7 +92,7 @@ enum Commands {
             short,
             long,
             help_heading = "splici-ref",
-            display_order = 4,
+            display_order = 5,
             requires = "fasta",
             conflicts_with = "ref_seq"
         )]
@@ -75,18 +103,19 @@ enum Commands {
             short,
             long,
             help_heading = "splici-ref",
-            display_order = 5,
+            display_order = 6,
             requires = "fasta",
             conflicts_with = "ref_seq"
         )]
         unspliced: Option<PathBuf>,
 
-        /// deduplicate identical sequences in pyroe when building the splici reference
+        /// deduplicate identical sequences in pyroe when building the spliced+intronic or
+        /// spliced+unspliced reference
         #[arg(
             short = 'd',
             long = "dedup",
             help_heading = "splici-ref",
-            display_order = 6,
+            display_order = 7,
             requires = "fasta",
             conflicts_with = "ref-seq"
         )]
@@ -96,13 +125,14 @@ enum Commands {
         #[arg(short, long)]
         keep_duplicates: bool,
 
-        /// target sequences (provide target sequences directly; avoid splici construction)
-        #[arg(long, alias = "refseq", help_heading = "direct-ref", display_order = 7,
+        /// target sequences (provide target sequences directly; avoid spliced+intronic or
+        /// spliced+unspliced construction)
+        #[arg(long, alias = "refseq", help_heading = "direct-ref", display_order = 8,
               conflicts_with_all = ["dedup", "unspliced", "spliced", "rlen", "gtf", "fasta"])]
         ref_seq: Option<PathBuf>,
 
         /// path to output directory (will be created if it doesn't exist)
-        #[arg(short, long, display_order = 8)]
+        #[arg(short, long, display_order = 9)]
         output: PathBuf,
 
         /// the value of k that should be used to construct the index
@@ -414,6 +444,7 @@ fn main() -> anyhow::Result<()> {
         }
         // if we are building the reference and indexing
         Commands::Index {
+            ref_type,
             fasta,
             gtf,
             rlen,
@@ -439,6 +470,21 @@ fn main() -> anyhow::Result<()> {
             // Read the JSON contents of the file
             let v: serde_json::Value = serde_json::from_reader(simpleaf_info_reader)?;
             let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+
+            // we are building a custom reference
+            if fasta.is_some() {
+                // make sure that the spliced+unspliced reference 
+                // is supported if that's what's being requested.
+                match ref_type {
+                    ReferenceType::SplicedUnspliced => {
+                        let v = rp.pyroe.clone().unwrap().version;
+                        if let Err(e) = prog_utils::check_version_constraints(">=0.8.1, <1.0.0", &v)  {
+                            bail!(e);
+                        }
+                    },
+                    _ => {}
+                } 
+            }
 
             let info_file = output.join("index_info.json");
             let mut index_info = json!({

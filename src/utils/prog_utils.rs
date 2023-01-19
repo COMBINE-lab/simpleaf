@@ -34,6 +34,25 @@ pub struct ReqProgs {
 
 pub fn check_version_constraints<S1: AsRef<str>>(
     req_string: S1,
+    prog_ver_string: &str
+) -> Result<Version> {
+
+    let parsed_version = Version::parse(prog_ver_string).unwrap();
+    let req = VersionReq::parse(req_string.as_ref()).unwrap();
+    if req.matches(&parsed_version) {
+        return Ok(parsed_version);
+    } else {
+        return Err(anyhow!(
+            "parsed version {:?} does not satisfy constraints {:?}",
+            prog_ver_string,
+            req
+        ));
+    }
+}
+
+
+pub fn check_version_constraints_from_output<S1: AsRef<str>>(
+    req_string: S1,
     prog_output: std::result::Result<String, std::io::Error>,
 ) -> Result<Version> {
     match prog_output {
@@ -133,7 +152,7 @@ pub fn get_required_progs_from_paths(
 
     let st = salmon.display().to_string();
     let sr = run_fun!($st --version);
-    let v = check_version_constraints(">=1.5.1, <2.0.0", sr)?;
+    let v = check_version_constraints_from_output(">=1.5.1, <2.0.0", sr)?;
     rp.salmon = Some(ProgInfo {
         exe_path: salmon,
         version: format!("{}", v),
@@ -141,7 +160,7 @@ pub fn get_required_progs_from_paths(
 
     let st = alevin_fry.display().to_string();
     let sr = run_fun!($st --version);
-    let v = check_version_constraints(">=0.4.1, <1.0.0", sr)?;
+    let v = check_version_constraints_from_output(">=0.4.1, <1.0.0", sr)?;
     rp.alevin_fry = Some(ProgInfo {
         exe_path: alevin_fry,
         version: format!("{}", v),
@@ -149,7 +168,7 @@ pub fn get_required_progs_from_paths(
 
     let st = pyroe.display().to_string();
     let sr = run_fun!($st --version);
-    let v = check_version_constraints(">=0.6.2, <1.0.0", sr)?;
+    let v = check_version_constraints_from_output(">=0.6.2, <1.0.0", sr)?;
     rp.pyroe = Some(ProgInfo {
         exe_path: pyroe,
         version: format!("{}", v),
