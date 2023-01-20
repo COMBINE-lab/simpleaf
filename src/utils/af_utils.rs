@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use cmd_lib::run_fun;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use tracing::error;
 
 #[derive(Debug, Clone)]
 pub enum CellFilterMethod {
@@ -76,8 +77,33 @@ pub struct CustomGeometry {
     read_desc: String,
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+pub struct GeomPiece {
+    read_num: u32,
+    pos_start: u32,
+    length: u32,
+    kind: char,
+}
+
+// parses the range [x-y] from x to y into 
+// a pair of a staring offset and a length 
+// if the range is of the form [x-end] then 
+// we set y = u32::MAX.
+fn parse_range(r: &str) -> (u32, u32) {
+    let v: Vec<&str> = r.split('-').collect();
+    if let (Some(s), Some(e)) = (v.first(), v.last()) {
+        let s = s.parse::<u32>().unwrap();
+        let e = if e == &"end" { u32::MAX } else { e.parse::<u32>().unwrap() };
+        let l = if e < u32::MAX { (e - s) + 1 } else { u32::MAX };
+        println!("range is (start : {}, len : {})", s, l);
+        return (s, l)
+    } else {
+        panic!("could not parse range {}", r);
+    }
+}
+
 impl CustomGeometry {
-    fn add_to_args(&self, cmd: &mut std::process::Command) {
+    fn add_to_args_salmon(&self, cmd: &mut std::process::Command) {
         cmd.arg("--bc-geometry");
         cmd.arg(&self.barcode_desc);
 
@@ -86,6 +112,116 @@ impl CustomGeometry {
 
         cmd.arg("--read-geometry");
         cmd.arg(&self.read_desc);
+    }
+
+    fn add_to_args_piscem(&self, cmd: &mut std::process::Command) {
+        // get the read information for each part
+        let bread = match &self.barcode_desc.chars().next() {
+            Some('1') => { 1 },
+            Some('2') => { 2 },
+            _ => {
+                error!("invalid read specified for barcode location");
+                panic!("invalid read specified for barcode location");
+            }
+        };
+        let uread = match &self.umi_desc.chars().next() {
+            Some('1') => { 1 },
+            Some('2') => { 2 },
+            _ => {
+                error!("invalid read specified for UMI location");
+                panic!("invalid read specified for UMI location");
+            }
+        };
+        let rread = match &self.read_desc.chars().next() {
+            Some('1') => { 1 },
+            Some('2') => { 2 },
+            _ => {
+                error!("invalid read specified for biological sequence location");
+                panic!("invalid read specified for biological sequence location");
+            }
+        };
+
+        let brange = parse_range(&self.barcode_desc[2..(&self.barcode_desc.len() - 1)]);
+        let urange = parse_range(&self.umi_desc[2..(&self.umi_desc.len() - 1)]);
+        let rrange = parse_range(&self.read_desc[2..(&self.read_desc.len() - 1)]);
+
+        let mut elements = vec![ 
+            GeomPiece{ read_num: bread, pos_start: brange.0, length: brange.1, kind: 'b' },
+            GeomPiece{ read_num: uread, pos_start: urange.0, length: urange.1, kind: 'u' },
+            GeomPiece{ read_num: rread, pos_start: rrange.0, length: rrange.1, kind: 'r'} ];
+        elements.sort();
+
+        let mut gstr = String::new();
+
+        let e0 = elements[0];
+        let mut curr_read = e0.read_num;
+        let mut last_pos = 0;
+
+        gstr += &format!("{}{{", curr_read);
+        let prefix_x = e0.pos_start - (last_pos + 1);
+        if prefix_x > 0 { gstr += &format!("x[{}]", prefix_x ); }
+        let l = e0.length;
+        if l < u32::MAX {
+            gstr += &format!("{}[{}]", e0.kind, e0.length );
+            last_pos += prefix_x + e0.length;
+        } else {
+            gstr += &format!("{}:", e0.kind);
+            last_pos = u32::MAX;
+        }
+
+        let e1 = elements[1];
+        if e1.read_num != curr_read {
+            if last_pos == u32::MAX {
+                gstr += "}";
+            } else {
+                gstr += "x:}";
+            }
+            curr_read = e1.read_num;
+            gstr += &format!("{}{{", curr_read);
+            last_pos = 0;
+        }
+
+        let prefix_x = e1.pos_start - (last_pos + 1);
+        if prefix_x > 0 { gstr += &format!("x[{}]", prefix_x ); }
+        let l = e1.length;
+        if l < u32::MAX { 
+            gstr += &format!("{}[{}]", e1.kind, e1.length );
+            last_pos += prefix_x + e1.length;
+        } else {
+            gstr += &format!("{}:", e1.kind);
+            last_pos = u32::MAX;
+        }
+
+        let e2 = elements[2];
+        if e2.read_num != curr_read {
+            if last_pos == u32::MAX {
+                gstr += "}";
+            } else {
+                gstr += "x:}";
+            }
+            curr_read = e2.read_num;
+            gstr += &format!("{}{{", curr_read);
+            last_pos = 0;
+        }
+
+        let prefix_x = e2.pos_start - (last_pos + 1);
+        if prefix_x > 0 { gstr += &format!("x[{}]", prefix_x ); }
+
+        let l = e2.length;
+        if l < u32::MAX {
+            gstr += &format!("{}[{}]", e2.kind, e2.length );
+            last_pos += prefix_x + e2.length;
+        } else {
+            gstr += &format!("{}:", e2.kind);
+            last_pos = u32::MAX;
+        }
+        
+        if last_pos == u32::MAX {
+            gstr += "}";
+        } else {
+            gstr += "x:}";
+        }
+        cmd.arg("--geometry").arg(gstr);
     }
 }
 
@@ -152,7 +288,7 @@ pub fn extract_geometry(geo: &str) -> Result<CustomGeometry> {
     ))
 }
 
-pub fn add_chemistry_to_args(chem_str: &str, cmd: &mut std::process::Command) -> Result<()> {
+pub fn add_chemistry_to_args_salmon(chem_str: &str, cmd: &mut std::process::Command) -> Result<()> {
     let known_chem_map = HashMap::from([
         ("10xv2", "--chromium"),
         ("10xv3", "--chromiumV3"),
@@ -173,7 +309,22 @@ pub fn add_chemistry_to_args(chem_str: &str, cmd: &mut std::process::Command) ->
         }
         None => {
             let custom_geo = extract_geometry(chem_str)?;
-            custom_geo.add_to_args(cmd);
+            custom_geo.add_to_args_salmon(cmd);
+        }
+    }
+    Ok(())
+}
+
+pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Command) -> Result<()> {
+    let known_chem_map = HashMap::from([("10xv2", "chromium_v2"), ("10xv3", "chromium_v3")]);
+
+    match known_chem_map.get(chem_str) {
+        Some(v) => {
+            cmd.arg("--geometry").arg(v);
+        }
+        None => {
+            let custom_geo = extract_geometry(chem_str)?;
+            custom_geo.add_to_args_piscem(cmd);
         }
     }
     Ok(())

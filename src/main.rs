@@ -23,22 +23,14 @@ use crate::utils::prog_utils;
 #[derive(Clone, Debug)]
 enum ReferenceType {
     SplicedIntronic,
-    SplicedUnspliced
+    SplicedUnspliced,
 }
 
 fn ref_type_parser(s: &str) -> Result<ReferenceType, String> {
     match s {
-        "spliced+intronic" | "splici" => {
-            Ok(ReferenceType::SplicedIntronic)
-        },
-        "spliced+unspliced" | "spliceu" => {
-            Ok(ReferenceType::SplicedUnspliced)
-        },
-        t => {
-            Err(format!(
-                "Do not recognize reference type {}", t
-            ))
-        }
+        "spliced+intronic" | "splici" => Ok(ReferenceType::SplicedIntronic),
+        "spliced+unspliced" | "spliceu" => Ok(ReferenceType::SplicedUnspliced),
+        t => Err(format!("Do not recognize reference type {}", t)),
     }
 }
 
@@ -59,8 +51,7 @@ enum Commands {
         /// reference genome to be used for spliced+intronic or spliced+unspliced construction
         #[arg(short, long, help_heading = "splici-ref", display_order = 2, 
               requires_ifs([
-                (ArgPredicate::IsPresent, "gtf"), 
-                (ArgPredicate::IsPresent, "rlen")
+                (ArgPredicate::IsPresent, "gtf") 
               ]),
               conflicts_with = "ref_seq")]
         fasta: Option<PathBuf>,
@@ -135,12 +126,25 @@ enum Commands {
         #[arg(short, long, display_order = 9)]
         output: PathBuf,
 
+        /// use piscem instead of salmon for indexing and mapping
+        #[arg(long)]
+        use_piscem: bool,
+
         /// the value of k that should be used to construct the index
         #[arg(short = 'k', long = "kmer-length", default_value_t = 31)]
         kmer_length: u32,
 
+        /// the value of m that should be used to construct the piscem index (must be < k)
+        #[arg(
+            short = 'm',
+            long = "minimizer-length",
+            default_value_t = 19,
+            requires = "use_piscem"
+        )]
+        minimizer_length: u32,
+
         /// if this flag is passed, build the sparse rather than dense index for mapping
-        #[arg(short = 'p', long = "sparse")]
+        #[arg(short = 'p', long = "sparse", conflicts_with = "use_piscem")]
         sparse: bool,
 
         /// number of threads to use when running
@@ -183,6 +187,10 @@ enum Commands {
             ])
         )]
         index: Option<PathBuf>,
+
+        /// use piscem for mapping (requires that index points to the piscem index)
+        #[arg(long, requires = "index")]
+        use_piscem: bool,
 
         /// path to a mapped output directory containing a RAD file to be quantified
         #[arg(long = "map-dir", conflicts_with_all = ["index", "reads1", "reads2"], help_heading = "mapping options")]
@@ -273,6 +281,9 @@ enum Commands {
         /// path to salmon to use
         #[arg(short, long)]
         salmon: Option<PathBuf>,
+        /// path to piscem to use
+        #[arg(short, long)]
+        piscem: Option<PathBuf>,
         /// path to alein-fry to use
         #[arg(short, long)]
         alevin_fry: Option<PathBuf>,
@@ -291,33 +302,12 @@ struct Cli {
     command: Commands,
 }
 
-fn main() -> anyhow::Result<()> {
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(
-            EnvFilter::builder()
-                .with_default_directive(LevelFilter::INFO.into())
-                .from_env_lossy(),
-        )
-        .init();
+fn set_paths(af_home_path: PathBuf, set_path_args: Commands) -> anyhow::Result<()> {
     const AF_HOME: &str = "ALEVIN_FRY_HOME";
-    let af_home_path = match env::var(AF_HOME) {
-        Ok(p) => PathBuf::from(p),
-        Err(e) => {
-            bail!(
-                "${} is unset {}, please set this environment variable to continue.",
-                AF_HOME,
-                e
-            );
-        }
-    };
-
-    let cli_args = Cli::parse();
-
-    match cli_args.command {
-        // set the paths where the relevant tools live
+    match set_path_args {
         Commands::SetPaths {
             salmon,
+            piscem,
             alevin_fry,
             pyroe,
         } => {
@@ -331,16 +321,17 @@ fn main() -> anyhow::Result<()> {
                 fs::create_dir_all(af_home_path.as_path())?;
             }
 
-            let rp = get_required_progs_from_paths(salmon, alevin_fry, pyroe)?;
+            let rp = get_required_progs_from_paths(salmon, piscem, alevin_fry, pyroe)?;
 
-            if rp.salmon.is_none() {
-                bail!("Suitable salmon executable not found");
+            let have_mapper = rp.salmon.is_some() || rp.piscem.is_some();
+            if !have_mapper {
+                bail!("Suitable executable for piscem or salmon not found — at least one of these must be available.");
             }
             if rp.alevin_fry.is_none() {
-                bail!("Suitable alevin_fry executable not found");
+                bail!("Suitable alevin_fry executable not found.");
             }
             if rp.pyroe.is_none() {
-                bail!("Suitable pyroe executable not found");
+                bail!("Suitable pyroe executable not found.");
             }
 
             let simpleaf_info_file = af_home_path.join("simpleaf_info.json");
@@ -352,7 +343,422 @@ fn main() -> anyhow::Result<()> {
             )
             .with_context(|| format!("could not write {}", simpleaf_info_file.display()))?;
         }
+        _ => {
+            bail!("unexpected command")
+        }
+    }
+    Ok(())
+}
 
+fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::Result<()> {
+    match index_args {
+        // if we are building the reference and indexing
+        Commands::Index {
+            ref_type,
+            fasta,
+            gtf,
+            rlen,
+            spliced,
+            unspliced,
+            dedup,
+            keep_duplicates,
+            ref_seq,
+            output,
+            use_piscem,
+            kmer_length,
+            minimizer_length,
+            sparse,
+            mut threads,
+        } => {
+            // Open the file in read-only mode with buffer.
+            let af_info_p = af_home_path.join("simpleaf_info.json");
+            let simpleaf_info_file = std::fs::File::open(&af_info_p).with_context({
+                ||
+                format!("Could not open file {}; please run the set-paths command before using `index` or `quant`", af_info_p.display())
+            })?;
+
+            let simpleaf_info_reader = BufReader::new(simpleaf_info_file);
+
+            // Read the JSON contents of the file
+            let v: serde_json::Value = serde_json::from_reader(simpleaf_info_reader)?;
+            let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+
+            // we are building a custom reference
+            if fasta.is_some() {
+                // make sure that the spliced+unspliced reference
+                // is supported if that's what's being requested.
+                match ref_type {
+                    ReferenceType::SplicedUnspliced => {
+                        let v = rp.pyroe.clone().unwrap().version;
+                        if let Err(e) = prog_utils::check_version_constraints(">=0.8.1, <1.0.0", &v)
+                        {
+                            bail!(e);
+                        }
+                    }
+                    ReferenceType::SplicedIntronic => {
+                        // in this branch we are making a spliced+intronic (splici) index, so
+                        // the user must have specified the read length.
+                        if rlen.is_none() {
+                            bail!(format!("A spliced+intronic reference was requested, but no read length arugment (--rlen) was provided."));
+                        }
+                    }
+                }
+            }
+
+            let info_file = output.join("index_info.json");
+            let mut index_info = json!({
+                "command" : "index",
+                "version_info" : rp,
+                "args" : {
+                    "output" : output,
+                    "keep_duplicates" : keep_duplicates,
+                    "sparse" : sparse,
+                    "threads" : threads,
+                }
+            });
+
+            run_fun!(mkdir -p $output)?;
+
+            // wow, the compiler is smart enough to
+            // figure out that this one need not be
+            // mutable because it is set once in either
+            // branch of the conditional below.
+            let reference_sequence;
+            // these may or may not be set, so must be
+            // mutable.
+            let mut splici_t2g = None;
+            let mut pyroe_duration = None;
+
+            // if we are generating a splici reference
+            if let (Some(fasta), Some(gtf)) = (fasta, gtf) {
+                let mut input_files = vec![fasta.clone(), gtf.clone()];
+
+                let outref = output.join("ref");
+                run_fun!(mkdir -p $outref)?;
+
+                let read_len;
+                let ref_file;
+                let t2g_file;
+
+                match ref_type {
+                    ReferenceType::SplicedIntronic => {
+                        read_len = rlen.unwrap();
+                        ref_file = format!("splici_fl{}.fa", read_len - 5);
+                        t2g_file = outref.join(format!("splici_fl{}_t2g_3col.tsv", read_len - 5));
+                    }
+                    ReferenceType::SplicedUnspliced => {
+                        read_len = 0;
+                        ref_file = String::from("spliceu.fa");
+                        t2g_file = outref.join("spliceu_t2g_3col.tsv");
+                    }
+                }
+
+                index_info["t2g_file"] = json!(&t2g_file);
+                index_info["args"]["fasta"] = json!(&fasta);
+                index_info["args"]["gtf"] = json!(&gtf);
+                index_info["args"]["spliced"] = json!(&spliced);
+                index_info["args"]["unspliced"] = json!(&unspliced);
+                index_info["args"]["dedup"] = json!(dedup);
+
+                std::fs::write(
+                    &info_file,
+                    serde_json::to_string_pretty(&index_info).unwrap(),
+                )
+                .with_context(|| format!("could not write {}", info_file.display()))?;
+
+                // set the splici_t2g option
+                splici_t2g = Some(t2g_file);
+
+                let mut cmd =
+                    std::process::Command::new(format!("{}", rp.pyroe.unwrap().exe_path.display()));
+                // select the command to run
+                match ref_type {
+                    ReferenceType::SplicedIntronic => {
+                        cmd.arg("make-splici");
+                    }
+                    ReferenceType::SplicedUnspliced => {
+                        cmd.arg("make-spliceu");
+                    }
+                };
+
+                // if the user wants to dedup output sequences
+                if dedup {
+                    cmd.arg(String::from("--dedup-seqs"));
+                }
+
+                // extra spliced sequence
+                if let Some(es) = spliced {
+                    cmd.arg(String::from("--extra-spliced"));
+                    cmd.arg(format!("{}", es.display()));
+                    input_files.push(es.clone());
+                }
+
+                // extra unspliced sequence
+                if let Some(eu) = unspliced {
+                    cmd.arg(String::from("--extra-unspliced"));
+                    cmd.arg(format!("{}", eu.display()));
+                    input_files.push(eu.clone());
+                }
+
+                cmd.arg(fasta).arg(gtf);
+
+                // if making splici the second positional argument is the
+                // read length.
+                match ref_type {
+                    ReferenceType::SplicedIntronic => {
+                        cmd.arg(format!("{}", read_len));
+                    }
+                    _ => {} // do nothing
+                };
+
+                // the output directory
+                cmd.arg(&outref);
+
+                check_files_exist(&input_files)?;
+
+                let pyroe_start = Instant::now();
+                let cres = cmd.output()?;
+                pyroe_duration = Some(pyroe_start.elapsed());
+
+                if !cres.status.success() {
+                    bail!("pyroe failed to return succesfully {:?}", cres.status);
+                }
+
+                reference_sequence = Some(outref.join(ref_file));
+            } else {
+                // we are running on a set of references directly
+
+                // in this path (due to the argument parser requiring
+                // either --fasta or --ref-seq, ref-seq should be safe to
+                // unwrap).
+                index_info["args"]["ref-seq"] = json!(ref_seq.clone().unwrap());
+
+                std::fs::write(
+                    &info_file,
+                    serde_json::to_string_pretty(&index_info).unwrap(),
+                )
+                .with_context(|| format!("could not write {}", info_file.display()))?;
+
+                reference_sequence = ref_seq;
+            }
+
+            let ref_seq = reference_sequence.expect(
+                "reference sequence should either be generated from --fasta by make-splici or set with --ref-seq",
+            );
+
+            let input_files = vec![ref_seq.clone()];
+            check_files_exist(&input_files)?;
+
+            let output_index_dir = output.join("index");
+            let index_duration;
+            if use_piscem {
+                let mut piscem_index_cmd = std::process::Command::new(format!(
+                    "{}",
+                    rp.piscem.unwrap().exe_path.display()
+                ));
+
+                run_fun!(mkdir -p $output_index_dir)?;
+                let output_index_stem = output_index_dir.join("piscem_idx");
+
+                piscem_index_cmd
+                    .arg("build")
+                    .arg("-k")
+                    .arg(kmer_length.to_string())
+                    .arg("-m")
+                    .arg(minimizer_length.to_string())
+                    .arg("-o")
+                    .arg(&output_index_stem)
+                    .arg("-s")
+                    .arg(&ref_seq);
+
+                // if the user requested more threads than can be used
+                if let Ok(max_threads_usize) = std::thread::available_parallelism() {
+                    let max_threads = max_threads_usize.get() as u32;
+                    if threads > max_threads {
+                        warn!(
+                                "The maximum available parallelism is {}, but {} threads were requested.",
+                                max_threads, threads
+                            );
+                        warn!("setting number of threads to {}", max_threads);
+                        threads = max_threads;
+                    }
+                }
+
+                piscem_index_cmd
+                    .arg("--threads")
+                    .arg(format!("{}", threads));
+
+                let index_start = Instant::now();
+                piscem_index_cmd
+                    .output()
+                    .expect("failed to run piscem build");
+                index_duration = index_start.elapsed();
+
+                let index_json_file = output_index_dir.join("simpleaf_index.json");
+                let index_json = json!({
+                        "cmd" : format!("{:?}",piscem_index_cmd),
+                        "index_type" : "piscem",
+                        "piscem_index_parameters" : {
+                            "k" : kmer_length,
+                            "m" : minimizer_length,
+                            "threads" : threads,
+                            "ref" : ref_seq
+                        }
+                });
+                std::fs::write(
+                    &index_json_file,
+                    serde_json::to_string_pretty(&index_json).unwrap(),
+                )
+                .with_context(|| format!("could not write {}", index_json_file.display()))?;
+            } else {
+                let mut salmon_index_cmd = std::process::Command::new(format!(
+                    "{}",
+                    rp.salmon.unwrap().exe_path.display()
+                ));
+
+                salmon_index_cmd
+                    .arg("index")
+                    .arg("-k")
+                    .arg(kmer_length.to_string())
+                    .arg("-i")
+                    .arg(&output_index_dir)
+                    .arg("-t")
+                    .arg(&ref_seq);
+
+                // if the user requested a sparse index.
+                if sparse {
+                    salmon_index_cmd.arg("--sparse");
+                }
+
+                // if the user requested keeping duplicated sequences.
+                if keep_duplicates {
+                    salmon_index_cmd.arg("--keepDuplicates");
+                }
+
+                // if the user requested more threads than can be used
+                if let Ok(max_threads_usize) = std::thread::available_parallelism() {
+                    let max_threads = max_threads_usize.get() as u32;
+                    if threads > max_threads {
+                        warn!(
+                        "The maximum available parallelism is {}, but {} threads were requested.",
+                        max_threads, threads
+                    );
+                        warn!("setting number of threads to {}", max_threads);
+                        threads = max_threads;
+                    }
+                }
+
+                salmon_index_cmd
+                    .arg("--threads")
+                    .arg(format!("{}", threads));
+
+                let index_start = Instant::now();
+                salmon_index_cmd
+                    .output()
+                    .expect("failed to run salmon index");
+                index_duration = index_start.elapsed();
+
+                let index_json_file = output_index_dir.join("simpleaf_index.json");
+                let index_json = json!({
+                        "cmd" : format!("{:?}",salmon_index_cmd),
+                        "index_type" : "salmon",
+                        "salmon_index_parameters" : {
+                            "k" : kmer_length,
+                            "sparse" : sparse,
+                            "keep_duplicates" : keep_duplicates,
+                            "threads" : threads,
+                            "ref" : ref_seq
+                        }
+                });
+                std::fs::write(
+                    &index_json_file,
+                    serde_json::to_string_pretty(&index_json).unwrap(),
+                )
+                .with_context(|| format!("could not write {}", index_json_file.display()))?;
+            }
+
+            // copy over the t2g file to the index
+            if let Some(t2g_file) = splici_t2g {
+                let index_t2g_path = output_index_dir.join("t2g_3col.tsv");
+                std::fs::copy(t2g_file, index_t2g_path)?;
+            }
+
+            let index_log_file = output.join("simpleaf_index_log.json");
+            let index_log_info = if let Some(pyroe_duration) = pyroe_duration {
+                // if we ran make-splici
+                json!({
+                    "time_info" : {
+                        "pyroe_time" : pyroe_duration,
+                        "index_time" : index_duration
+                    }
+                })
+            } else {
+                // if we indexed provided sequences directly
+                json!({
+                    "time_info" : {
+                        "index_time" : index_duration
+                    }
+                })
+            };
+
+            std::fs::write(
+                &index_log_file,
+                serde_json::to_string_pretty(&index_log_info).unwrap(),
+            )
+            .with_context(|| format!("could not write {}", index_log_file.display()))?;
+        }
+        _ => {
+            bail!("invalid command");
+        }
+    }
+    Ok(())
+}
+
+fn inspect_simpleaf(af_home_path: PathBuf) -> anyhow::Result<()> {
+    let af_info_p = af_home_path.join("simpleaf_info.json");
+    let simpleaf_info_file = std::fs::File::open(&af_info_p).with_context({
+        || {
+            format!(
+                "Could not open file {}; please run the set-paths command",
+                af_info_p.display()
+            )
+        }
+    })?;
+
+    let simpleaf_info_reader = BufReader::new(simpleaf_info_file);
+
+    // Read the JSON contents of the file as an instance of `User`.
+    let v: serde_json::Value = serde_json::from_reader(simpleaf_info_reader)?;
+    println!(
+        "\n----- simpleaf info -----\n{}",
+        serde_json::to_string_pretty(&v).unwrap()
+    );
+
+    // do we have a custom chemistry file
+    let custom_chem_p = af_home_path.join("custom_chemistries.json");
+    if custom_chem_p.is_file() {
+        println!(
+            "\nCustom chemistries exist at path: {}\n----- custom chemistries -----\n",
+            custom_chem_p.display()
+        );
+        // parse the custom chemistry json file
+        let custom_chem_file = std::fs::File::open(&custom_chem_p).with_context({
+            || {
+                format!(
+                    "couldn't open the custom chemistry file {}",
+                    custom_chem_p.display()
+                )
+            }
+        })?;
+        let custom_chem_reader = BufReader::new(custom_chem_file);
+        let v: serde_json::Value = serde_json::from_reader(custom_chem_reader)?;
+        println!("{}", serde_json::to_string_pretty(&v).unwrap());
+    }
+    Ok(())
+}
+
+fn add_chemistry(af_home_path: PathBuf, add_chem_cmd: Commands) -> anyhow::Result<()> {
+    match add_chem_cmd {
         Commands::AddChemistry { name, geometry } => {
             // check geometry string, if no good then
             // propagate error.
@@ -400,284 +806,18 @@ fn main() -> anyhow::Result<()> {
                 .write_all(serde_json::to_string_pretty(&v).unwrap().as_bytes())
                 .with_context(|| format!("could not write {}", custom_chem_p.display()))?;
         }
-
-        Commands::Inspect {} => {
-            let af_info_p = af_home_path.join("simpleaf_info.json");
-            let simpleaf_info_file = std::fs::File::open(&af_info_p).with_context({
-                || {
-                    format!(
-                        "Could not open file {}; please run the set-paths command",
-                        af_info_p.display()
-                    )
-                }
-            })?;
-
-            let simpleaf_info_reader = BufReader::new(simpleaf_info_file);
-
-            // Read the JSON contents of the file as an instance of `User`.
-            let v: serde_json::Value = serde_json::from_reader(simpleaf_info_reader)?;
-            println!(
-                "\n----- simpleaf info -----\n{}",
-                serde_json::to_string_pretty(&v).unwrap()
-            );
-
-            // do we have a custom chemistry file
-            let custom_chem_p = af_home_path.join("custom_chemistries.json");
-            if custom_chem_p.is_file() {
-                println!(
-                    "\nCustom chemistries exist at path: {}\n----- custom chemistries -----\n",
-                    custom_chem_p.display()
-                );
-                // parse the custom chemistry json file
-                let custom_chem_file = std::fs::File::open(&custom_chem_p).with_context({
-                    || {
-                        format!(
-                            "couldn't open the custom chemistry file {}",
-                            custom_chem_p.display()
-                        )
-                    }
-                })?;
-                let custom_chem_reader = BufReader::new(custom_chem_file);
-                let v: serde_json::Value = serde_json::from_reader(custom_chem_reader)?;
-                println!("{}", serde_json::to_string_pretty(&v).unwrap());
-            }
+        _ => {
+            bail!("unknown command");
         }
-        // if we are building the reference and indexing
-        Commands::Index {
-            ref_type,
-            fasta,
-            gtf,
-            rlen,
-            spliced,
-            unspliced,
-            dedup,
-            keep_duplicates,
-            ref_seq,
-            output,
-            kmer_length,
-            sparse,
-            mut threads,
-        } => {
-            // Open the file in read-only mode with buffer.
-            let af_info_p = af_home_path.join("simpleaf_info.json");
-            let simpleaf_info_file = std::fs::File::open(&af_info_p).with_context({
-                ||
-                format!("Could not open file {}; please run the set-paths command before using `index` or `quant`", af_info_p.display())
-            })?;
+    }
+    Ok(())
+}
 
-            let simpleaf_info_reader = BufReader::new(simpleaf_info_file);
-
-            // Read the JSON contents of the file
-            let v: serde_json::Value = serde_json::from_reader(simpleaf_info_reader)?;
-            let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
-
-            // we are building a custom reference
-            if fasta.is_some() {
-                // make sure that the spliced+unspliced reference 
-                // is supported if that's what's being requested.
-                match ref_type {
-                    ReferenceType::SplicedUnspliced => {
-                        let v = rp.pyroe.clone().unwrap().version;
-                        if let Err(e) = prog_utils::check_version_constraints(">=0.8.1, <1.0.0", &v)  {
-                            bail!(e);
-                        }
-                    },
-                    _ => {}
-                } 
-            }
-
-            let info_file = output.join("index_info.json");
-            let mut index_info = json!({
-                "command" : "index",
-                "version_info" : rp,
-                "args" : {
-                    "output" : output,
-                    "keep_duplicates" : keep_duplicates,
-                    "sparse" : sparse,
-                    "threads" : threads,
-                }
-            });
-
-            run_fun!(mkdir -p $output)?;
-
-            // wow, the compiler is smart enough to
-            // figure out that this one need not be
-            // mutable because it is set once in either
-            // branch of the conditional below.
-            let reference_sequence;
-            // these may or may not be set, so must be
-            // mutable.
-            let mut splici_t2g = None;
-            let mut pyroe_duration = None;
-
-            // if we are generating a splici reference
-            if let (Some(fasta), Some(gtf), Some(rlen)) = (fasta, gtf, rlen) {
-                let mut input_files = vec![fasta.clone(), gtf.clone()];
-                let ref_file = format!("splici_fl{}.fa", rlen - 5);
-                let outref = output.join("ref");
-                run_fun!(mkdir -p $outref)?;
-
-                let t2g_file = outref.join(format!("splici_fl{}_t2g_3col.tsv", rlen - 5));
-
-                index_info["t2g_file"] = json!(&t2g_file);
-                index_info["args"]["fasta"] = json!(&fasta);
-                index_info["args"]["gtf"] = json!(&gtf);
-                index_info["args"]["spliced"] = json!(&spliced);
-                index_info["args"]["unspliced"] = json!(&unspliced);
-                index_info["args"]["dedup"] = json!(dedup);
-
-                std::fs::write(
-                    &info_file,
-                    serde_json::to_string_pretty(&index_info).unwrap(),
-                )
-                .with_context(|| format!("could not write {}", info_file.display()))?;
-
-                // set the splici_t2g option
-                splici_t2g = Some(t2g_file);
-
-                let mut cmd =
-                    std::process::Command::new(format!("{}", rp.pyroe.unwrap().exe_path.display()));
-                // we will run the make-splici command
-                cmd.arg("make-splici");
-
-                // if the user wants to dedup output sequences
-                if dedup {
-                    cmd.arg(String::from("--dedup-seqs"));
-                }
-
-                // extra spliced sequence
-                if let Some(es) = spliced {
-                    cmd.arg(String::from("--extra-spliced"));
-                    cmd.arg(format!("{}", es.display()));
-                    input_files.push(es.clone());
-                }
-
-                // extra unspliced sequence
-                if let Some(eu) = unspliced {
-                    cmd.arg(String::from("--extra-unspliced"));
-                    cmd.arg(format!("{}", eu.display()));
-                    input_files.push(eu.clone());
-                }
-
-                cmd.arg(fasta)
-                    .arg(gtf)
-                    .arg(format!("{}", rlen))
-                    .arg(&outref);
-
-                check_files_exist(&input_files)?;
-
-                let pyroe_start = Instant::now();
-                let cres = cmd.output()?;
-                pyroe_duration = Some(pyroe_start.elapsed());
-
-                if !cres.status.success() {
-                    bail!("pyroe failed to return succesfully {:?}", cres.status);
-                }
-
-                reference_sequence = Some(outref.join(ref_file));
-            } else {
-                // we are running on a set of references directly
-
-                // in this path (due to the argument parser requiring
-                // either --fasta or --ref-seq, ref-seq should be safe to
-                // unwrap).
-                index_info["args"]["ref-seq"] = json!(ref_seq.clone().unwrap());
-
-                std::fs::write(
-                    &info_file,
-                    serde_json::to_string_pretty(&index_info).unwrap(),
-                )
-                .with_context(|| format!("could not write {}", info_file.display()))?;
-
-                reference_sequence = ref_seq;
-            }
-
-            let mut salmon_index_cmd =
-                std::process::Command::new(format!("{}", rp.salmon.unwrap().exe_path.display()));
-            let ref_seq = reference_sequence.expect(
-                "reference sequence should either be generated from --fasta by make-splici or set with --ref-seq",
-            );
-
-            let input_files = vec![ref_seq.clone()];
-            check_files_exist(&input_files)?;
-
-            let output_index_dir = output.join("index");
-            salmon_index_cmd
-                .arg("index")
-                .arg("-k")
-                .arg(kmer_length.to_string())
-                .arg("-i")
-                .arg(&output_index_dir)
-                .arg("-t")
-                .arg(ref_seq);
-
-            // if the user requested a sparse index.
-            if sparse {
-                salmon_index_cmd.arg("--sparse");
-            }
-
-            // if the user requested keeping duplicated sequences.
-            if keep_duplicates {
-                salmon_index_cmd.arg("--keepDuplicates");
-            }
-
-            // if the user requested more threads than can be used
-            if let Ok(max_threads_usize) = std::thread::available_parallelism() {
-                let max_threads = max_threads_usize.get() as u32;
-                if threads > max_threads {
-                    warn!(
-                        "The maximum available parallelism is {}, but {} threads were requested.",
-                        max_threads, threads
-                    );
-                    warn!("setting number of threads to {}", max_threads);
-                    threads = max_threads;
-                }
-            }
-
-            salmon_index_cmd
-                .arg("--threads")
-                .arg(format!("{}", threads));
-
-            let index_start = Instant::now();
-            salmon_index_cmd
-                .output()
-                .expect("failed to run salmon index");
-            let index_duration = index_start.elapsed();
-
-            // copy over the t2g file to the index
-            if let Some(t2g_file) = splici_t2g {
-                let index_t2g_path = output_index_dir.join("t2g_3col.tsv");
-                std::fs::copy(t2g_file, index_t2g_path)?;
-            }
-
-            let index_log_file = output.join("simpleaf_index_log.json");
-            let index_log_info = if let Some(pyroe_duration) = pyroe_duration {
-                // if we ran make-splici
-                json!({
-                    "time_info" : {
-                        "pyroe_time" : pyroe_duration,
-                        "index_time" : index_duration
-                    }
-                })
-            } else {
-                // if we indexed provided sequences directly
-                json!({
-                    "time_info" : {
-                        "index_time" : index_duration
-                    }
-                })
-            };
-
-            std::fs::write(
-                &index_log_file,
-                serde_json::to_string_pretty(&index_log_info).unwrap(),
-            )
-            .with_context(|| format!("could not write {}", index_log_file.display()))?;
-        }
-
-        // if we are running mapping and quantification
+fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<()> {
+    match quant_cmd {
         Commands::Quant {
             index,
+            use_piscem,
             map_dir,
             reads1,
             reads2,
@@ -710,6 +850,73 @@ fn main() -> anyhow::Result<()> {
             let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
             info!("prog info = {:?}", rp);
+
+            // figure out what type of index we expect
+            let index_type;
+            // only bother with this if we are mapping reads and not if we are
+            // starting from a RAD file
+            if let Some(index) = index.clone() {
+                // if the user said piscem explicitly, believe them
+                if !use_piscem {
+                    // otherwise, see if we built the index with simpleaf and
+                    // therefore recorded the index type
+                    let index_json_path = index.join("simpleaf_index.json");
+                    match index_json_path.try_exists() {
+                        Ok(true) => {
+                            // we have the simpleaf_index.json file, so parse it.
+                            let index_json_file = std::fs::File::open(&index_json_path)
+                                .with_context({
+                                    || format!("Could not open file {}", index_json_path.display())
+                                })?;
+
+                            let index_json_reader = BufReader::new(&index_json_file);
+                            let v: serde_json::Value = serde_json::from_reader(index_json_reader)?;
+                            let it_str: String = serde_json::from_value(v["index_type"].clone())?;
+                            match it_str.as_ref() {
+                                "salmon" => {
+                                    index_type = IndexType::Salmon(index);
+                                }
+                                "piscem" => {
+                                    index_type = IndexType::Piscem(index.join("piscem_idx"));
+                                }
+                                _ => {
+                                    bail!(
+                                        "unknown index type {} present in {}",
+                                        it_str,
+                                        index_json_path.display()
+                                    );
+                                }
+                            }
+                        }
+                        Ok(false) => {
+                            index_type = IndexType::Salmon(index);
+                        }
+                        Err(e) => {
+                            bail!(e);
+                        }
+                    }
+                } else {
+                    index_type = IndexType::Piscem(index);
+                }
+            } else {
+                index_type = IndexType::NoIndex;
+            }
+
+            // make sure we have an program matching the
+            // appropriate index type
+            match index_type {
+                IndexType::Piscem(_) => {
+                    if rp.piscem.is_none() {
+                        bail!("A piscem index is being used, but no piscem executable is provided. Please set one with `set-paths`.");
+                    }
+                }
+                IndexType::Salmon(_) => {
+                    if rp.salmon.is_none() {
+                        bail!("A salmon index is being used, but no piscem executable is provided. Please set one with `set-paths`.");
+                    }
+                }
+                IndexType::NoIndex => {}
+            }
 
             // do we have a custom chemistry file
             let custom_chem_p = af_home_path.join("custom_chemistries.json");
@@ -858,77 +1065,143 @@ fn main() -> anyhow::Result<()> {
 
             // if we are mapping against an index
             if let Some(index) = index {
-                let mut salmon_quant_cmd = std::process::Command::new(format!(
-                    "{}",
-                    rp.salmon.unwrap().exe_path.display()
-                ));
-
-                // set the input index and library type
-                let index_path = format!("{}", index.display());
-                salmon_quant_cmd
-                    .arg("alevin")
-                    .arg("--index")
-                    .arg(index_path)
-                    .arg("-l")
-                    .arg("A");
-
                 let reads1 = reads1.expect(
                     "since mapping against an index is requested, read1 files must be provded.",
                 );
                 let reads2 = reads2.expect(
                     "since mapping against an index is requested, read2 files must be provded.",
                 );
-                // location of the reads
-                // note: salmon uses space so separate
-                // these, not commas, so build the proper
-                // strings here.
                 assert_eq!(reads1.len(), reads2.len());
 
-                salmon_quant_cmd.arg("-1");
-                for rf in &reads1 {
-                    salmon_quant_cmd.arg(rf);
-                }
-                salmon_quant_cmd.arg("-2");
-                for rf in &reads2 {
-                    salmon_quant_cmd.arg(rf);
-                }
+                match index_type {
+                    IndexType::Piscem(index_base) => {
+                        // using a piscem index
+                        let mut piscem_quant_cmd = std::process::Command::new(format!(
+                            "{}",
+                            rp.piscem.unwrap().exe_path.display()
+                        ));
+                        let index_path = format!("{}", index_base.display());
+                        piscem_quant_cmd
+                            .arg("map-sc")
+                            .arg("--index")
+                            .arg(index_path);
 
-                // location of outptu directory, number of threads
-                map_output = output.join("af_map");
-                salmon_quant_cmd
-                    .arg("--threads")
-                    .arg(format!("{}", threads))
-                    .arg("-o")
-                    .arg(&map_output);
+                        // location of output directory, number of threads
+                        map_output = output.join("af_map");
+                        piscem_quant_cmd
+                            .arg("--threads")
+                            .arg(format!("{}", threads))
+                            .arg("-o")
+                            .arg(&map_output);
 
-                // if the user explicitly requested to use selective-alignment
-                // then enable that
-                if use_selective_alignment {
-                    salmon_quant_cmd.arg("--rad");
-                } else {
-                    // otherwise default to sketch mode
-                    salmon_quant_cmd.arg("--sketch");
-                }
+                        let reads1_str = reads1
+                            .iter()
+                            .map(|x| x.to_string_lossy().into_owned())
+                            .collect::<Vec<String>>()
+                            .join(",");
+                        piscem_quant_cmd.arg("-1").arg(reads1_str);
 
-                // setting the technology / chemistry
-                add_chemistry_to_args(chem.as_str(), &mut salmon_quant_cmd)?;
+                        let reads2_str = reads2
+                            .iter()
+                            .map(|x| x.to_string_lossy().into_owned())
+                            .collect::<Vec<String>>()
+                            .join(",");
+                        piscem_quant_cmd.arg("-2").arg(reads2_str);
 
-                info!("cmd : {:?}", salmon_quant_cmd);
+                        // setting the technology / chemistry
+                        add_chemistry_to_args_piscem(chem.as_str(), &mut piscem_quant_cmd)?;
 
-                let mut input_files = vec![index.clone()];
-                input_files.extend_from_slice(&reads1);
-                input_files.extend_from_slice(&reads2);
+                        info!("cmd : {:?}", piscem_quant_cmd);
 
-                check_files_exist(&input_files)?;
+                        let mut input_files = vec![
+                            index_base.clone().with_extension("ctab"),
+                            index_base.clone().with_extension("refinfo"),
+                            index_base.clone().with_extension("sshash"),
+                        ];
+                        input_files.extend_from_slice(&reads1);
+                        input_files.extend_from_slice(&reads2);
 
-                let map_start = Instant::now();
-                let map_proc_out = salmon_quant_cmd
-                    .output()
-                    .expect("failed to execute salmon alevin [mapping phase]");
-                map_duration = map_start.elapsed();
+                        check_files_exist(&input_files)?;
 
-                if !map_proc_out.status.success() {
-                    bail!("mapping failed with exit status {:?}", map_proc_out.status);
+                        let map_start = Instant::now();
+                        let map_proc_out = piscem_quant_cmd
+                            .output()
+                            .expect("failed to execute piscem [mapping phase]");
+                        map_duration = map_start.elapsed();
+                        if !map_proc_out.status.success() {
+                            bail!("mapping failed with exit status {:?}", map_proc_out.status);
+                        }
+                    }
+                    IndexType::Salmon(index_base) => {
+                        // using a salmon index
+                        let mut salmon_quant_cmd = std::process::Command::new(format!(
+                            "{}",
+                            rp.salmon.unwrap().exe_path.display()
+                        ));
+
+                        // set the input index and library type
+                        let index_path = format!("{}", index_base.display());
+                        salmon_quant_cmd
+                            .arg("alevin")
+                            .arg("--index")
+                            .arg(index_path)
+                            .arg("-l")
+                            .arg("A");
+
+                        // location of the reads
+                        // note: salmon uses space so separate
+                        // these, not commas, so build the proper
+                        // strings here.
+
+                        salmon_quant_cmd.arg("-1");
+                        for rf in &reads1 {
+                            salmon_quant_cmd.arg(rf);
+                        }
+                        salmon_quant_cmd.arg("-2");
+                        for rf in &reads2 {
+                            salmon_quant_cmd.arg(rf);
+                        }
+
+                        // location of output directory, number of threads
+                        map_output = output.join("af_map");
+                        salmon_quant_cmd
+                            .arg("--threads")
+                            .arg(format!("{}", threads))
+                            .arg("-o")
+                            .arg(&map_output);
+
+                        // if the user explicitly requested to use selective-alignment
+                        // then enable that
+                        if use_selective_alignment {
+                            salmon_quant_cmd.arg("--rad");
+                        } else {
+                            // otherwise default to sketch mode
+                            salmon_quant_cmd.arg("--sketch");
+                        }
+
+                        // setting the technology / chemistry
+                        add_chemistry_to_args_salmon(chem.as_str(), &mut salmon_quant_cmd)?;
+
+                        info!("cmd : {:?}", salmon_quant_cmd);
+
+                        let mut input_files = vec![index.clone()];
+                        input_files.extend_from_slice(&reads1);
+                        input_files.extend_from_slice(&reads2);
+
+                        check_files_exist(&input_files)?;
+
+                        let map_start = Instant::now();
+                        let map_proc_out = salmon_quant_cmd
+                            .output()
+                            .expect("failed to execute salmon alevin [mapping phase]");
+                        map_duration = map_start.elapsed();
+                        if !map_proc_out.status.success() {
+                            bail!("mapping failed with exit status {:?}", map_proc_out.status);
+                        }
+                    }
+                    IndexType::NoIndex => {
+                        bail!("Cannot perform mapping an quantification without known (piscem or salmon) index!");
+                    }
                 }
             } else {
                 map_output = map_dir
@@ -1047,7 +1320,151 @@ fn main() -> anyhow::Result<()> {
             )
             .with_context(|| format!("could not write {}", af_quant_info_file.display()))?;
         }
+        _ => {
+            bail!("unknown command")
+        }
+    }
+    Ok(())
+}
+
+enum IndexType {
+    Salmon(PathBuf),
+    Piscem(PathBuf),
+    NoIndex,
+}
+
+fn main() -> anyhow::Result<()> {
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env_lossy(),
+        )
+        .init();
+    const AF_HOME: &str = "ALEVIN_FRY_HOME";
+    let af_home_path = match env::var(AF_HOME) {
+        Ok(p) => PathBuf::from(p),
+        Err(e) => {
+            bail!(
+                "${} is unset {}, please set this environment variable to continue.",
+                AF_HOME,
+                e
+            );
+        }
+    };
+
+    let cli_args = Cli::parse();
+
+    match cli_args.command {
+        // set the paths where the relevant tools live
+        Commands::SetPaths {
+            salmon,
+            piscem,
+            alevin_fry,
+            pyroe,
+        } => {
+            return set_paths(
+                af_home_path,
+                Commands::SetPaths {
+                    salmon,
+                    piscem,
+                    alevin_fry,
+                    pyroe,
+                },
+            );
+        }
+        Commands::AddChemistry { name, geometry } => {
+            return add_chemistry(af_home_path, Commands::AddChemistry { name, geometry });
+        }
+        Commands::Inspect {} => {
+            return inspect_simpleaf(af_home_path);
+        }
+        // if we are building the reference and indexing
+        Commands::Index {
+            ref_type,
+            fasta,
+            gtf,
+            rlen,
+            spliced,
+            unspliced,
+            dedup,
+            keep_duplicates,
+            ref_seq,
+            output,
+            use_piscem,
+            kmer_length,
+            minimizer_length,
+            sparse,
+            threads,
+        } => {
+            return build_ref_and_index(
+                af_home_path,
+                Commands::Index {
+                    ref_type,
+                    fasta,
+                    gtf,
+                    rlen,
+                    spliced,
+                    unspliced,
+                    dedup,
+                    keep_duplicates,
+                    ref_seq,
+                    output,
+                    use_piscem,
+                    kmer_length,
+                    minimizer_length,
+                    sparse,
+                    threads,
+                },
+            );
+        }
+
+        // if we are running mapping and quantification
+        Commands::Quant {
+            index,
+            use_piscem,
+            map_dir,
+            reads1,
+            reads2,
+            threads,
+            use_selective_alignment,
+            expected_ori,
+            knee,
+            unfiltered_pl,
+            explicit_pl,
+            forced_cells,
+            expect_cells,
+            min_reads,
+            resolution,
+            t2g_map,
+            chemistry,
+            output,
+        } => {
+            return map_and_quant(
+                af_home_path,
+                Commands::Quant {
+                    index,
+                    use_piscem,
+                    map_dir,
+                    reads1,
+                    reads2,
+                    threads,
+                    use_selective_alignment,
+                    expected_ori,
+                    knee,
+                    unfiltered_pl,
+                    explicit_pl,
+                    forced_cells,
+                    expect_cells,
+                    min_reads,
+                    resolution,
+                    t2g_map,
+                    chemistry,
+                    output,
+                },
+            );
+        }
     }
     // success, yay!
-    Ok(())
 }

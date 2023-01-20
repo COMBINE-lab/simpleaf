@@ -8,8 +8,8 @@ echo "Testing simpleaf using a toy read-reference set"
 
 # the temp directory used, within $DIR
 # omit the -p parameter to create a temporal directory in the default location
-# WORK_DIR=`mktemp -d -p "$DIR"`
-WORK_DIR=`mktemp -d`
+WORK_DIR=`mktemp -d -p "$DIR"`
+#WORK_DIR=`mktemp -d`
 LOG_DIR="${WORK_DIR}/simpleaf_logs"
 ALEVIN_FRY_HOME="${WORK_DIR}/alevin_fry_home"
 mkdir -p $ALEVIN_FRY_HOME
@@ -55,7 +55,7 @@ fi
 echo "  - Testing simpleaf index"
 REF_DIR="${WORK_DIR}/toy_read_ref_set/toy_human_ref"
 index_cmd="ALEVIN_FRY_HOME=$ALEVIN_FRY_HOME \
-${SIMPLEAF} index -f ${REF_DIR}/fasta/genome.fa \
+${SIMPLEAF} index --ref-type spliced+intronic -f ${REF_DIR}/fasta/genome.fa \
 -g ${REF_DIR}/genes/genes.gtf \
 -r 91 -o ${WORK_DIR}/test_index_outdir"
 eval $index_cmd
@@ -90,6 +90,6 @@ else
 fi
 # register the cleanup function to be called on the EXIT signal
 status=$?
-[ "$status" -eq 0 ] && rm -rf $WORK_DIR 
+#[ "$status" -eq 0 ] && rm -rf $WORK_DIR 
 
 echo "simpleaf works!"
