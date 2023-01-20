@@ -390,7 +390,7 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                 match ref_type {
                     ReferenceType::SplicedUnspliced => {
                         let v = rp.pyroe.clone().unwrap().version;
-                        if let Err(e) = prog_utils::check_version_constraints(">=0.8.1, <1.0.0", &v)
+                        if let Err(e) = prog_utils::check_version_constraints(">=0.7.1, <1.0.0", &v)
                         {
                             bail!(e);
                         }
