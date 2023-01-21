@@ -8,8 +8,8 @@ echo "Testing simpleaf using a toy read-reference set"
 
 # the temp directory used, within $DIR
 # omit the -p parameter to create a temporal directory in the default location
-WORK_DIR=`mktemp -d -p "$DIR"`
-#WORK_DIR=`mktemp -d`
+#WORK_DIR=`mktemp -d -p "$DIR"`
+WORK_DIR=`mktemp -d`
 LOG_DIR="${WORK_DIR}/simpleaf_logs"
 ALEVIN_FRY_HOME="${WORK_DIR}/alevin_fry_home"
 mkdir -p $ALEVIN_FRY_HOME
