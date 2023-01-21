@@ -549,6 +549,12 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
             let output_index_dir = output.join("index");
             let index_duration;
             if use_piscem {
+                // ensure we have piscem 
+                if rp.piscem.is_none() {
+                    bail!("The construction of a piscem index was requested, but a valid piscem executable was not available. \n\
+                           Please either set a path using the `set-paths` command, or ensure the `PISCEM` environment variable is set properly.");
+                }
+
                 let mut piscem_index_cmd = std::process::Command::new(format!(
                     "{}",
                     rp.piscem.unwrap().exe_path.display()
@@ -608,6 +614,12 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                 )
                 .with_context(|| format!("could not write {}", index_json_file.display()))?;
             } else {
+                // ensure we have piscem 
+                if rp.salmon.is_none() {
+                    bail!("The construction of a salmon index was requested, but a valid piscem executable was not available. \n\
+                           Please either set a path using the `set-paths` command, or ensure the `SALMON` environment variable is set properly.");
+                }
+
                 let mut salmon_index_cmd = std::process::Command::new(format!(
                     "{}",
                     rp.salmon.unwrap().exe_path.display()
