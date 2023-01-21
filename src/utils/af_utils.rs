@@ -85,6 +85,39 @@ pub struct GeomPiece {
     kind: char,
 }
 
+impl GeomPiece {
+    fn append_piece_piscem_style(&self, gstr: &mut String, curr_read: &mut u32, last_pos: &mut u32) {
+        // if we haven't started constructing gstr yet
+        if gstr.is_empty() {
+            // this is the first piece
+            *gstr += &format!("{}{{", self.read_num);
+        } else if self.read_num != *curr_read {
+            // if this isn't the first piece
+            if *last_pos == u32::MAX {
+                *gstr += "}";
+            } else {
+                *gstr += "x:}";
+            }
+            *gstr += &format!("{}{{", self.read_num);
+            *last_pos = 0;
+        }
+        *curr_read = self.read_num;
+
+        // regardless of if this is the first piece or not
+        // we have to add the geometry description
+        let prefix_x = self.pos_start - (*last_pos + 1);
+        if prefix_x > 0 { *gstr += &format!("x[{}]", prefix_x ); }
+        let l = self.length;
+        if l < u32::MAX {
+            *gstr += &format!("{}[{}]", self.kind, self.length );
+            *last_pos += prefix_x + self.length;
+        } else {
+            *gstr += &format!("{}:", self.kind);
+            *last_pos = u32::MAX;
+        }
+    }
+}
+
 // parses the range [x-y] from x to y into 
 // a pair of a staring offset and a length 
 // if the range is of the form [x-end] then 
@@ -96,7 +129,7 @@ fn parse_range(r: &str) -> (u32, u32) {
         let e = if e == &"end" { u32::MAX } else { e.parse::<u32>().unwrap() };
         let l = if e < u32::MAX { (e - s) + 1 } else { u32::MAX };
         println!("range is (start : {}, len : {})", s, l);
-        return (s, l)
+        (s, l)
     } else {
         panic!("could not parse range {}", r);
     }
@@ -152,75 +185,18 @@ impl CustomGeometry {
         elements.sort();
 
         let mut gstr = String::new();
-
-        let e0 = elements[0];
-        let mut curr_read = e0.read_num;
-        let mut last_pos = 0;
-
-        gstr += &format!("{}{{", curr_read);
-        let prefix_x = e0.pos_start - (last_pos + 1);
-        if prefix_x > 0 { gstr += &format!("x[{}]", prefix_x ); }
-        let l = e0.length;
-        if l < u32::MAX {
-            gstr += &format!("{}[{}]", e0.kind, e0.length );
-            last_pos += prefix_x + e0.length;
-        } else {
-            gstr += &format!("{}:", e0.kind);
-            last_pos = u32::MAX;
-        }
-
-        let e1 = elements[1];
-        if e1.read_num != curr_read {
-            if last_pos == u32::MAX {
-                gstr += "}";
-            } else {
-                gstr += "x:}";
-            }
-            curr_read = e1.read_num;
-            gstr += &format!("{}{{", curr_read);
-            last_pos = 0;
-        }
-
-        let prefix_x = e1.pos_start - (last_pos + 1);
-        if prefix_x > 0 { gstr += &format!("x[{}]", prefix_x ); }
-        let l = e1.length;
-        if l < u32::MAX { 
-            gstr += &format!("{}[{}]", e1.kind, e1.length );
-            last_pos += prefix_x + e1.length;
-        } else {
-            gstr += &format!("{}:", e1.kind);
-            last_pos = u32::MAX;
-        }
-
-        let e2 = elements[2];
-        if e2.read_num != curr_read {
-            if last_pos == u32::MAX {
-                gstr += "}";
-            } else {
-                gstr += "x:}";
-            }
-            curr_read = e2.read_num;
-            gstr += &format!("{}{{", curr_read);
-            last_pos = 0;
-        }
-
-        let prefix_x = e2.pos_start - (last_pos + 1);
-        if prefix_x > 0 { gstr += &format!("x[{}]", prefix_x ); }
-
-        let l = e2.length;
-        if l < u32::MAX {
-            gstr += &format!("{}[{}]", e2.kind, e2.length );
-            last_pos += prefix_x + e2.length;
-        } else {
-            gstr += &format!("{}:", e2.kind);
-            last_pos = u32::MAX;
-        }
+        let mut curr_read = 0_u32;
+        let mut last_pos = 0_u32;
         
+        elements[0].append_piece_piscem_style(&mut gstr, &mut curr_read, &mut last_pos);
+        elements[1].append_piece_piscem_style(&mut gstr, &mut curr_read, &mut last_pos);
+        elements[2].append_piece_piscem_style(&mut gstr, &mut curr_read, &mut last_pos);
         if last_pos == u32::MAX {
             gstr += "}";
         } else {
             gstr += "x:}";
         }
+
         cmd.arg("--geometry").arg(gstr);
     }
 }

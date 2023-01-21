@@ -4,7 +4,7 @@ use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::PathBuf;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use which::which;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -40,13 +40,13 @@ pub fn check_version_constraints<S1: AsRef<str>>(
     let parsed_version = Version::parse(prog_ver_string).unwrap();
     let req = VersionReq::parse(req_string.as_ref()).unwrap();
     if req.matches(&parsed_version) {
-        return Ok(parsed_version);
+        Ok(parsed_version)
     } else {
-        return Err(anyhow!(
+        Err(anyhow!(
             "parsed version {:?} does not satisfy constraints {:?}",
             prog_ver_string,
             req
-        ));
+        ))
     }
 }
 
@@ -131,7 +131,7 @@ pub fn get_required_progs_from_paths(
         Some(p) => Some(p),
         None => match get_which_executable("piscem") {
             Ok(p) => Some(p),
-            Err(e) => {
+            Err(_e) => {
                 // now we *need* salmon
                 info!("could not find piscem executable, so salmon will be required.");
                 None

@@ -490,25 +490,22 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                 if let Some(es) = spliced {
                     cmd.arg(String::from("--extra-spliced"));
                     cmd.arg(format!("{}", es.display()));
-                    input_files.push(es.clone());
+                    input_files.push(es);
                 }
 
                 // extra unspliced sequence
                 if let Some(eu) = unspliced {
                     cmd.arg(String::from("--extra-unspliced"));
                     cmd.arg(format!("{}", eu.display()));
-                    input_files.push(eu.clone());
+                    input_files.push(eu);
                 }
 
                 cmd.arg(fasta).arg(gtf);
 
                 // if making splici the second positional argument is the
                 // read length.
-                match ref_type {
-                    ReferenceType::SplicedIntronic => {
-                        cmd.arg(format!("{}", read_len));
-                    }
-                    _ => {} // do nothing
+                if let ReferenceType::SplicedIntronic = ref_type {
+                    cmd.arg(format!("{}", read_len));
                 };
 
                 // the output directory
@@ -1114,9 +1111,9 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                         info!("cmd : {:?}", piscem_quant_cmd);
 
                         let mut input_files = vec![
-                            index_base.clone().with_extension("ctab"),
-                            index_base.clone().with_extension("refinfo"),
-                            index_base.clone().with_extension("sshash"),
+                            index_base.with_extension("ctab"),
+                            index_base.with_extension("refinfo"),
+                            index_base.with_extension("sshash"),
                         ];
                         input_files.extend_from_slice(&reads1);
                         input_files.extend_from_slice(&reads2);
@@ -1184,7 +1181,7 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
 
                         info!("cmd : {:?}", salmon_quant_cmd);
 
-                        let mut input_files = vec![index.clone()];
+                        let mut input_files = vec![index];
                         input_files.extend_from_slice(&reads1);
                         input_files.extend_from_slice(&reads2);
 
@@ -1255,7 +1252,7 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
 
             info!("cmd : {:?}", alevin_collate_cmd);
 
-            let input_files = vec![gpl_output.clone(), map_output.clone()];
+            let input_files = vec![gpl_output.clone(), map_output];
             check_files_exist(&input_files)?;
 
             let collate_start = Instant::now();
@@ -1289,7 +1286,7 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
 
             info!("cmd : {:?}", alevin_quant_cmd);
 
-            let input_files = vec![gpl_output.clone(), t2g_map.clone()];
+            let input_files = vec![gpl_output, t2g_map];
             check_files_exist(&input_files)?;
 
             let quant_start = Instant::now();
@@ -1364,7 +1361,7 @@ fn main() -> anyhow::Result<()> {
             alevin_fry,
             pyroe,
         } => {
-            return set_paths(
+            set_paths(
                 af_home_path,
                 Commands::SetPaths {
                     salmon,
@@ -1372,13 +1369,13 @@ fn main() -> anyhow::Result<()> {
                     alevin_fry,
                     pyroe,
                 },
-            );
+            )
         }
         Commands::AddChemistry { name, geometry } => {
-            return add_chemistry(af_home_path, Commands::AddChemistry { name, geometry });
+            add_chemistry(af_home_path, Commands::AddChemistry { name, geometry })
         }
         Commands::Inspect {} => {
-            return inspect_simpleaf(af_home_path);
+            inspect_simpleaf(af_home_path)
         }
         // if we are building the reference and indexing
         Commands::Index {
@@ -1398,7 +1395,7 @@ fn main() -> anyhow::Result<()> {
             sparse,
             threads,
         } => {
-            return build_ref_and_index(
+            build_ref_and_index(
                 af_home_path,
                 Commands::Index {
                     ref_type,
@@ -1417,7 +1414,7 @@ fn main() -> anyhow::Result<()> {
                     sparse,
                     threads,
                 },
-            );
+            )
         }
 
         // if we are running mapping and quantification
@@ -1441,7 +1438,7 @@ fn main() -> anyhow::Result<()> {
             chemistry,
             output,
         } => {
-            return map_and_quant(
+            map_and_quant(
                 af_home_path,
                 Commands::Quant {
                     index,
@@ -1463,7 +1460,7 @@ fn main() -> anyhow::Result<()> {
                     chemistry,
                     output,
                 },
-            );
+            )
         }
     }
     // success, yay!
