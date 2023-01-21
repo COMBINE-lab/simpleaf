@@ -86,7 +86,12 @@ pub struct GeomPiece {
 }
 
 impl GeomPiece {
-    fn append_piece_piscem_style(&self, gstr: &mut String, curr_read: &mut u32, last_pos: &mut u32) {
+    fn append_piece_piscem_style(
+        &self,
+        gstr: &mut String,
+        curr_read: &mut u32,
+        last_pos: &mut u32,
+    ) {
         // if we haven't started constructing gstr yet
         if gstr.is_empty() {
             // this is the first piece
@@ -106,10 +111,12 @@ impl GeomPiece {
         // regardless of if this is the first piece or not
         // we have to add the geometry description
         let prefix_x = self.pos_start - (*last_pos + 1);
-        if prefix_x > 0 { *gstr += &format!("x[{}]", prefix_x ); }
+        if prefix_x > 0 {
+            *gstr += &format!("x[{}]", prefix_x);
+        }
         let l = self.length;
         if l < u32::MAX {
-            *gstr += &format!("{}[{}]", self.kind, self.length );
+            *gstr += &format!("{}[{}]", self.kind, self.length);
             *last_pos += prefix_x + self.length;
         } else {
             *gstr += &format!("{}:", self.kind);
@@ -118,15 +125,19 @@ impl GeomPiece {
     }
 }
 
-// parses the range [x-y] from x to y into 
-// a pair of a staring offset and a length 
-// if the range is of the form [x-end] then 
+// parses the range [x-y] from x to y into
+// a pair of a staring offset and a length
+// if the range is of the form [x-end] then
 // we set y = u32::MAX.
 fn parse_range(r: &str) -> (u32, u32) {
     let v: Vec<&str> = r.split('-').collect();
     if let (Some(s), Some(e)) = (v.first(), v.last()) {
         let s = s.parse::<u32>().unwrap();
-        let e = if e == &"end" { u32::MAX } else { e.parse::<u32>().unwrap() };
+        let e = if e == &"end" {
+            u32::MAX
+        } else {
+            e.parse::<u32>().unwrap()
+        };
         let l = if e < u32::MAX { (e - s) + 1 } else { u32::MAX };
         println!("range is (start : {}, len : {})", s, l);
         (s, l)
@@ -150,24 +161,24 @@ impl CustomGeometry {
     fn add_to_args_piscem(&self, cmd: &mut std::process::Command) {
         // get the read information for each part
         let bread = match &self.barcode_desc.chars().next() {
-            Some('1') => { 1 },
-            Some('2') => { 2 },
+            Some('1') => 1,
+            Some('2') => 2,
             _ => {
                 error!("invalid read specified for barcode location");
                 panic!("invalid read specified for barcode location");
             }
         };
         let uread = match &self.umi_desc.chars().next() {
-            Some('1') => { 1 },
-            Some('2') => { 2 },
+            Some('1') => 1,
+            Some('2') => 2,
             _ => {
                 error!("invalid read specified for UMI location");
                 panic!("invalid read specified for UMI location");
             }
         };
         let rread = match &self.read_desc.chars().next() {
-            Some('1') => { 1 },
-            Some('2') => { 2 },
+            Some('1') => 1,
+            Some('2') => 2,
             _ => {
                 error!("invalid read specified for biological sequence location");
                 panic!("invalid read specified for biological sequence location");
@@ -178,16 +189,32 @@ impl CustomGeometry {
         let urange = parse_range(&self.umi_desc[2..(&self.umi_desc.len() - 1)]);
         let rrange = parse_range(&self.read_desc[2..(&self.read_desc.len() - 1)]);
 
-        let mut elements = vec![ 
-            GeomPiece{ read_num: bread, pos_start: brange.0, length: brange.1, kind: 'b' },
-            GeomPiece{ read_num: uread, pos_start: urange.0, length: urange.1, kind: 'u' },
-            GeomPiece{ read_num: rread, pos_start: rrange.0, length: rrange.1, kind: 'r'} ];
+        let mut elements = vec![
+            GeomPiece {
+                read_num: bread,
+                pos_start: brange.0,
+                length: brange.1,
+                kind: 'b',
+            },
+            GeomPiece {
+                read_num: uread,
+                pos_start: urange.0,
+                length: urange.1,
+                kind: 'u',
+            },
+            GeomPiece {
+                read_num: rread,
+                pos_start: rrange.0,
+                length: rrange.1,
+                kind: 'r',
+            },
+        ];
         elements.sort();
 
         let mut gstr = String::new();
         let mut curr_read = 0_u32;
         let mut last_pos = 0_u32;
-        
+
         elements[0].append_piece_piscem_style(&mut gstr, &mut curr_read, &mut last_pos);
         elements[1].append_piece_piscem_style(&mut gstr, &mut curr_read, &mut last_pos);
         elements[2].append_piece_piscem_style(&mut gstr, &mut curr_read, &mut last_pos);

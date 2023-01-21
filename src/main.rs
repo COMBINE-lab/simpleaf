@@ -36,7 +36,7 @@ fn ref_type_parser(s: &str) -> Result<ReferenceType, String> {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// build the spliced+intronic or spliced+unspliced index
+    /// build the (expanded) reference index
     #[command(arg_required_else_help = true)]
     #[command(group(
              ArgGroup::new("reftype")
@@ -44,46 +44,60 @@ enum Commands {
              .args(["fasta", "ref_seq"])
     ))]
     Index {
-        /// specify whether the spliced+intronic or spliced+unspliced reference should be built
-        #[arg(long, help_heading="splici-ref", display_order = 1, default_value = "spliced+intronic", value_parser = ref_type_parser)]
+        /// specify whether an expanded reference, spliced+intronic (or splici) or spliced+unspliced(or spliceu), should be built
+        #[arg(long, help_heading="Expanded Reference Options", display_order = 1, default_value = "spliced+intronic", value_parser = ref_type_parser)]
         ref_type: ReferenceType,
 
-        /// reference genome to be used for spliced+intronic or spliced+unspliced construction
-        #[arg(short, long, help_heading = "splici-ref", display_order = 2, 
+        /// reference genome to be used for the expanded reference construction
+        #[arg(short, long, help_heading="Expanded Reference Options", display_order = 2, 
               requires_ifs([
                 (ArgPredicate::IsPresent, "gtf") 
               ]),
               conflicts_with = "ref_seq")]
         fasta: Option<PathBuf>,
 
-        /// reference GTF file
+        /// reference GTF file to be used for the expanded reference construction
         #[arg(
             short,
             long,
-            help_heading = "splici-ref",
+            help_heading = "Expanded Reference Options",
             display_order = 3,
             requires = "fasta",
             conflicts_with = "ref_seq"
         )]
         gtf: Option<PathBuf>,
 
-        /// the target read length the index will be built for
+        /// the target read length the splici index will be built for
         #[arg(
             short,
             long,
-            help_heading = "splici-ref",
+            help_heading = "Expanded Reference Options",
             display_order = 4,
             requires = "fasta",
             conflicts_with = "ref_seq"
         )]
         rlen: Option<u32>,
 
+        /// deduplicate identical sequences in pyroe when building an expanded reference  reference
+        #[arg(
+            long = "dedup",
+            help_heading = "Expanded Reference Options",
+            display_order = 5,
+            requires = "fasta",
+            conflicts_with = "ref-seq"
+        )]
+        dedup: bool,
+
+        /// target sequences (provide target sequences directly; avoid expanded reference construction)
+        #[arg(long, alias = "refseq", help_heading = "Direct Reference Options", display_order = 6,
+              conflicts_with_all = ["dedup", "unspliced", "spliced", "rlen", "gtf", "fasta"])]
+        ref_seq: Option<PathBuf>,
+
         /// path to FASTA file with extra spliced sequence to add to the index
         #[arg(
-            short,
             long,
-            help_heading = "splici-ref",
-            display_order = 5,
+            help_heading = "Expanded Reference Options",
+            display_order = 7,
             requires = "fasta",
             conflicts_with = "ref_seq"
         )]
@@ -91,65 +105,58 @@ enum Commands {
 
         /// path to FASTA file with extra unspliced sequence to add to the index
         #[arg(
-            short,
             long,
-            help_heading = "splici-ref",
-            display_order = 6,
+            help_heading = "Expanded Reference Options",
+            display_order = 8,
             requires = "fasta",
             conflicts_with = "ref_seq"
         )]
         unspliced: Option<PathBuf>,
 
-        /// deduplicate identical sequences in pyroe when building the spliced+intronic or
-        /// spliced+unspliced reference
-        #[arg(
-            short = 'd',
-            long = "dedup",
-            help_heading = "splici-ref",
-            display_order = 7,
-            requires = "fasta",
-            conflicts_with = "ref-seq"
-        )]
-        dedup: bool,
-
-        /// keep duplicated identical sequences when constructing the index
-        #[arg(short, long)]
-        keep_duplicates: bool,
-
-        /// target sequences (provide target sequences directly; avoid spliced+intronic or
-        /// spliced+unspliced construction)
-        #[arg(long, alias = "refseq", help_heading = "direct-ref", display_order = 8,
-              conflicts_with_all = ["dedup", "unspliced", "spliced", "rlen", "gtf", "fasta"])]
-        ref_seq: Option<PathBuf>,
-
-        /// path to output directory (will be created if it doesn't exist)
-        #[arg(short, long, display_order = 9)]
-        output: PathBuf,
-
         /// use piscem instead of salmon for indexing and mapping
-        #[arg(long)]
+        #[arg(long, help_heading = "Piscem Index Options", display_order = 1)]
         use_piscem: bool,
 
-        /// the value of k that should be used to construct the index
-        #[arg(short = 'k', long = "kmer-length", default_value_t = 31)]
-        kmer_length: u32,
-
-        /// the value of m that should be used to construct the piscem index (must be < k)
+        /// the value of m to be used to construct the piscem index (must be < k)
         #[arg(
             short = 'm',
             long = "minimizer-length",
             default_value_t = 19,
-            requires = "use_piscem"
+            requires = "use_piscem",
+            help_heading = "Piscem Index Options",
+            display_order = 2
         )]
         minimizer_length: u32,
 
-        /// if this flag is passed, build the sparse rather than dense index for mapping
-        #[arg(short = 'p', long = "sparse", conflicts_with = "use_piscem")]
-        sparse: bool,
+        /// path to output directory (will be created if it doesn't exist)
+        #[arg(short, long, display_order = 1)]
+        output: PathBuf,
 
         /// number of threads to use when running
-        #[arg(short, long, default_value_t = 16)]
+        #[arg(short, long, default_value_t = 16, display_order = 2)]
         threads: u32,
+
+        /// the value of k to be used to construct the index
+        #[arg(
+            short = 'k',
+            long = "kmer-length",
+            default_value_t = 31,
+            display_order = 3
+        )]
+        kmer_length: u32,
+
+        /// keep duplicated identical sequences when constructing the index
+        #[arg(long, display_order = 4)]
+        keep_duplicates: bool,
+
+        /// if this flag is passed, build the sparse rather than dense index for mapping
+        #[arg(
+            short = 'p',
+            long = "sparse",
+            conflicts_with = "use_piscem",
+            display_order = 5
+        )]
+        sparse: bool,
     },
     /// add a new custom chemistry to geometry mapping
     #[command(arg_required_else_help = true)]
@@ -176,11 +183,23 @@ enum Commands {
             .args(["index", "map_dir"])
             ))]
     Quant {
+        /// chemistry
+        #[arg(short, long)]
+        chemistry: String,
+
+        /// output directory
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// number of threads to use when running
+        #[arg(short, long, default_value_t = 16)]
+        threads: u32,
+
         /// path to index
         #[arg(
             short = 'i',
             long = "index",
-            help_heading = "mapping options",
+            help_heading = "Mapping Options",
             requires_ifs([
                 (ArgPredicate::IsPresent, "reads1"),
                 (ArgPredicate::IsPresent, "reads2")
@@ -188,19 +207,11 @@ enum Commands {
         )]
         index: Option<PathBuf>,
 
-        /// use piscem for mapping (requires that index points to the piscem index)
-        #[arg(long, requires = "index")]
-        use_piscem: bool,
-
-        /// path to a mapped output directory containing a RAD file to be quantified
-        #[arg(long = "map-dir", conflicts_with_all = ["index", "reads1", "reads2"], help_heading = "mapping options")]
-        map_dir: Option<PathBuf>,
-
         /// comma-separated list of paths to read 1 files
         #[arg(
             short = '1',
             long = "reads1",
-            help_heading = "mapping options",
+            help_heading = "Mapping Options",
             value_delimiter = ',',
             requires = "index",
             conflicts_with = "map_dir"
@@ -211,70 +222,66 @@ enum Commands {
         #[arg(
             short = '2',
             long = "reads2",
-            help_heading = "mapping options",
+            help_heading = "Mapping Options",
             value_delimiter = ',',
             requires = "index",
             conflicts_with = "map_dir"
         )]
         reads2: Option<Vec<PathBuf>>,
 
-        /// number of threads to use when running
-        #[arg(short, long, default_value_t = 16)]
-        threads: u32,
-
         /// use selective-alignment for mapping (instead of pseudoalignment with structural
         /// constraints).
-        #[arg(short = 's', long, help_heading = "mapping options")]
+        #[arg(short = 's', long, help_heading = "Mapping Options")]
         use_selective_alignment: bool,
 
-        /// The expected direction/orientation of alignments in the chemistry being processed. If
-        /// not provided, will default to `fw` for 10xv2/10xv3, otherwise `both`.
-        #[arg(short = 'd', long, help_heading="permit list generation options", value_parser = clap::builder::PossibleValuesParser::new(["fw", "rc", "both"]))]
-        expected_ori: Option<String>,
+        /// use piscem for mapping (requires that index points to the piscem index)
+        #[arg(long, requires = "index", help_heading = "Mapping Options")]
+        use_piscem: bool,
+
+        /// path to a mapped output directory containing a RAD file to skip mapping
+        #[arg(long = "map-dir", conflicts_with_all = ["index", "reads1", "reads2"], help_heading = "Mapping Options")]
+        map_dir: Option<PathBuf>,
 
         /// use knee filtering mode
-        #[arg(short, long, help_heading = "permit list generation options")]
+        #[arg(short, long, help_heading = "Permit List Generation Options")]
         knee: bool,
 
         /// use unfiltered permit list
-        #[arg(short, long, help_heading = "permit list generation options")]
+        #[arg(short, long, help_heading = "Permit List Generation Options")]
         unfiltered_pl: Option<Option<PathBuf>>,
 
-        /// use a filtered, explicit permit list
-        #[arg(short = 'x', long, help_heading = "permit list generation options")]
-        explicit_pl: Option<PathBuf>,
-
         /// use forced number of cells
-        #[arg(short, long, help_heading = "permit list generation options")]
+        #[arg(short, long, help_heading = "Permit List Generation Options")]
         forced_cells: Option<usize>,
 
+        /// use a filtered, explicit permit list
+        #[arg(short = 'x', long, help_heading = "Permit List Generation Options")]
+        explicit_pl: Option<PathBuf>,
+
         /// use expected number of cells
-        #[arg(short, long, help_heading = "permit list generation options")]
+        #[arg(short, long, help_heading = "Permit List Generation Options")]
         expect_cells: Option<usize>,
+
+        /// The expected direction/orientation of alignments in the chemistry being processed. If
+        /// not provided, will default to `fw` for 10xv2/10xv3, otherwise `both`.
+        #[arg(short = 'd', long, help_heading="Permit List Generation Options", value_parser = clap::builder::PossibleValuesParser::new(["fw", "rc", "both"]))]
+        expected_ori: Option<String>,
 
         /// minimum read count threshold for a cell to be retained/processed; only used with --unfiltered-pl
         #[arg(
             long,
-            help_heading = "permit list generation options",
+            help_heading = "Permit List Generation Options",
             default_value_t = 10
         )]
         min_reads: usize,
 
-        /// resolution mode
-        #[arg(short, long, help_heading = "UMI resolution options", value_parser = clap::builder::PossibleValuesParser::new(["cr-like", "cr-like-em", "parsimony", "parsimony-em", "parsimony-gene", "parsimony-gene-em"]))]
-        resolution: String,
-
-        /// chemistry
-        #[arg(short, long)]
-        chemistry: String,
-
         /// transcript to gene map
-        #[arg(short = 'm', long, help_heading = "UMI resolution options")]
+        #[arg(short = 'm', long, help_heading = "UMI Resolution Options")]
         t2g_map: PathBuf,
 
-        /// output directory
-        #[arg(short, long)]
-        output: PathBuf,
+        /// resolution mode
+        #[arg(short, long, help_heading = "UMI Resolution Options", value_parser = clap::builder::PossibleValuesParser::new(["cr-like", "cr-like-em", "parsimony", "parsimony-em", "parsimony-gene", "parsimony-gene-em"]))]
+        resolution: String,
     },
     /// set paths to the programs that simpleaf will use
     SetPaths {
@@ -374,7 +381,7 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
             let af_info_p = af_home_path.join("simpleaf_info.json");
             let simpleaf_info_file = std::fs::File::open(&af_info_p).with_context({
                 ||
-                format!("Could not open file {}; please run the set-paths command before using `index` or `quant`", af_info_p.display())
+                format!("Could not open file {}; please run `simpleaf set-paths` command before using `index` or `quant`.", af_info_p.display())
             })?;
 
             let simpleaf_info_reader = BufReader::new(simpleaf_info_file);
@@ -390,7 +397,8 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                 match ref_type {
                     ReferenceType::SplicedUnspliced => {
                         let v = rp.pyroe.clone().unwrap().version;
-                        if let Err(e) = prog_utils::check_version_constraints("pyroe", ">=0.7.1, <1.0.0", &v)
+                        if let Err(e) =
+                            prog_utils::check_version_constraints("pyroe", ">=0.7.1, <1.0.0", &v)
                         {
                             bail!(e);
                         }
@@ -399,7 +407,7 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                         // in this branch we are making a spliced+intronic (splici) index, so
                         // the user must have specified the read length.
                         if rlen.is_none() {
-                            bail!(format!("A spliced+intronic reference was requested, but no read length arugment (--rlen) was provided."));
+                            bail!(format!("A spliced+intronic reference was requested, but no read length argument (--rlen) was provided."));
                         }
                     }
                 }
@@ -549,7 +557,7 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
             let output_index_dir = output.join("index");
             let index_duration;
             if use_piscem {
-                // ensure we have piscem 
+                // ensure we have piscem
                 if rp.piscem.is_none() {
                     bail!("The construction of a piscem index was requested, but a valid piscem executable was not available. \n\
                            Please either set a path using the `set-paths` command, or ensure the `PISCEM` environment variable is set properly.");
@@ -614,10 +622,10 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                 )
                 .with_context(|| format!("could not write {}", index_json_file.display()))?;
             } else {
-                // ensure we have piscem 
+                // ensure we have piscem
                 if rp.salmon.is_none() {
                     bail!("The construction of a salmon index was requested, but a valid piscem executable was not available. \n\
-                           Please either set a path using the `set-paths` command, or ensure the `SALMON` environment variable is set properly.");
+                           Please either set a path using the `simpleaf set-paths` command, or ensure the `SALMON` environment variable is set properly.");
                 }
 
                 let mut salmon_index_cmd = std::process::Command::new(format!(
@@ -848,7 +856,7 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
             let af_info_p = af_home_path.join("simpleaf_info.json");
             let simpleaf_info_file = std::fs::File::open(&af_info_p).with_context({
                 ||
-                format!("Could not open file {}; please run the set-paths command before using `index` or `quant`", af_info_p.display())
+                format!("Could not open file {}; please run the `simpleaf set-paths` command before using `index` or `quant`.", af_info_p.display())
             })?;
 
             let simpleaf_info_reader = BufReader::new(&simpleaf_info_file);
@@ -916,12 +924,12 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
             match index_type {
                 IndexType::Piscem(_) => {
                     if rp.piscem.is_none() {
-                        bail!("A piscem index is being used, but no piscem executable is provided. Please set one with `set-paths`.");
+                        bail!("A piscem index is being used, but no piscem executable is provided. Please set one with `simpleaf set-paths`.");
                     }
                 }
                 IndexType::Salmon(_) => {
                     if rp.salmon.is_none() {
-                        bail!("A salmon index is being used, but no piscem executable is provided. Please set one with `set-paths`.");
+                        bail!("A salmon index is being used, but no piscem executable is provided. Please set one with `simpleaf set-paths`.");
                     }
                 }
                 IndexType::NoIndex => {}
@@ -1050,7 +1058,7 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
             }
 
             if filter_meth_opt.is_none() {
-                bail!("It seems no valid filtering strategy was provided!");
+                bail!("No valid filtering strategy was provided!");
             }
 
             // if the user requested more threads than can be used
@@ -1075,10 +1083,10 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
             // if we are mapping against an index
             if let Some(index) = index {
                 let reads1 = reads1.expect(
-                    "since mapping against an index is requested, read1 files must be provded.",
+                    "since mapping against an index is requested, read1 files must be provided.",
                 );
                 let reads2 = reads2.expect(
-                    "since mapping against an index is requested, read2 files must be provded.",
+                    "since mapping against an index is requested, read2 files must be provided.",
                 );
                 assert_eq!(reads1.len(), reads2.len());
 
@@ -1246,7 +1254,7 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
 
             if !gpl_proc_out.status.success() {
                 bail!(
-                    "generate-permit-list failed with exit status {:?}",
+                    "alevin-fry generate-permit-list failed with exit status {:?}",
                     gpl_proc_out.status
                 );
             }
@@ -1275,7 +1283,7 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
 
             if !collate_proc_out.status.success() {
                 bail!(
-                    "collate failed with exit status {:?}",
+                    "alevin-fry collate failed with exit status {:?}",
                     collate_proc_out.status
                 );
             }
@@ -1372,23 +1380,19 @@ fn main() -> anyhow::Result<()> {
             piscem,
             alevin_fry,
             pyroe,
-        } => {
-            set_paths(
-                af_home_path,
-                Commands::SetPaths {
-                    salmon,
-                    piscem,
-                    alevin_fry,
-                    pyroe,
-                },
-            )
-        }
+        } => set_paths(
+            af_home_path,
+            Commands::SetPaths {
+                salmon,
+                piscem,
+                alevin_fry,
+                pyroe,
+            },
+        ),
         Commands::AddChemistry { name, geometry } => {
             add_chemistry(af_home_path, Commands::AddChemistry { name, geometry })
         }
-        Commands::Inspect {} => {
-            inspect_simpleaf(af_home_path)
-        }
+        Commands::Inspect {} => inspect_simpleaf(af_home_path),
         // if we are building the reference and indexing
         Commands::Index {
             ref_type,
@@ -1406,28 +1410,26 @@ fn main() -> anyhow::Result<()> {
             minimizer_length,
             sparse,
             threads,
-        } => {
-            build_ref_and_index(
-                af_home_path,
-                Commands::Index {
-                    ref_type,
-                    fasta,
-                    gtf,
-                    rlen,
-                    spliced,
-                    unspliced,
-                    dedup,
-                    keep_duplicates,
-                    ref_seq,
-                    output,
-                    use_piscem,
-                    kmer_length,
-                    minimizer_length,
-                    sparse,
-                    threads,
-                },
-            )
-        }
+        } => build_ref_and_index(
+            af_home_path,
+            Commands::Index {
+                ref_type,
+                fasta,
+                gtf,
+                rlen,
+                spliced,
+                unspliced,
+                dedup,
+                keep_duplicates,
+                ref_seq,
+                output,
+                use_piscem,
+                kmer_length,
+                minimizer_length,
+                sparse,
+                threads,
+            },
+        ),
 
         // if we are running mapping and quantification
         Commands::Quant {
@@ -1449,31 +1451,29 @@ fn main() -> anyhow::Result<()> {
             t2g_map,
             chemistry,
             output,
-        } => {
-            map_and_quant(
-                af_home_path,
-                Commands::Quant {
-                    index,
-                    use_piscem,
-                    map_dir,
-                    reads1,
-                    reads2,
-                    threads,
-                    use_selective_alignment,
-                    expected_ori,
-                    knee,
-                    unfiltered_pl,
-                    explicit_pl,
-                    forced_cells,
-                    expect_cells,
-                    min_reads,
-                    resolution,
-                    t2g_map,
-                    chemistry,
-                    output,
-                },
-            )
-        }
+        } => map_and_quant(
+            af_home_path,
+            Commands::Quant {
+                index,
+                use_piscem,
+                map_dir,
+                reads1,
+                reads2,
+                threads,
+                use_selective_alignment,
+                expected_ori,
+                knee,
+                unfiltered_pl,
+                explicit_pl,
+                forced_cells,
+                expect_cells,
+                min_reads,
+                resolution,
+                t2g_map,
+                chemistry,
+                output,
+            },
+        ),
     }
     // success, yay!
 }
