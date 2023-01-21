@@ -60,7 +60,7 @@ enum Commands {
         #[arg(
             short,
             long,
-            help_heading="Expanded Reference Options",
+            help_heading = "Expanded Reference Options",
             display_order = 3,
             requires = "fasta",
             conflicts_with = "ref_seq"
@@ -71,7 +71,7 @@ enum Commands {
         #[arg(
             short,
             long,
-            help_heading="Expanded Reference Options",
+            help_heading = "Expanded Reference Options",
             display_order = 4,
             requires = "fasta",
             conflicts_with = "ref_seq"
@@ -81,7 +81,7 @@ enum Commands {
         /// deduplicate identical sequences in pyroe when building an expanded reference  reference
         #[arg(
             long = "dedup",
-            help_heading="Expanded Reference Options",
+            help_heading = "Expanded Reference Options",
             display_order = 5,
             requires = "fasta",
             conflicts_with = "ref-seq"
@@ -96,7 +96,7 @@ enum Commands {
         /// path to FASTA file with extra spliced sequence to add to the index
         #[arg(
             long,
-            help_heading="Expanded Reference Options",
+            help_heading = "Expanded Reference Options",
             display_order = 7,
             requires = "fasta",
             conflicts_with = "ref_seq"
@@ -106,7 +106,7 @@ enum Commands {
         /// path to FASTA file with extra unspliced sequence to add to the index
         #[arg(
             long,
-            help_heading="Expanded Reference Options",
+            help_heading = "Expanded Reference Options",
             display_order = 8,
             requires = "fasta",
             conflicts_with = "ref_seq"
@@ -114,8 +114,7 @@ enum Commands {
         unspliced: Option<PathBuf>,
 
         /// use piscem instead of salmon for indexing and mapping
-        #[arg(long, help_heading="Piscem Index Options",
-        display_order = 1)]
+        #[arg(long, help_heading = "Piscem Index Options", display_order = 1)]
         use_piscem: bool,
 
         /// the value of m to be used to construct the piscem index (must be < k)
@@ -124,34 +123,39 @@ enum Commands {
             long = "minimizer-length",
             default_value_t = 19,
             requires = "use_piscem",
-            help_heading="Piscem Index Options",
+            help_heading = "Piscem Index Options",
             display_order = 2
         )]
         minimizer_length: u32,
 
         /// path to output directory (will be created if it doesn't exist)
-        #[arg(short, long,
-            display_order = 1)]
+        #[arg(short, long, display_order = 1)]
         output: PathBuf,
 
         /// number of threads to use when running
-        #[arg(short, long, default_value_t = 16,
-            display_order = 2)]
+        #[arg(short, long, default_value_t = 16, display_order = 2)]
         threads: u32,
 
         /// the value of k to be used to construct the index
-        #[arg(short = 'k', long = "kmer-length", default_value_t = 31,
-        display_order = 3)]
+        #[arg(
+            short = 'k',
+            long = "kmer-length",
+            default_value_t = 31,
+            display_order = 3
+        )]
         kmer_length: u32,
 
         /// keep duplicated identical sequences when constructing the index
-        #[arg(long,
-            display_order = 4)]
+        #[arg(long, display_order = 4)]
         keep_duplicates: bool,
 
         /// if this flag is passed, build the sparse rather than dense index for mapping
-        #[arg(short = 'p', long = "sparse", conflicts_with = "use_piscem",
-        display_order = 5)]
+        #[arg(
+            short = 'p',
+            long = "sparse",
+            conflicts_with = "use_piscem",
+            display_order = 5
+        )]
         sparse: bool,
     },
     /// add a new custom chemistry to geometry mapping
@@ -179,7 +183,6 @@ enum Commands {
             .args(["index", "map_dir"])
             ))]
     Quant {
-
         /// chemistry
         #[arg(short, long)]
         chemistry: String,
@@ -187,11 +190,11 @@ enum Commands {
         /// output directory
         #[arg(short, long)]
         output: PathBuf,
-        
+
         /// number of threads to use when running
         #[arg(short, long, default_value_t = 16)]
         threads: u32,
-        
+
         /// path to index
         #[arg(
             short = 'i',
@@ -394,7 +397,8 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                 match ref_type {
                     ReferenceType::SplicedUnspliced => {
                         let v = rp.pyroe.clone().unwrap().version;
-                        if let Err(e) = prog_utils::check_version_constraints("pyroe", ">=0.7.1, <1.0.0", &v)
+                        if let Err(e) =
+                            prog_utils::check_version_constraints("pyroe", ">=0.7.1, <1.0.0", &v)
                         {
                             bail!(e);
                         }
@@ -553,7 +557,7 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
             let output_index_dir = output.join("index");
             let index_duration;
             if use_piscem {
-                // ensure we have piscem 
+                // ensure we have piscem
                 if rp.piscem.is_none() {
                     bail!("The construction of a piscem index was requested, but a valid piscem executable was not available. \n\
                            Please either set a path using the `set-paths` command, or ensure the `PISCEM` environment variable is set properly.");
@@ -618,7 +622,7 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                 )
                 .with_context(|| format!("could not write {}", index_json_file.display()))?;
             } else {
-                // ensure we have piscem 
+                // ensure we have piscem
                 if rp.salmon.is_none() {
                     bail!("The construction of a salmon index was requested, but a valid piscem executable was not available. \n\
                            Please either set a path using the `simpleaf set-paths` command, or ensure the `SALMON` environment variable is set properly.");
@@ -1376,23 +1380,19 @@ fn main() -> anyhow::Result<()> {
             piscem,
             alevin_fry,
             pyroe,
-        } => {
-            set_paths(
-                af_home_path,
-                Commands::SetPaths {
-                    salmon,
-                    piscem,
-                    alevin_fry,
-                    pyroe,
-                },
-            )
-        }
+        } => set_paths(
+            af_home_path,
+            Commands::SetPaths {
+                salmon,
+                piscem,
+                alevin_fry,
+                pyroe,
+            },
+        ),
         Commands::AddChemistry { name, geometry } => {
             add_chemistry(af_home_path, Commands::AddChemistry { name, geometry })
         }
-        Commands::Inspect {} => {
-            inspect_simpleaf(af_home_path)
-        }
+        Commands::Inspect {} => inspect_simpleaf(af_home_path),
         // if we are building the reference and indexing
         Commands::Index {
             ref_type,
@@ -1410,28 +1410,26 @@ fn main() -> anyhow::Result<()> {
             minimizer_length,
             sparse,
             threads,
-        } => {
-            build_ref_and_index(
-                af_home_path,
-                Commands::Index {
-                    ref_type,
-                    fasta,
-                    gtf,
-                    rlen,
-                    spliced,
-                    unspliced,
-                    dedup,
-                    keep_duplicates,
-                    ref_seq,
-                    output,
-                    use_piscem,
-                    kmer_length,
-                    minimizer_length,
-                    sparse,
-                    threads,
-                },
-            )
-        }
+        } => build_ref_and_index(
+            af_home_path,
+            Commands::Index {
+                ref_type,
+                fasta,
+                gtf,
+                rlen,
+                spliced,
+                unspliced,
+                dedup,
+                keep_duplicates,
+                ref_seq,
+                output,
+                use_piscem,
+                kmer_length,
+                minimizer_length,
+                sparse,
+                threads,
+            },
+        ),
 
         // if we are running mapping and quantification
         Commands::Quant {
@@ -1453,31 +1451,29 @@ fn main() -> anyhow::Result<()> {
             t2g_map,
             chemistry,
             output,
-        } => {
-            map_and_quant(
-                af_home_path,
-                Commands::Quant {
-                    index,
-                    use_piscem,
-                    map_dir,
-                    reads1,
-                    reads2,
-                    threads,
-                    use_selective_alignment,
-                    expected_ori,
-                    knee,
-                    unfiltered_pl,
-                    explicit_pl,
-                    forced_cells,
-                    expect_cells,
-                    min_reads,
-                    resolution,
-                    t2g_map,
-                    chemistry,
-                    output,
-                },
-            )
-        }
+        } => map_and_quant(
+            af_home_path,
+            Commands::Quant {
+                index,
+                use_piscem,
+                map_dir,
+                reads1,
+                reads2,
+                threads,
+                use_selective_alignment,
+                expected_ori,
+                knee,
+                unfiltered_pl,
+                explicit_pl,
+                forced_cells,
+                expect_cells,
+                min_reads,
+                resolution,
+                t2g_map,
+                chemistry,
+                output,
+            },
+        ),
     }
     // success, yay!
 }
