@@ -64,7 +64,7 @@ pub fn check_version_constraints_from_output<S1: AsRef<str>>(
                     return Ok(parsed_version);
                 } else {
                     return Err(anyhow!(
-                        "parsed version {:?} does not satisfy constraints {:?}",
+                        "Parsed version {:?} does not satisfy constraints {}. Please install a compatible version.",
                         version,
                         req
                     ));
