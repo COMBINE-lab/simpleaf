@@ -44,7 +44,7 @@ enum Commands {
              .args(["fasta", "ref_seq"])
     ))]
     Index {
-        /// specify whether an expanded reference, spliced+intronic (or splici) or spliced+unspliced(or spliceu), should be built
+        /// specify whether an expanded reference, spliced+intronic (or splici) or spliced+unspliced (or spliceu), should be built
         #[arg(long, help_heading="Expanded Reference Options", display_order = 1, default_value = "spliced+intronic", value_parser = ref_type_parser)]
         ref_type: ReferenceType,
 
@@ -295,7 +295,7 @@ enum Commands {
         #[arg(short, long)]
         alevin_fry: Option<PathBuf>,
         /// path to pyroe to use
-        #[arg(short, long)]
+        #[arg(short = 'r', long)]
         pyroe: Option<PathBuf>,
     },
 }
