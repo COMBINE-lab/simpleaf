@@ -899,7 +899,8 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                         // if the user didn't pass in a t2g_map, try and populate it
                         // automatically here
                         if t2g_map.is_none() {
-                            let t2g_opt : Option<PathBuf> = serde_json::from_value(v["t2g_file"].clone())?;
+                            let t2g_opt: Option<PathBuf> =
+                                serde_json::from_value(v["t2g_file"].clone())?;
                             if let Some(t2g_val) = t2g_opt {
                                 let t2g_loc = index.join(t2g_val);
                                 info!("found local t2g file at {}, will attempt to use this since none was provided explicitly", t2g_loc.display());
@@ -915,7 +916,6 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                     }
                 }
             }
-
 
             // at this point make sure we have a t2g value
             let t2g_map_file = t2g_map.context("A transcript-to-gene map (t2g) file was not provided via `--t2g-map`|`-m` and could \
