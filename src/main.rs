@@ -277,7 +277,7 @@ enum Commands {
 
         /// transcript to gene map
         #[arg(short = 'm', long, help_heading = "UMI Resolution Options")]
-        t2g_map: PathBuf,
+        t2g_map: Option<PathBuf>,
 
         /// resolution mode
         #[arg(short, long, help_heading = "UMI Resolution Options", value_parser = clap::builder::PossibleValuesParser::new(["cr-like", "cr-like-em", "parsimony", "parsimony-em", "parsimony-gene", "parsimony-gene-em"]))]
@@ -605,10 +605,19 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                     .expect("failed to run piscem build");
                 index_duration = index_start.elapsed();
 
+                // copy over the t2g file to the index
+                let mut t2g_out_path: Option<PathBuf> = None;
+                if let Some(t2g_file) = splici_t2g {
+                    let index_t2g_path = output_index_dir.join("t2g_3col.tsv");
+                    t2g_out_path = Some(PathBuf::from("t2g_3col.tsv"));
+                    std::fs::copy(t2g_file, index_t2g_path)?;
+                }
+
                 let index_json_file = output_index_dir.join("simpleaf_index.json");
                 let index_json = json!({
                         "cmd" : format!("{:?}",piscem_index_cmd),
                         "index_type" : "piscem",
+                        "t2g_file" : t2g_out_path,
                         "piscem_index_parameters" : {
                             "k" : kmer_length,
                             "m" : minimizer_length,
@@ -675,10 +684,19 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                     .expect("failed to run salmon index");
                 index_duration = index_start.elapsed();
 
+                // copy over the t2g file to the index
+                let mut t2g_out_path: Option<PathBuf> = None;
+                if let Some(t2g_file) = splici_t2g {
+                    let index_t2g_path = output_index_dir.join("t2g_3col.tsv");
+                    t2g_out_path = Some(PathBuf::from("t2g_3col.tsv"));
+                    std::fs::copy(t2g_file, index_t2g_path)?;
+                }
+
                 let index_json_file = output_index_dir.join("simpleaf_index.json");
                 let index_json = json!({
                         "cmd" : format!("{:?}",salmon_index_cmd),
                         "index_type" : "salmon",
+                        "t2g_file" : t2g_out_path,
                         "salmon_index_parameters" : {
                             "k" : kmer_length,
                             "sparse" : sparse,
@@ -692,12 +710,6 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                     serde_json::to_string_pretty(&index_json).unwrap(),
                 )
                 .with_context(|| format!("could not write {}", index_json_file.display()))?;
-            }
-
-            // copy over the t2g file to the index
-            if let Some(t2g_file) = splici_t2g {
-                let index_t2g_path = output_index_dir.join("t2g_3col.tsv");
-                std::fs::copy(t2g_file, index_t2g_path)?;
             }
 
             let index_log_file = output.join("simpleaf_index_log.json");
@@ -848,7 +860,7 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
             expect_cells,
             min_reads,
             resolution,
-            t2g_map,
+            mut t2g_map,
             chemistry,
             output,
         } => {
@@ -868,6 +880,48 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
 
             info!("prog info = {:?}", rp);
 
+            let mut had_simpleaf_index_json = false;
+            let mut index_type_str = String::new();
+            if let Some(index) = index.clone() {
+                let index_json_path = index.join("simpleaf_index.json");
+                match index_json_path.try_exists() {
+                    Ok(true) => {
+                        // we have the simpleaf_index.json file, so parse it.
+                        let index_json_file =
+                            std::fs::File::open(&index_json_path).with_context({
+                                || format!("Could not open file {}", index_json_path.display())
+                            })?;
+
+                        let index_json_reader = BufReader::new(&index_json_file);
+                        let v: serde_json::Value = serde_json::from_reader(index_json_reader)?;
+                        had_simpleaf_index_json = true;
+                        index_type_str = serde_json::from_value(v["index_type"].clone())?;
+                        // if the user didn't pass in a t2g_map, try and populate it
+                        // automatically here
+                        if t2g_map.is_none() {
+                            let t2g_opt : Option<PathBuf> = serde_json::from_value(v["t2g_file"].clone())?;
+                            if let Some(t2g_val) = t2g_opt {
+                                let t2g_loc = index.join(t2g_val);
+                                info!("found local t2g file at {}, will attempt to use this since none was provided explicitly", t2g_loc.display());
+                                t2g_map = Some(t2g_loc);
+                            }
+                        }
+                    }
+                    Ok(false) => {
+                        had_simpleaf_index_json = false;
+                    }
+                    Err(e) => {
+                        bail!(e);
+                    }
+                }
+            }
+
+
+            // at this point make sure we have a t2g value
+            let t2g_map_file = t2g_map.context("A transcript-to-gene map (t2g) file was not provided via `--t2g-map`|`-m` and could \
+                    not be inferred from the index. Please provide a t2g map explicitly to the quant command.")?;
+            check_files_exist(&[t2g_map_file.clone()])?;
+
             // figure out what type of index we expect
             let index_type;
             // only bother with this if we are mapping reads and not if we are
@@ -875,42 +929,23 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
             if let Some(index) = index.clone() {
                 // if the user said piscem explicitly, believe them
                 if !use_piscem {
-                    // otherwise, see if we built the index with simpleaf and
-                    // therefore recorded the index type
-                    let index_json_path = index.join("simpleaf_index.json");
-                    match index_json_path.try_exists() {
-                        Ok(true) => {
-                            // we have the simpleaf_index.json file, so parse it.
-                            let index_json_file = std::fs::File::open(&index_json_path)
-                                .with_context({
-                                    || format!("Could not open file {}", index_json_path.display())
-                                })?;
-
-                            let index_json_reader = BufReader::new(&index_json_file);
-                            let v: serde_json::Value = serde_json::from_reader(index_json_reader)?;
-                            let it_str: String = serde_json::from_value(v["index_type"].clone())?;
-                            match it_str.as_ref() {
-                                "salmon" => {
-                                    index_type = IndexType::Salmon(index);
-                                }
-                                "piscem" => {
-                                    index_type = IndexType::Piscem(index.join("piscem_idx"));
-                                }
-                                _ => {
-                                    bail!(
-                                        "unknown index type {} present in {}",
-                                        it_str,
-                                        index_json_path.display()
-                                    );
-                                }
+                    if had_simpleaf_index_json {
+                        match index_type_str.as_ref() {
+                            "salmon" => {
+                                index_type = IndexType::Salmon(index);
+                            }
+                            "piscem" => {
+                                index_type = IndexType::Piscem(index.join("piscem_idx"));
+                            }
+                            _ => {
+                                bail!(
+                                    "unknown index type {} present in simpleaf_index.json",
+                                    index_type_str,
+                                );
                             }
                         }
-                        Ok(false) => {
-                            index_type = IndexType::Salmon(index);
-                        }
-                        Err(e) => {
-                            bail!(e);
-                        }
+                    } else {
+                        index_type = IndexType::Salmon(index);
                     }
                 } else {
                     index_type = IndexType::Piscem(index);
@@ -1301,12 +1336,12 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                 .arg("-o")
                 .arg(&gpl_output);
             alevin_quant_cmd.arg("-t").arg(format!("{}", threads));
-            alevin_quant_cmd.arg("-m").arg(t2g_map.clone());
+            alevin_quant_cmd.arg("-m").arg(t2g_map_file.clone());
             alevin_quant_cmd.arg("-r").arg(resolution);
 
             info!("cmd : {:?}", alevin_quant_cmd);
 
-            let input_files = vec![gpl_output, t2g_map];
+            let input_files = vec![gpl_output, t2g_map_file];
             check_files_exist(&input_files)?;
 
             let quant_start = Instant::now();

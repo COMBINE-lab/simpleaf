@@ -235,7 +235,7 @@ pub fn get_required_progs() -> Result<ReqProgs> {
     get_required_progs_from_paths(salmon_exe, piscem_exe, alevin_fry_exe, pyroe_exe)
 }
 
-pub fn check_files_exist(file_vec: &Vec<PathBuf>) -> Result<()> {
+pub fn check_files_exist(file_vec: &[PathBuf]) -> Result<()> {
     let mut all_valid = true;
     for fb in file_vec {
         let er = fb.as_path().try_exists();
