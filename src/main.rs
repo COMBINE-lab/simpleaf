@@ -174,7 +174,7 @@ enum Commands {
     #[command(arg_required_else_help = true)]
     #[command(group(
             ArgGroup::new("filter")
-            .required(true)
+            .required(false)
             .args(["knee", "unfiltered_pl", "forced_cells", "expect_cells"])
             ))]
     #[command(group(
@@ -1057,8 +1057,34 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                 filter_meth_opt = Some(CellFilterMethod::KneeFinding);
             }
 
+            // if nothing was given, predict pl for 10x
+            // otherwise return error
             if filter_meth_opt.is_none() {
-                bail!("No valid filtering strategy was provided!");
+
+                // here, no filtering argument was given
+                // inner option is None and we will try to get the permit list automatically if
+                // using 10xv2 or 10xv3
+
+                // check the chemistry
+                let pl_res = get_permit_if_absent(&af_home_path, &chem)?;
+                let min_cells = min_reads;
+                match pl_res {
+                    PermitListResult::DownloadSuccessful(p)
+                    | PermitListResult::AlreadyPresent(p) => {
+                        filter_meth_opt = Some(CellFilterMethod::UnfilteredExternalList(
+                            p.to_string_lossy().into_owned(),
+                            min_cells,
+                        ));
+                    }
+                    PermitListResult::UnregisteredChemistry => {
+                        bail!(
+                                "Cannot automatically obtain an unfiltered permit list for non-Chromium chemistry: {}.",
+                                chem.as_str()
+                                );
+                    }
+                }
+
+                // bail!("No valid filtering strategy was provided!");
             }
 
             // if the user requested more threads than can be used
