@@ -522,7 +522,8 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                 check_files_exist(&input_files)?;
 
                 let pyroe_start = Instant::now();
-                let cres = prog_utils::execute_command(&mut cmd)?;
+                let cres = prog_utils::execute_command(&mut cmd, CommandVerbosityLevel::Verbose)
+                    .expect("could not execute pyroe (for generating reference transcriptome).");
                 pyroe_duration = Some(pyroe_start.elapsed());
 
                 if !cres.status.success() {
@@ -600,8 +601,11 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                     .arg(format!("{}", threads));
 
                 let index_start = Instant::now();
-                let cres = prog_utils::execute_command(&mut piscem_index_cmd)
-                    .expect("failed to invoke piscem index command");
+                let cres = prog_utils::execute_command(
+                    &mut piscem_index_cmd,
+                    CommandVerbosityLevel::Quiet,
+                )
+                .expect("failed to invoke piscem index command");
                 index_duration = index_start.elapsed();
 
                 if !cres.status.success() {
@@ -682,8 +686,11 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                     .arg(format!("{}", threads));
 
                 let index_start = Instant::now();
-                let cres = prog_utils::execute_command(&mut salmon_index_cmd)
-                    .expect("failed to invoke salmon index command");
+                let cres = prog_utils::execute_command(
+                    &mut salmon_index_cmd,
+                    CommandVerbosityLevel::Quiet,
+                )
+                .expect("failed to invoke salmon index command");
                 index_duration = index_start.elapsed();
 
                 if !cres.status.success() {
@@ -1182,8 +1189,11 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                         check_files_exist(&input_files)?;
 
                         let map_start = Instant::now();
-                        let cres = prog_utils::execute_command(&mut piscem_quant_cmd)
-                            .expect("failed to execute piscem [mapping phase]");
+                        let cres = prog_utils::execute_command(
+                            &mut piscem_quant_cmd,
+                            CommandVerbosityLevel::Quiet,
+                        )
+                        .expect("failed to execute piscem [mapping phase]");
                         map_duration = map_start.elapsed();
 
                         if !cres.status.success() {
@@ -1249,8 +1259,11 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                         check_files_exist(&input_files)?;
 
                         let map_start = Instant::now();
-                        let cres = prog_utils::execute_command(&mut salmon_quant_cmd)
-                            .expect("failed to execute salmon [mapping phase]");
+                        let cres = prog_utils::execute_command(
+                            &mut salmon_quant_cmd,
+                            CommandVerbosityLevel::Quiet,
+                        )
+                        .expect("failed to execute salmon [mapping phase]");
                         map_duration = map_start.elapsed();
 
                         if !cres.status.success() {
@@ -1288,8 +1301,9 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
             check_files_exist(&input_files)?;
 
             let gpl_start = Instant::now();
-            let gpl_proc_out = prog_utils::execute_command(&mut alevin_gpl_cmd)
-                .expect("could not execute [generate permit list]");
+            let gpl_proc_out =
+                prog_utils::execute_command(&mut alevin_gpl_cmd, CommandVerbosityLevel::Quiet)
+                    .expect("could not execute [generate permit list]");
             let gpl_duration = gpl_start.elapsed();
 
             if !gpl_proc_out.status.success() {
@@ -1316,8 +1330,9 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
             check_files_exist(&input_files)?;
 
             let collate_start = Instant::now();
-            let collate_proc_out = prog_utils::execute_command(&mut alevin_collate_cmd)
-                .expect("could not execute [collate]");
+            let collate_proc_out =
+                prog_utils::execute_command(&mut alevin_collate_cmd, CommandVerbosityLevel::Quiet)
+                    .expect("could not execute [collate]");
             let collate_duration = collate_start.elapsed();
 
             if !collate_proc_out.status.success() {
@@ -1349,8 +1364,9 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
             check_files_exist(&input_files)?;
 
             let quant_start = Instant::now();
-            let quant_proc_out = prog_utils::execute_command(&mut alevin_quant_cmd)
-                .expect("could not execute [quant]");
+            let quant_proc_out =
+                prog_utils::execute_command(&mut alevin_quant_cmd, CommandVerbosityLevel::Quiet)
+                    .expect("could not execute [quant]");
             let quant_duration = quant_start.elapsed();
 
             if !quant_proc_out.status.success() {

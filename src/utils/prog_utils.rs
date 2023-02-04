@@ -7,8 +7,14 @@ use std::path::PathBuf;
 use tracing::{error, info};
 use which::which;
 
+pub enum CommandVerbosityLevel {
+    Verbose,
+    Quiet,
+}
+
 pub fn execute_command(
     cmd: &mut std::process::Command,
+    verbosity_level: CommandVerbosityLevel,
 ) -> Result<std::process::Output, std::io::Error> {
     match cmd.output() {
         Ok(output) => {
@@ -17,17 +23,38 @@ pub fn execute_command(
                     "command returned successfully ({}) : {:?}",
                     output.status, cmd
                 );
+                match verbosity_level {
+                    CommandVerbosityLevel::Verbose => {
+                        if !&output.stdout.is_empty() {
+                            info!(
+                                "stdout :\n====\n{}====",
+                                String::from_utf8_lossy(&output.stdout)
+                            );
+                        }
+                        if !&output.stderr.is_empty() {
+                            info!(
+                                "stderr :\n====\n{}====",
+                                String::from_utf8_lossy(&output.stderr)
+                            );
+                        }
+                    }
+                    _ => {}
+                }
                 Ok(output)
             } else {
                 error!("command unsuccesful ({}): {:?}", output.status, cmd);
-                error!(
-                    "stdout :\n====\n{}====",
-                    String::from_utf8_lossy(&output.stdout)
-                );
-                error!(
-                    "stderr :\n====\n{}====",
-                    String::from_utf8_lossy(&output.stderr)
-                );
+                if !&output.stdout.is_empty() {
+                    error!(
+                        "stdout :\n====\n{}====",
+                        String::from_utf8_lossy(&output.stdout)
+                    );
+                }
+                if !&output.stderr.is_empty() {
+                    error!(
+                        "stderr :\n====\n{}====",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                }
                 Ok(output)
             }
         }
