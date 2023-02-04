@@ -38,7 +38,7 @@ pub fn execute_command(
                             );
                         }
                     }
-                    _ => {}
+                    CommandVerbosityLevel::Quiet => {}
                 }
                 Ok(output)
             } else {
