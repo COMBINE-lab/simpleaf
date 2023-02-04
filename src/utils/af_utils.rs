@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Result};
 use cmd_lib::run_fun;
+use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonSeparateGeomDesc};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonSeparateGeomDesc};
 use tracing::error;
 
 #[derive(Debug, Clone)]
@@ -95,21 +95,19 @@ pub fn add_chemistry_to_args_salmon(chem_str: &str, cmd: &mut std::process::Comm
         Some(v) => {
             cmd.arg(v);
         }
-        None => {
-            match extract_geometry(chem_str) {
-                Ok(frag_desc) => {
-                    let salmon_desc = SalmonSeparateGeomDesc::from_geom_pieces(
-                        &frag_desc.read1_desc,
-                        &frag_desc.read2_desc,
-                    );
-                    salmon_desc.append(cmd); 
-                },
-                Err(e) => {
-                    error!("{:?}", e);
-                    return Err(e);
-                }
+        None => match extract_geometry(chem_str) {
+            Ok(frag_desc) => {
+                let salmon_desc = SalmonSeparateGeomDesc::from_geom_pieces(
+                    &frag_desc.read1_desc,
+                    &frag_desc.read2_desc,
+                );
+                salmon_desc.append(cmd);
             }
-        }
+            Err(e) => {
+                error!("{:?}", e);
+                return Err(e);
+            }
+        },
     }
     Ok(())
 }
@@ -121,19 +119,17 @@ pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Comm
         Some(v) => {
             cmd.arg("--geometry").arg(v);
         }
-        None => {
-            match extract_geometry(chem_str) {
-                Ok(frag_desc) => {
-                    let piscem_desc =
+        None => match extract_geometry(chem_str) {
+            Ok(frag_desc) => {
+                let piscem_desc =
                     PiscemGeomDesc::from_geom_pieces(&frag_desc.read1_desc, &frag_desc.read2_desc);
-                    piscem_desc.append(cmd);
-                },
-                Err(e) => {
-                    error!("{:?}", e);
-                    return Err(e);
-                }
+                piscem_desc.append(cmd);
             }
-        }
+            Err(e) => {
+                error!("{:?}", e);
+                return Err(e);
+            }
+        },
     }
     Ok(())
 }

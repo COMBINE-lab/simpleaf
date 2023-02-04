@@ -522,7 +522,7 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                 check_files_exist(&input_files)?;
 
                 let pyroe_start = Instant::now();
-                let cres = cmd.output()?;
+                let cres = prog_utils::execute_command(&mut cmd)?;
                 pyroe_duration = Some(pyroe_start.elapsed());
 
                 if !cres.status.success() {
@@ -600,10 +600,13 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                     .arg(format!("{}", threads));
 
                 let index_start = Instant::now();
-                piscem_index_cmd
-                    .output()
-                    .expect("failed to run piscem build");
+                let cres = prog_utils::execute_command(&mut piscem_index_cmd)
+                    .expect("failed to invoke piscem index command");
                 index_duration = index_start.elapsed();
+
+                if !cres.status.success() {
+                    bail!("piscem index failed to build succesfully {:?}", cres.status);
+                }
 
                 // copy over the t2g file to the index
                 let mut t2g_out_path: Option<PathBuf> = None;
@@ -679,10 +682,13 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                     .arg(format!("{}", threads));
 
                 let index_start = Instant::now();
-                salmon_index_cmd
-                    .output()
-                    .expect("failed to run salmon index");
+                let cres = prog_utils::execute_command(&mut salmon_index_cmd)
+                    .expect("failed to invoke salmon index command");
                 index_duration = index_start.elapsed();
+
+                if !cres.status.success() {
+                    bail!("salmon index failed to build succesfully {:?}", cres.status);
+                }
 
                 // copy over the t2g file to the index
                 let mut t2g_out_path: Option<PathBuf> = None;
@@ -1176,12 +1182,12 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                         check_files_exist(&input_files)?;
 
                         let map_start = Instant::now();
-                        let map_proc_out = piscem_quant_cmd
-                            .output()
+                        let cres = prog_utils::execute_command(&mut piscem_quant_cmd)
                             .expect("failed to execute piscem [mapping phase]");
                         map_duration = map_start.elapsed();
-                        if !map_proc_out.status.success() {
-                            bail!("mapping failed with exit status {:?}", map_proc_out.status);
+
+                        if !cres.status.success() {
+                            bail!("piscem mapping failed with exit status {:?}", cres.status);
                         }
                     }
                     IndexType::Salmon(index_base) => {
@@ -1243,12 +1249,12 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                         check_files_exist(&input_files)?;
 
                         let map_start = Instant::now();
-                        let map_proc_out = salmon_quant_cmd
-                            .output()
-                            .expect("failed to execute salmon alevin [mapping phase]");
+                        let cres = prog_utils::execute_command(&mut salmon_quant_cmd)
+                            .expect("failed to execute salmon [mapping phase]");
                         map_duration = map_start.elapsed();
-                        if !map_proc_out.status.success() {
-                            bail!("mapping failed with exit status {:?}", map_proc_out.status);
+
+                        if !cres.status.success() {
+                            bail!("salmon mapping failed with exit status {:?}", cres.status);
                         }
                     }
                     IndexType::NoIndex => {
@@ -1282,8 +1288,7 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
             check_files_exist(&input_files)?;
 
             let gpl_start = Instant::now();
-            let gpl_proc_out = alevin_gpl_cmd
-                .output()
+            let gpl_proc_out = prog_utils::execute_command(&mut alevin_gpl_cmd)
                 .expect("could not execute [generate permit list]");
             let gpl_duration = gpl_start.elapsed();
 
@@ -1311,8 +1316,7 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
             check_files_exist(&input_files)?;
 
             let collate_start = Instant::now();
-            let collate_proc_out = alevin_collate_cmd
-                .output()
+            let collate_proc_out = prog_utils::execute_command(&mut alevin_collate_cmd)
                 .expect("could not execute [collate]");
             let collate_duration = collate_start.elapsed();
 
@@ -1345,8 +1349,7 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
             check_files_exist(&input_files)?;
 
             let quant_start = Instant::now();
-            let quant_proc_out = alevin_quant_cmd
-                .output()
+            let quant_proc_out = prog_utils::execute_command(&mut alevin_quant_cmd)
                 .expect("could not execute [quant]");
             let quant_duration = quant_start.elapsed();
 

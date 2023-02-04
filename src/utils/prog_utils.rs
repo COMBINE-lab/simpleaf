@@ -7,6 +7,38 @@ use std::path::PathBuf;
 use tracing::{error, info};
 use which::which;
 
+pub fn execute_command(
+    cmd: &mut std::process::Command,
+) -> Result<std::process::Output, std::io::Error> {
+    match cmd.output() {
+        Ok(output) => {
+            if output.status.success() {
+                info!(
+                    "command returned successfully ({}) : {:?}",
+                    output.status, cmd
+                );
+                Ok(output)
+            } else {
+                error!("command unsuccesful ({}): {:?}", output.status, cmd);
+                error!(
+                    "stdout :\n====\n{}====",
+                    String::from_utf8_lossy(&output.stdout)
+                );
+                error!(
+                    "stderr :\n====\n{}====",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                Ok(output)
+            }
+        }
+        Err(e) => {
+            error!("command unsuccesful : {:?}", cmd);
+            error!("error : {}", e);
+            Err(e)
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProgInfo {
     pub exe_path: PathBuf,
