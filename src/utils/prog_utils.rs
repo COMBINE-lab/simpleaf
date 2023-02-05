@@ -22,19 +22,22 @@ pub fn execute_command(
                 "command returned successfully ({}) : {:?}",
                 output.status, cmd
             );
-            if let CommandVerbosityLevel::Verbose = verbosity_level {
-                if !&output.stdout.is_empty() {
-                    info!(
-                        "stdout :\n====\n{}====",
-                        String::from_utf8_lossy(&output.stdout)
-                    );
+            match verbosity_level {
+                CommandVerbosityLevel::Verbose => {
+                    if !&output.stdout.is_empty() {
+                        info!(
+                            "stdout :\n====\n{}====",
+                            String::from_utf8_lossy(&output.stdout)
+                        );
+                    }
+                    if !&output.stderr.is_empty() {
+                        info!(
+                            "stderr :\n====\n{}====",
+                            String::from_utf8_lossy(&output.stderr)
+                        );
+                    }
                 }
-                if !&output.stderr.is_empty() {
-                    info!(
-                        "stderr :\n====\n{}====",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                }
+                CommandVerbosityLevel::Quiet => {}
             }
             Ok(output)
         }
