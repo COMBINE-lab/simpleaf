@@ -17,49 +17,45 @@ pub fn execute_command(
     verbosity_level: CommandVerbosityLevel,
 ) -> Result<std::process::Output, std::io::Error> {
     match cmd.output() {
-        Ok(output) => {
-            if output.status.success() {
-                info!(
-                    "command returned successfully ({}) : {:?}",
-                    output.status, cmd
-                );
-                match verbosity_level {
-                    CommandVerbosityLevel::Verbose => {
-                        if !&output.stdout.is_empty() {
-                            info!(
-                                "stdout :\n====\n{}====",
-                                String::from_utf8_lossy(&output.stdout)
-                            );
-                        }
-                        if !&output.stderr.is_empty() {
-                            info!(
-                                "stderr :\n====\n{}====",
-                                String::from_utf8_lossy(&output.stderr)
-                            );
-                        }
-                    }
-                    CommandVerbosityLevel::Quiet => {}
-                }
-                Ok(output)
-            } else {
-                error!("command unsuccesful ({}): {:?}", output.status, cmd);
+        Ok(output) if output.status.success() => {
+            info!(
+                "command returned successfully ({}) : {:?}",
+                output.status, cmd
+            );
+            if let CommandVerbosityLevel::Verbose = verbosity_level {
                 if !&output.stdout.is_empty() {
-                    error!(
+                    info!(
                         "stdout :\n====\n{}====",
                         String::from_utf8_lossy(&output.stdout)
                     );
                 }
                 if !&output.stderr.is_empty() {
-                    error!(
+                    info!(
                         "stderr :\n====\n{}====",
                         String::from_utf8_lossy(&output.stderr)
                     );
                 }
-                Ok(output)
             }
+            Ok(output)
+        }
+        Ok(output) => {
+            error!("command unsuccessful ({}): {:?}", output.status, cmd);
+            if !&output.stdout.is_empty() {
+                error!(
+                    "stdout :\n====\n{}====",
+                    String::from_utf8_lossy(&output.stdout)
+                );
+            }
+            if !&output.stderr.is_empty() {
+                error!(
+                    "stderr :\n====\n{}====",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            Ok(output)
         }
         Err(e) => {
-            error!("command unsuccesful : {:?}", cmd);
+            error!("command unsuccessful : {:?}", cmd);
             error!("error : {}", e);
             Err(e)
         }
