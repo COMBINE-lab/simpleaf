@@ -10,25 +10,32 @@ In direct-ref mode, the provided fasta file (passed in with ``--refseq``) will b
 The relevant options (which you can obtain by running ``simpleaf index -h``) are:
 
 .. code-block:: console
-
-   USAGE:
-    simpleaf index [OPTIONS] --output <OUTPUT> <--fasta <FASTA>|--refseq <REFSEQ>>
-
-    OPTIONS:
-        -o, --output <OUTPUT>              path to output directory (will be created if it doesn't exist)
-        -h, --help                         Print help information
-        -k, --kmer-length <KMER_LENGTH>    the value of k that should be used to construct the index [default: 31]
-        -p, --sparse                       if this flag is passed, build the sparse rather than dense index for mapping
-        -t, --threads <THREADS>            number of threads to use when running [default: 16]
-
-    splici-ref:
-        -f, --fasta <FASTA>            reference genome to be used for splici construction
-        -g, --gtf <GTF>                reference GTF file
-        -r, --rlen <RLEN>              the target read length the index will be built for
-        -s, --spliced <SPLICED>        path to FASTA file with extra spliced sequence to add to the index
-        -u, --unspliced <UNSPLICED>    path to FASTA file with extra unspliced sequence to add to the index
-        -d, --dedup                    deduplicate identical sequences inside the R script when building the splici reference
-
-    direct-ref:
-            --refseq <REFSEQ>    target sequences (provide target sequences directly; avoid splici construction)
-
+  
+    build the (expanded) reference index
+  
+    Usage: simpleaf index [OPTIONS] --output <OUTPUT> <--fasta <FASTA>|--ref-seq <REF_SEQ>>
+    
+    Options:
+      -o, --output <OUTPUT>            path to output directory (will be created if it doesn't exist)
+      -t, --threads <THREADS>          number of threads to use when running [default: 16]
+      -k, --kmer-length <KMER_LENGTH>  the value of k to be used to construct the index [default: 31]
+          --keep-duplicates            keep duplicated identical sequences when constructing the index
+      -p, --sparse                     if this flag is passed, build the sparse rather than dense index for mapping
+      -h, --help                       Print help information
+      -V, --version                    Print version information
+    
+    Expanded Reference Options:
+          --ref-type <REF_TYPE>    specify whether an expanded reference, spliced+intronic (or splici) or spliced+unspliced (or spliceu), should be built [default: spliced+intronic]
+      -f, --fasta <FASTA>          reference genome to be used for the expanded reference construction
+      -g, --gtf <GTF>              reference GTF file to be used for the expanded reference construction
+      -r, --rlen <RLEN>            the target read length the splici index will be built for
+          --dedup                  deduplicate identical sequences in pyroe when building an expanded reference  reference
+          --spliced <SPLICED>      path to FASTA file with extra spliced sequence to add to the index
+          --unspliced <UNSPLICED>  path to FASTA file with extra unspliced sequence to add to the index
+    
+    Direct Reference Options:
+          --ref-seq <REF_SEQ>  target sequences (provide target sequences directly; avoid expanded reference construction)
+    
+    Piscem Index Options:
+          --use-piscem                           use piscem instead of salmon for indexing and mapping
+      -m, --minimizer-length <MINIMIZER_LENGTH>  the value of m to be used to construct the piscem index (must be < k) [default: 19]

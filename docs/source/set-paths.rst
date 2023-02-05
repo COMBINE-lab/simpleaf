@@ -5,11 +5,14 @@ The ``set-paths`` command is used to set the paths to the relevant executables a
   
 .. code-block:: bash 
 
-  USAGE:
-      simpleaf set-paths [OPTIONS]
-
-  OPTIONS:
-      -a, --alevin-fry <ALEVIN_FRY>    path to alein-fry to use
-      -h, --help                       Print help information
-      -p, --pyroe <PYROE>              path to pyroe to use
-      -s, --salmon <SALMON>            path to salmon to use
+  set paths to the programs that simpleaf will use
+  
+  Usage: simpleaf set-paths [OPTIONS]
+  
+  Options:
+    -s, --salmon <SALMON>          path to salmon to use
+    -p, --piscem <PISCEM>          path to piscem to use
+    -a, --alevin-fry <ALEVIN_FRY>  path to alein-fry to use
+    -r, --pyroe <PYROE>            path to pyroe to use
+    -h, --help                     Print help information
+    -V, --version                  Print version information
