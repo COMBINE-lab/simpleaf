@@ -245,7 +245,7 @@ pub fn get_required_progs_from_paths(
     if let Some(piscem) = opt_piscem {
         let st = piscem.display().to_string();
         let sr = run_fun!($st --version);
-        let v = check_version_constraints_from_output("piscem", ">=0.3.0, <1.0.0", sr)?;
+        let v = check_version_constraints_from_output("piscem", ">=0.4.0, <1.0.0", sr)?;
         rp.piscem = Some(ProgInfo {
             exe_path: piscem,
             version: format!("{}", v),
@@ -255,7 +255,7 @@ pub fn get_required_progs_from_paths(
     if let Some(salmon) = opt_salmon {
         let st = salmon.display().to_string();
         let sr = run_fun!($st --version);
-        let v = check_version_constraints_from_output("salmon", ">=1.5.1, <2.0.0", sr)?;
+        let v = check_version_constraints_from_output("salmon", ">=1.9.0, <2.0.0", sr)?;
         rp.salmon = Some(ProgInfo {
             exe_path: salmon,
             version: format!("{}", v),
@@ -264,7 +264,7 @@ pub fn get_required_progs_from_paths(
 
     let st = alevin_fry.display().to_string();
     let sr = run_fun!($st --version);
-    let v = check_version_constraints_from_output("alevin-fry", ">=0.4.1, <1.0.0", sr)?;
+    let v = check_version_constraints_from_output("alevin-fry", ">=0.8.1, <1.0.0", sr)?;
     rp.alevin_fry = Some(ProgInfo {
         exe_path: alevin_fry,
         version: format!("{}", v),
@@ -272,7 +272,7 @@ pub fn get_required_progs_from_paths(
 
     let st = pyroe.display().to_string();
     let sr = run_fun!($st --version);
-    let v = check_version_constraints_from_output("pyroe", ">=0.6.2, <1.0.0", sr)?;
+    let v = check_version_constraints_from_output("pyroe", ">=0.8.1, <1.0.0", sr)?;
     rp.pyroe = Some(ProgInfo {
         exe_path: pyroe,
         version: format!("{}", v),
