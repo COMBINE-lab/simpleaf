@@ -37,7 +37,7 @@ jobs:
         uses: conda-incubator/setup-miniconda@v2.2.0
         with:
           python-version: 3.7
-          mamba-version: "*"
+          # mamba-version: "*"
           channels: default,bioconda,conda-forge
           channel-priority: true
           activate-environment: anaconda-client-env
