@@ -1,7 +1,9 @@
 use anyhow::{anyhow, Result};
 use cmd_lib::run_fun;
+use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonSeparateGeomDesc};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use tracing::error;
 
 #[derive(Debug, Clone)]
 pub enum CellFilterMethod {
@@ -70,89 +72,11 @@ pub enum PermitListResult {
     UnregisteredChemistry,
 }
 
-pub struct CustomGeometry {
-    barcode_desc: String,
-    umi_desc: String,
-    read_desc: String,
+pub fn extract_geometry(geo: &str) -> Result<FragmentGeomDesc> {
+    FragmentGeomDesc::try_from(geo)
 }
 
-impl CustomGeometry {
-    fn add_to_args(&self, cmd: &mut std::process::Command) {
-        cmd.arg("--bc-geometry");
-        cmd.arg(&self.barcode_desc);
-
-        cmd.arg("--umi-geometry");
-        cmd.arg(&self.umi_desc);
-
-        cmd.arg("--read-geometry");
-        cmd.arg(&self.read_desc);
-    }
-}
-
-pub fn extract_geometry(geo: &str) -> Result<CustomGeometry> {
-    if geo.contains(';') {
-        // parse this as a custom
-        let v: Vec<&str> = geo.split(';').collect();
-        // one string must start with 'B', one with 'U' and one with 'R'
-        if v.len() != 3 {
-            return Err(anyhow!(
-                "custom geometry should have 3 components (R,U,B), but {} were found",
-                v.len()
-            ));
-        }
-
-        let mut b_desc: Option<&str> = None;
-        let mut u_desc: Option<&str> = None;
-        let mut r_desc: Option<&str> = None;
-
-        for e in v {
-            let (t, ar) = e.split_at(1);
-            match t {
-                "B" => {
-                    if let Some(prev_desc) = b_desc {
-                        return Err(anyhow!("A description of the barcode geometry seems to appear > 1 time; previous desc = {}!", prev_desc));
-                    }
-                    b_desc = Some(ar);
-                }
-                "U" => {
-                    if let Some(prev_desc) = u_desc {
-                        return Err(anyhow!("A description of the umi geometry seems to appear > 1 time; previous desc = {}!", prev_desc));
-                    }
-                    u_desc = Some(ar);
-                }
-                "R" => {
-                    if let Some(prev_desc) = r_desc {
-                        return Err(anyhow!("A description of the read geometry seems to appear > 1 time; previous desc = {}!", prev_desc));
-                    }
-                    r_desc = Some(ar);
-                }
-                _ => {
-                    return Err(anyhow!("Could not parse custom geometry, found descriptor type {}, but it must be of type (R,U,B)", t));
-                }
-            }
-        }
-
-        if let (Some(barcode_desc), Some(umi_desc), Some(read_desc)) = (&b_desc, &u_desc, &r_desc) {
-            return Ok(CustomGeometry {
-                barcode_desc: barcode_desc.to_string(),
-                umi_desc: umi_desc.to_string(),
-                read_desc: read_desc.to_string(),
-            });
-        } else {
-            return Err(anyhow!(
-                "Require B, U and R components: Status B ({:?}), U ({:?}), R ({:?})",
-                b_desc,
-                u_desc,
-                r_desc
-            ));
-        }
-    }
-    Err(anyhow!(
-        "custom geometry string doesn't contain ';' character"
-    ))
-}
-
-pub fn add_chemistry_to_args(chem_str: &str, cmd: &mut std::process::Command) -> Result<()> {
+pub fn add_chemistry_to_args_salmon(chem_str: &str, cmd: &mut std::process::Command) -> Result<()> {
     let known_chem_map = HashMap::from([
         ("10xv2", "--chromium"),
         ("10xv3", "--chromiumV3"),
@@ -171,10 +95,41 @@ pub fn add_chemistry_to_args(chem_str: &str, cmd: &mut std::process::Command) ->
         Some(v) => {
             cmd.arg(v);
         }
-        None => {
-            let custom_geo = extract_geometry(chem_str)?;
-            custom_geo.add_to_args(cmd);
+        None => match extract_geometry(chem_str) {
+            Ok(frag_desc) => {
+                let salmon_desc = SalmonSeparateGeomDesc::from_geom_pieces(
+                    &frag_desc.read1_desc,
+                    &frag_desc.read2_desc,
+                );
+                salmon_desc.append(cmd);
+            }
+            Err(e) => {
+                error!("{:?}", e);
+                return Err(e);
+            }
+        },
+    }
+    Ok(())
+}
+
+pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Command) -> Result<()> {
+    let known_chem_map = HashMap::from([("10xv2", "chromium_v2"), ("10xv3", "chromium_v3")]);
+
+    match known_chem_map.get(chem_str) {
+        Some(v) => {
+            cmd.arg("--geometry").arg(v);
         }
+        None => match extract_geometry(chem_str) {
+            Ok(frag_desc) => {
+                let piscem_desc =
+                    PiscemGeomDesc::from_geom_pieces(&frag_desc.read1_desc, &frag_desc.read2_desc);
+                piscem_desc.append(cmd);
+            }
+            Err(e) => {
+                error!("{:?}", e);
+                return Err(e);
+            }
+        },
     }
     Ok(())
 }

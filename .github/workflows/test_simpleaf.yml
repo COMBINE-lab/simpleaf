@@ -34,11 +34,11 @@ jobs:
         run: cargo build --verbose --release
       
       - name: Install conda env
-        uses: conda-incubator/setup-miniconda@v2.1.1
+        uses: conda-incubator/setup-miniconda@v2.2.0
         with:
           python-version: 3.7
-          mamba-version: "*"
-          channels: conda-forge,bioconda
+          # mamba-version: "*"
+          channels: default,bioconda,conda-forge
           channel-priority: true
           activate-environment: anaconda-client-env
           environment-file: simpleaf_conda_env.yml
