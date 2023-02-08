@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.8.1...v0.9.0) (2023-02-08)
+
+
+### Features
+
+* attempt to infer t2g if not provided explicitly ([656a84a](https://github.com/COMBINE-lab/simpleaf/commit/656a84aab1731a1b40cfb2212c48a243e9bd4947))
+
+
+### Bug Fixes
+
+* be more informative on command error ([44fb9cb](https://github.com/COMBINE-lab/simpleaf/commit/44fb9cb5069254befe301af43f88495eaf26add5))
+* fix duplicated short argument ([64a3010](https://github.com/COMBINE-lab/simpleaf/commit/64a3010f7f59c0c218000b3903551e8b99214e11))
+
 ## [0.8.1](https://github.com/COMBINE-lab/simpleaf/compare/v0.8.0...v0.8.1) (2023-01-03)
 
 
