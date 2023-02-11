@@ -533,8 +533,11 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                 info!("pyroe cmd : {}", pyroe_cmd_string);
 
                 let pyroe_start = Instant::now();
-                let cres = prog_utils::execute_command(&mut pyroe_cmd, CommandVerbosityLevel::Verbose)
-                    .expect("could not execute pyroe (for generating reference transcriptome).");
+                let cres =
+                    prog_utils::execute_command(&mut pyroe_cmd, CommandVerbosityLevel::Verbose)
+                        .expect(
+                            "could not execute pyroe (for generating reference transcriptome).",
+                        );
                 pyroe_duration = Some(pyroe_start.elapsed());
 
                 if !cres.status.success() {

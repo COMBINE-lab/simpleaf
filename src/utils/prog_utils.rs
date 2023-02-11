@@ -28,10 +28,7 @@ pub fn execute_command(
 ) -> Result<std::process::Output, std::io::Error> {
     match cmd.output() {
         Ok(output) if output.status.success() => {
-            info!(
-                "command returned successfully ({})",
-                output.status
-            );
+            info!("command returned successfully ({})", output.status);
             match verbosity_level {
                 CommandVerbosityLevel::Verbose => {
                     if !&output.stdout.is_empty() {
