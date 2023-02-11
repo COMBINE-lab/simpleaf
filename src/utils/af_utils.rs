@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use cmd_lib::run_fun;
+use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonSeparateGeomDesc};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::error;
@@ -71,224 +72,8 @@ pub enum PermitListResult {
     UnregisteredChemistry,
 }
 
-pub struct CustomGeometry {
-    barcode_desc: String,
-    umi_desc: String,
-    read_desc: String,
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct GeomPiece {
-    read_num: u32,
-    pos_start: u32,
-    length: u32,
-    kind: char,
-}
-
-impl GeomPiece {
-    fn append_piece_piscem_style(
-        &self,
-        gstr: &mut String,
-        curr_read: &mut u32,
-        last_pos: &mut u32,
-    ) {
-        // if we haven't started constructing gstr yet
-        if gstr.is_empty() {
-            // this is the first piece
-            *gstr += &format!("{}{{", self.read_num);
-        } else if self.read_num != *curr_read {
-            // if this isn't the first piece
-            if *last_pos == u32::MAX {
-                *gstr += "}";
-            } else {
-                *gstr += "x:}";
-            }
-            *gstr += &format!("{}{{", self.read_num);
-            *last_pos = 0;
-        }
-        *curr_read = self.read_num;
-
-        // regardless of if this is the first piece or not
-        // we have to add the geometry description
-        let prefix_x = self.pos_start - (*last_pos + 1);
-        if prefix_x > 0 {
-            *gstr += &format!("x[{}]", prefix_x);
-        }
-        let l = self.length;
-        if l < u32::MAX {
-            *gstr += &format!("{}[{}]", self.kind, self.length);
-            *last_pos += prefix_x + self.length;
-        } else {
-            *gstr += &format!("{}:", self.kind);
-            *last_pos = u32::MAX;
-        }
-    }
-}
-
-// parses the range [x-y] from x to y into
-// a pair of a staring offset and a length
-// if the range is of the form [x-end] then
-// we set y = u32::MAX.
-fn parse_range(r: &str) -> (u32, u32) {
-    let v: Vec<&str> = r.split('-').collect();
-    if let (Some(s), Some(e)) = (v.first(), v.last()) {
-        let s = s.parse::<u32>().unwrap();
-        let e = if e == &"end" {
-            u32::MAX
-        } else {
-            e.parse::<u32>().unwrap()
-        };
-        let l = if e < u32::MAX { (e - s) + 1 } else { u32::MAX };
-        println!("range is (start : {}, len : {})", s, l);
-        (s, l)
-    } else {
-        panic!("could not parse range {}", r);
-    }
-}
-
-impl CustomGeometry {
-    fn add_to_args_salmon(&self, cmd: &mut std::process::Command) {
-        cmd.arg("--bc-geometry");
-        cmd.arg(&self.barcode_desc);
-
-        cmd.arg("--umi-geometry");
-        cmd.arg(&self.umi_desc);
-
-        cmd.arg("--read-geometry");
-        cmd.arg(&self.read_desc);
-    }
-
-    fn add_to_args_piscem(&self, cmd: &mut std::process::Command) {
-        // get the read information for each part
-        let bread = match &self.barcode_desc.chars().next() {
-            Some('1') => 1,
-            Some('2') => 2,
-            _ => {
-                error!("invalid read specified for barcode location");
-                panic!("invalid read specified for barcode location");
-            }
-        };
-        let uread = match &self.umi_desc.chars().next() {
-            Some('1') => 1,
-            Some('2') => 2,
-            _ => {
-                error!("invalid read specified for UMI location");
-                panic!("invalid read specified for UMI location");
-            }
-        };
-        let rread = match &self.read_desc.chars().next() {
-            Some('1') => 1,
-            Some('2') => 2,
-            _ => {
-                error!("invalid read specified for biological sequence location");
-                panic!("invalid read specified for biological sequence location");
-            }
-        };
-
-        let brange = parse_range(&self.barcode_desc[2..(&self.barcode_desc.len() - 1)]);
-        let urange = parse_range(&self.umi_desc[2..(&self.umi_desc.len() - 1)]);
-        let rrange = parse_range(&self.read_desc[2..(&self.read_desc.len() - 1)]);
-
-        let mut elements = vec![
-            GeomPiece {
-                read_num: bread,
-                pos_start: brange.0,
-                length: brange.1,
-                kind: 'b',
-            },
-            GeomPiece {
-                read_num: uread,
-                pos_start: urange.0,
-                length: urange.1,
-                kind: 'u',
-            },
-            GeomPiece {
-                read_num: rread,
-                pos_start: rrange.0,
-                length: rrange.1,
-                kind: 'r',
-            },
-        ];
-        elements.sort();
-
-        let mut gstr = String::new();
-        let mut curr_read = 0_u32;
-        let mut last_pos = 0_u32;
-
-        elements[0].append_piece_piscem_style(&mut gstr, &mut curr_read, &mut last_pos);
-        elements[1].append_piece_piscem_style(&mut gstr, &mut curr_read, &mut last_pos);
-        elements[2].append_piece_piscem_style(&mut gstr, &mut curr_read, &mut last_pos);
-        if last_pos == u32::MAX {
-            gstr += "}";
-        } else {
-            gstr += "x:}";
-        }
-
-        cmd.arg("--geometry").arg(gstr);
-    }
-}
-
-pub fn extract_geometry(geo: &str) -> Result<CustomGeometry> {
-    if geo.contains(';') {
-        // parse this as a custom
-        let v: Vec<&str> = geo.split(';').collect();
-        // one string must start with 'B', one with 'U' and one with 'R'
-        if v.len() != 3 {
-            return Err(anyhow!(
-                "custom geometry should have 3 components (R,U,B), but {} were found",
-                v.len()
-            ));
-        }
-
-        let mut b_desc: Option<&str> = None;
-        let mut u_desc: Option<&str> = None;
-        let mut r_desc: Option<&str> = None;
-
-        for e in v {
-            let (t, ar) = e.split_at(1);
-            match t {
-                "B" => {
-                    if let Some(prev_desc) = b_desc {
-                        return Err(anyhow!("A description of the barcode geometry seems to appear > 1 time; previous desc = {}!", prev_desc));
-                    }
-                    b_desc = Some(ar);
-                }
-                "U" => {
-                    if let Some(prev_desc) = u_desc {
-                        return Err(anyhow!("A description of the umi geometry seems to appear > 1 time; previous desc = {}!", prev_desc));
-                    }
-                    u_desc = Some(ar);
-                }
-                "R" => {
-                    if let Some(prev_desc) = r_desc {
-                        return Err(anyhow!("A description of the read geometry seems to appear > 1 time; previous desc = {}!", prev_desc));
-                    }
-                    r_desc = Some(ar);
-                }
-                _ => {
-                    return Err(anyhow!("Could not parse custom geometry, found descriptor type {}, but it must be of type (R,U,B)", t));
-                }
-            }
-        }
-
-        if let (Some(barcode_desc), Some(umi_desc), Some(read_desc)) = (&b_desc, &u_desc, &r_desc) {
-            return Ok(CustomGeometry {
-                barcode_desc: barcode_desc.to_string(),
-                umi_desc: umi_desc.to_string(),
-                read_desc: read_desc.to_string(),
-            });
-        } else {
-            return Err(anyhow!(
-                "Require B, U and R components: Status B ({:?}), U ({:?}), R ({:?})",
-                b_desc,
-                u_desc,
-                r_desc
-            ));
-        }
-    }
-    Err(anyhow!(
-        "custom geometry string doesn't contain ';' character"
-    ))
+pub fn extract_geometry(geo: &str) -> Result<FragmentGeomDesc> {
+    FragmentGeomDesc::try_from(geo)
 }
 
 pub fn add_chemistry_to_args_salmon(chem_str: &str, cmd: &mut std::process::Command) -> Result<()> {
@@ -310,10 +95,19 @@ pub fn add_chemistry_to_args_salmon(chem_str: &str, cmd: &mut std::process::Comm
         Some(v) => {
             cmd.arg(v);
         }
-        None => {
-            let custom_geo = extract_geometry(chem_str)?;
-            custom_geo.add_to_args_salmon(cmd);
-        }
+        None => match extract_geometry(chem_str) {
+            Ok(frag_desc) => {
+                let salmon_desc = SalmonSeparateGeomDesc::from_geom_pieces(
+                    &frag_desc.read1_desc,
+                    &frag_desc.read2_desc,
+                );
+                salmon_desc.append(cmd);
+            }
+            Err(e) => {
+                error!("{:?}", e);
+                return Err(e);
+            }
+        },
     }
     Ok(())
 }
@@ -325,10 +119,17 @@ pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Comm
         Some(v) => {
             cmd.arg("--geometry").arg(v);
         }
-        None => {
-            let custom_geo = extract_geometry(chem_str)?;
-            custom_geo.add_to_args_piscem(cmd);
-        }
+        None => match extract_geometry(chem_str) {
+            Ok(frag_desc) => {
+                let piscem_desc =
+                    PiscemGeomDesc::from_geom_pieces(&frag_desc.read1_desc, &frag_desc.read2_desc);
+                piscem_desc.append(cmd);
+            }
+            Err(e) => {
+                error!("{:?}", e);
+                return Err(e);
+            }
+        },
     }
     Ok(())
 }
