@@ -7,6 +7,16 @@ use std::path::PathBuf;
 use tracing::{error, info};
 use which::which;
 
+pub fn get_cmd_line_string(prog: &std::process::Command) -> String {
+    let mut prog_vec = vec![prog.get_program().to_string_lossy().to_string()];
+    prog_vec.extend(
+        prog.get_args()
+            .map(|x| x.to_string_lossy().to_string())
+            .collect::<Vec<String>>(),
+    );
+    prog_vec.join(" ")
+}
+
 pub enum CommandVerbosityLevel {
     Verbose,
     Quiet,
@@ -20,7 +30,8 @@ pub fn execute_command(
         Ok(output) if output.status.success() => {
             info!(
                 "command returned successfully ({}) : {:?}",
-                output.status, cmd
+                output.status,
+                get_cmd_line_string(cmd)
             );
             match verbosity_level {
                 CommandVerbosityLevel::Verbose => {
