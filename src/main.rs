@@ -132,6 +132,10 @@ enum Commands {
         #[arg(short, long, display_order = 1)]
         output: PathBuf,
 
+        /// overwrite existing files if the output directory is already populated
+        #[arg(long, display_order = 6)]
+        overwrite: bool,
+
         /// number of threads to use when running
         #[arg(short, long, default_value_t = 16, display_order = 2)]
         threads: u32,
@@ -374,6 +378,7 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
             use_piscem,
             kmer_length,
             minimizer_length,
+            overwrite,
             sparse,
             mut threads,
         } => {
@@ -419,6 +424,7 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                 "version_info" : rp,
                 "args" : {
                     "output" : output,
+                    "overwrite" : overwrite,
                     "keep_duplicates" : keep_duplicates,
                     "sparse" : sparse,
                     "threads" : threads,
@@ -589,6 +595,12 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                     .arg(&output_index_stem)
                     .arg("-s")
                     .arg(&ref_seq);
+    
+                // if the user requested to overwrite, then pass this option
+                if overwrite {
+                    info!("will attempt to overwrite any existing piscem index, as requested");
+                    piscem_index_cmd.arg("--overwrite");
+                }
 
                 // if the user requested more threads than can be used
                 if let Ok(max_threads_usize) = std::thread::available_parallelism() {
@@ -624,6 +636,7 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                         "piscem_index_parameters" : {
                             "k" : kmer_length,
                             "m" : minimizer_length,
+                            "overwrite" : overwrite,
                             "threads" : threads,
                             "ref" : ref_seq
                         }
@@ -653,6 +666,13 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                     .arg(&output_index_dir)
                     .arg("-t")
                     .arg(&ref_seq);
+
+                // overwrite doesn't do anything special for the salmon index, so mention this to
+                // the user.
+                if overwrite {
+                    info!("As the default salmon behavior is to overwrite an existing index if the same directory is provided, \n\
+                        the --overwrite flag will have no additional effect.");
+                }
 
                 // if the user requested a sparse index.
                 if sparse {
@@ -696,6 +716,7 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                         "index_type" : "salmon",
                         "salmon_index_parameters" : {
                             "k" : kmer_length,
+                            "overwrite" : overwrite,
                             "sparse" : sparse,
                             "keep_duplicates" : keep_duplicates,
                             "threads" : threads,
@@ -1497,6 +1518,7 @@ fn main() -> anyhow::Result<()> {
             use_piscem,
             kmer_length,
             minimizer_length,
+            overwrite,
             sparse,
             threads,
         } => build_ref_and_index(
@@ -1515,6 +1537,7 @@ fn main() -> anyhow::Result<()> {
                 use_piscem,
                 kmer_length,
                 minimizer_length,
+                overwrite,
                 sparse,
                 threads,
             },
