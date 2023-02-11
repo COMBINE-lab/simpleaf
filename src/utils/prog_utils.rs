@@ -29,9 +29,8 @@ pub fn execute_command(
     match cmd.output() {
         Ok(output) if output.status.success() => {
             info!(
-                "command returned successfully ({}) : {:?}",
-                output.status,
-                get_cmd_line_string(cmd)
+                "command returned successfully ({})",
+                output.status
             );
             match verbosity_level {
                 CommandVerbosityLevel::Verbose => {
@@ -69,8 +68,7 @@ pub fn execute_command(
             Ok(output)
         }
         Err(e) => {
-            error!("command unsuccessful : {:?}", cmd);
-            error!("error : {}", e);
+            error!("command unsuccessful; error : {}", e);
             Err(e)
         }
     }
