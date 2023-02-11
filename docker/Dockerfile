@@ -1,10 +1,10 @@
-# image: COMBINE-lab/dockeraf
-FROM condaforge/mambaforge:4.14.0-0
-MAINTAINER salmon.maintainer@gmail.com
+# image: COMBINE-lab/usefulaf
+FROM condaforge/mambaforge:22.9.0-3
 
 RUN mamba install -c anaconda git
 # should pull in salmon, alevin-fry, and pyroe
 RUN mamba install -c bioconda simpleaf
+RUN mamba install -c bioconda piscem
 RUN mamba install -c conda-forge cxx-compiler
 RUN mamba install -c conda-forge r-base r-essentials
 RUN mamba install -c bioconda bioconductor-fishpond 
@@ -13,7 +13,7 @@ RUN mamba install -c conda-forge time
 RUN mkdir /afhome
 RUN touch /root/.bashrc \
        && echo "export ALEVIN_FRY_HOME=/afhome" >> /root/.bashrc \
-       && echo "export TIME_BIN=/opt/conda/bin/time" >> /root/.bashrc
+       && echo "export TIME_BIN=/opt/conda/bin/time" >> /root/.bashrc 
 
 ENV ALEVIN_FRY_HOME=/afhome
 ENV TIME_BIN=/opt/conda/bin/time
