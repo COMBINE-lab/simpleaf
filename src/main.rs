@@ -132,6 +132,10 @@ enum Commands {
         #[arg(short, long, display_order = 1)]
         output: PathBuf,
 
+        /// overwrite existing files if the output directory is already populated
+        #[arg(long, display_order = 6)]
+        overwrite: bool,
+
         /// number of threads to use when running
         #[arg(short, long, default_value_t = 16, display_order = 2)]
         threads: u32,
@@ -374,6 +378,7 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
             use_piscem,
             kmer_length,
             minimizer_length,
+            overwrite,
             sparse,
             mut threads,
         } => {
@@ -419,6 +424,7 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                 "version_info" : rp,
                 "args" : {
                     "output" : output,
+                    "overwrite" : overwrite,
                     "keep_duplicates" : keep_duplicates,
                     "sparse" : sparse,
                     "threads" : threads,
@@ -436,6 +442,7 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
             // mutable.
             let mut splici_t2g = None;
             let mut pyroe_duration = None;
+            let pyroe_cmd_string: String;
 
             // if we are generating a splici reference
             if let (Some(fasta), Some(gtf)) = (fasta, gtf) {
@@ -477,53 +484,60 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                 // set the splici_t2g option
                 splici_t2g = Some(t2g_file);
 
-                let mut cmd =
+                let mut pyroe_cmd =
                     std::process::Command::new(format!("{}", rp.pyroe.unwrap().exe_path.display()));
                 // select the command to run
                 match ref_type {
                     ReferenceType::SplicedIntronic => {
-                        cmd.arg("make-splici");
+                        pyroe_cmd.arg("make-splici");
                     }
                     ReferenceType::SplicedUnspliced => {
-                        cmd.arg("make-spliceu");
+                        pyroe_cmd.arg("make-spliceu");
                     }
                 };
 
                 // if the user wants to dedup output sequences
                 if dedup {
-                    cmd.arg(String::from("--dedup-seqs"));
+                    pyroe_cmd.arg(String::from("--dedup-seqs"));
                 }
 
                 // extra spliced sequence
                 if let Some(es) = spliced {
-                    cmd.arg(String::from("--extra-spliced"));
-                    cmd.arg(format!("{}", es.display()));
+                    pyroe_cmd.arg(String::from("--extra-spliced"));
+                    pyroe_cmd.arg(format!("{}", es.display()));
                     input_files.push(es);
                 }
 
                 // extra unspliced sequence
                 if let Some(eu) = unspliced {
-                    cmd.arg(String::from("--extra-unspliced"));
-                    cmd.arg(format!("{}", eu.display()));
+                    pyroe_cmd.arg(String::from("--extra-unspliced"));
+                    pyroe_cmd.arg(format!("{}", eu.display()));
                     input_files.push(eu);
                 }
 
-                cmd.arg(fasta).arg(gtf);
+                pyroe_cmd.arg(fasta).arg(gtf);
 
                 // if making splici the second positional argument is the
                 // read length.
                 if let ReferenceType::SplicedIntronic = ref_type {
-                    cmd.arg(format!("{}", read_len));
+                    pyroe_cmd.arg(format!("{}", read_len));
                 };
 
                 // the output directory
-                cmd.arg(&outref);
+                pyroe_cmd.arg(&outref);
 
                 check_files_exist(&input_files)?;
 
+                // print pyroe command
+                pyroe_cmd_string = get_cmd_line_string(&pyroe_cmd);
+                info!("pyroe cmd : {}", pyroe_cmd_string);
+
                 let pyroe_start = Instant::now();
-                let cres = prog_utils::execute_command(&mut cmd, CommandVerbosityLevel::Verbose)
-                    .expect("could not execute pyroe (for generating reference transcriptome).");
+                let cres =
+                    prog_utils::execute_command(&mut pyroe_cmd, CommandVerbosityLevel::Verbose)
+                        .expect(
+                            "could not execute pyroe (for generating reference transcriptome).",
+                        );
                 pyroe_duration = Some(pyroe_start.elapsed());
 
                 if !cres.status.success() {
@@ -545,6 +559,7 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                 )
                 .with_context(|| format!("could not write {}", info_file.display()))?;
 
+                pyroe_cmd_string = String::from("");
                 reference_sequence = ref_seq;
             }
 
@@ -557,6 +572,8 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
 
             let output_index_dir = output.join("index");
             let index_duration;
+            let index_cmd_string: String;
+
             if use_piscem {
                 // ensure we have piscem
                 if rp.piscem.is_none() {
@@ -583,6 +600,12 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                     .arg("-s")
                     .arg(&ref_seq);
 
+                // if the user requested to overwrite, then pass this option
+                if overwrite {
+                    info!("will attempt to overwrite any existing piscem index, as requested");
+                    piscem_index_cmd.arg("--overwrite");
+                }
+
                 // if the user requested more threads than can be used
                 if let Ok(max_threads_usize) = std::thread::available_parallelism() {
                     let max_threads = max_threads_usize.get() as u32;
@@ -599,6 +622,10 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                 piscem_index_cmd
                     .arg("--threads")
                     .arg(format!("{}", threads));
+
+                // print piscem build command
+                index_cmd_string = get_cmd_line_string(&piscem_index_cmd);
+                info!("piscem build cmd : {}", index_cmd_string);
 
                 let index_start = Instant::now();
                 let cres = prog_utils::execute_command(
@@ -622,12 +649,12 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
 
                 let index_json_file = output_index_dir.join("simpleaf_index.json");
                 let index_json = json!({
-                        "cmd" : format!("{:?}",piscem_index_cmd),
-                        "index_type" : "piscem",
+                        "cmd" : index_cmd_string,                        "index_type" : "piscem",
                         "t2g_file" : t2g_out_path,
                         "piscem_index_parameters" : {
                             "k" : kmer_length,
                             "m" : minimizer_length,
+                            "overwrite" : overwrite,
                             "threads" : threads,
                             "ref" : ref_seq
                         }
@@ -658,6 +685,13 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                     .arg("-t")
                     .arg(&ref_seq);
 
+                // overwrite doesn't do anything special for the salmon index, so mention this to
+                // the user.
+                if overwrite {
+                    info!("As the default salmon behavior is to overwrite an existing index if the same directory is provided, \n\
+                        the --overwrite flag will have no additional effect.");
+                }
+
                 // if the user requested a sparse index.
                 if sparse {
                     salmon_index_cmd.arg("--sparse");
@@ -685,6 +719,10 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                     .arg("--threads")
                     .arg(format!("{}", threads));
 
+                // print salmon index command
+                index_cmd_string = get_cmd_line_string(&salmon_index_cmd);
+                info!("salmon index cmd : {}", index_cmd_string);
+
                 let index_start = Instant::now();
                 let cres = prog_utils::execute_command(
                     &mut salmon_index_cmd,
@@ -707,11 +745,11 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
 
                 let index_json_file = output_index_dir.join("simpleaf_index.json");
                 let index_json = json!({
-                        "cmd" : format!("{:?}",salmon_index_cmd),
-                        "index_type" : "salmon",
+                    "cmd" : index_cmd_string,                        "index_type" : "salmon",
                         "t2g_file" : t2g_out_path,
                         "salmon_index_parameters" : {
                             "k" : kmer_length,
+                            "overwrite" : overwrite,
                             "sparse" : sparse,
                             "keep_duplicates" : keep_duplicates,
                             "threads" : threads,
@@ -732,14 +770,19 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                     "time_info" : {
                         "pyroe_time" : pyroe_duration,
                         "index_time" : index_duration
-                    }
+                    },
+                    "cmd_info" : {
+                        "pyroe_cmd" : pyroe_cmd_string,
+                        "index_cmd" : index_cmd_string,                    }
                 })
             } else {
                 // if we indexed provided sequences directly
                 json!({
                     "time_info" : {
                         "index_time" : index_duration
-                    }
+                    },
+                    "cmd_info" : {
+                        "index_cmd" : index_cmd_string,                    }
                 })
             };
 
@@ -1125,6 +1168,8 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
             // here we must be safe to unwrap
             let filter_meth = filter_meth_opt.unwrap();
 
+            let sc_mapper: String;
+            let map_cmd_string: String;
             let map_output: PathBuf;
             let map_duration: Duration;
 
@@ -1176,7 +1221,9 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                         // setting the technology / chemistry
                         add_chemistry_to_args_piscem(chem.as_str(), &mut piscem_quant_cmd)?;
 
-                        info!("cmd : {:?}", piscem_quant_cmd);
+                        map_cmd_string = get_cmd_line_string(&piscem_quant_cmd);
+                        info!("piscem map-sc cmd : {}", map_cmd_string);
+                        sc_mapper = String::from("piscem");
 
                         let mut input_files = vec![
                             index_base.with_extension("ctab"),
@@ -1250,7 +1297,9 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                         // setting the technology / chemistry
                         add_chemistry_to_args_salmon(chem.as_str(), &mut salmon_quant_cmd)?;
 
-                        info!("cmd : {:?}", salmon_quant_cmd);
+                        map_cmd_string = get_cmd_line_string(&salmon_quant_cmd);
+                        info!("salmon alevin cmd : {}", map_cmd_string);
+                        sc_mapper = String::from("salmon");
 
                         let mut input_files = vec![index];
                         input_files.extend_from_slice(&reads1);
@@ -1275,10 +1324,14 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                     }
                 }
             } else {
+                map_cmd_string = String::from("");
+                sc_mapper = String::from("");
                 map_output = map_dir
                     .expect("map-dir must be provided, since index, read1 and read2 were not.");
                 map_duration = Duration::new(0, 0);
             }
+
+            let map_output_string = map_output.display().to_string();
 
             let alevin_fry = rp.alevin_fry.unwrap().exe_path;
             // alevin-fry generate permit list
@@ -1295,8 +1348,10 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
             let gpl_output = output.join("af_quant");
             alevin_gpl_cmd.arg("-o").arg(&gpl_output);
 
-            info!("cmd : {:?}", alevin_gpl_cmd);
-
+            info!(
+                "alevin-fry generate-permit-list cmd : {}",
+                get_cmd_line_string(&alevin_gpl_cmd)
+            );
             let input_files = vec![map_output.clone()];
             check_files_exist(&input_files)?;
 
@@ -1324,8 +1379,10 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
             alevin_collate_cmd.arg("-r").arg(&map_output);
             alevin_collate_cmd.arg("-t").arg(format!("{}", threads));
 
-            info!("cmd : {:?}", alevin_collate_cmd);
-
+            info!(
+                "alevin-fry collate cmd : {}",
+                get_cmd_line_string(&alevin_collate_cmd)
+            );
             let input_files = vec![gpl_output.clone(), map_output];
             check_files_exist(&input_files)?;
 
@@ -1376,11 +1433,22 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
             let af_quant_info_file = output.join("simpleaf_quant_log.json");
             let af_quant_info = json!({
                 "time_info" : {
-                "map_time" : map_duration,
-                "gpl_time" : gpl_duration,
-                "collate_time" : collate_duration,
-                "quant_time" : quant_duration
-                }
+                    "map_time" : map_duration,
+                    "gpl_time" : gpl_duration,
+                    "collate_time" : collate_duration,
+                    "quant_time" : quant_duration
+                },
+                "cmd_info" : {
+                    "map_cmd" : map_cmd_string,
+                    "gpl_cmd" : get_cmd_line_string(&alevin_gpl_cmd),
+                    "collate_cmd" : get_cmd_line_string(&alevin_gpl_cmd),
+                    "quant_cmd" : get_cmd_line_string(&alevin_quant_cmd)
+                    },
+                "map_info" : {
+                    "mapper" : sc_mapper,
+                    "map_cmd" : map_cmd_string,
+                    "map_outdir": map_output_string
+                    }
             });
 
             // write the relevant info about
@@ -1462,6 +1530,7 @@ fn main() -> anyhow::Result<()> {
             use_piscem,
             kmer_length,
             minimizer_length,
+            overwrite,
             sparse,
             threads,
         } => build_ref_and_index(
@@ -1480,6 +1549,7 @@ fn main() -> anyhow::Result<()> {
                 use_piscem,
                 kmer_length,
                 minimizer_length,
+                overwrite,
                 sparse,
                 threads,
             },
