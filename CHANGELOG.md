@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.9.0...v0.10.0) (2023-02-12)
+
+
+### Features
+
+* improve logging ([5d20450](https://github.com/COMBINE-lab/simpleaf/commit/5d204509e03211613ef74282b6d19a9ba53abd12))
+
+
+### Bug Fixes
+
+* add --overwrite flag to index command ([2340945](https://github.com/COMBINE-lab/simpleaf/commit/2340945ff585ea4b656a683cfba9c47532944f1b))
+
 ## [0.9.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.8.1...v0.9.0) (2023-02-08)
 
 
