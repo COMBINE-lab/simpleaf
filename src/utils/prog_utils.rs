@@ -251,7 +251,7 @@ pub fn get_required_progs_from_paths(
     if let Some(piscem) = opt_piscem {
         let st = piscem.display().to_string();
         let sr = run_fun!($st --version);
-        let v = check_version_constraints_from_output("piscem", ">=0.4.0, <1.0.0", sr)?;
+        let v = check_version_constraints_from_output("piscem", ">=0.4.3, <1.0.0", sr)?;
         rp.piscem = Some(ProgInfo {
             exe_path: piscem,
             version: format!("{}", v),
