@@ -227,7 +227,7 @@ pub fn get_required_progs_from_paths(
 
     // We should only get to this point if we have at least one of piscem and salmon, sanity
     // check this.
-    assert!(opt_salmon.is_some() || opt_piscem.is_some());
+    assert!(opt_salmon.is_some() || opt_piscem.is_some(), "At least one of piscem and salmon must be available.");
 
     let alevin_fry = match alevin_fry_exe {
         Some(p) => p,
