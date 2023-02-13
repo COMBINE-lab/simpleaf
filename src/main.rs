@@ -1181,7 +1181,7 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                 let reads2 = reads2.expect(
                     "since mapping against an index is requested, read2 files must be provided.",
                 );
-                assert_eq!(reads1.len(), reads2.len());
+                assert_eq!(reads1.len(), reads2.len(), "{} read1 files and {} read2 files were given; Cannot proceed!",reads1.len(), reads2.len());
 
                 match index_type {
                     IndexType::Piscem(index_base) => {
