@@ -1183,12 +1183,6 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                 );
                 assert_eq!(reads1.len(), reads2.len(), "{} read1 files and {} read2 files were given; Cannot proceed!",reads1.len(), reads2.len());
 
-
-                if reads1.len() != reads2.len() {
-                    bail!("Number of read1 and read2 files are not equal!");
-                }
-
-
                 match index_type {
                     IndexType::Piscem(index_base) => {
                         // using a piscem index
