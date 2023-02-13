@@ -13,7 +13,7 @@ We recommend all x86 (Linux or Mac) users to install ``simpleaf`` from bioconda,
 
 .. code-block:: bash
 
-    conda install simpleaf piscem -c bioconda
+    conda install simpleaf piscem -c bioconda -c conda-forge
 
 
 **For Apple-silicon computers**, for example those with an Apple M-series chip, simpleaf should be installed under the x86 emulation layer, in other words, in shell with Rosetta2 enabled. See `this <https://combine-lab.github.io/alevin-fry-tutorials/2023/simpleaf-piscem/#:~:text=Attention%20Apple%20silicon%20computer%20users%3A>`_ for details. Furthermore, if one would like to use ``piscem`` on apple silicon, one has to either download the `pre-built piscem executable <https://github.com/COMBINE-lab/piscem/releases>`_ or build piscem from source **in the native shell (with Rosetta2 disabled)** using the commands described `here <https://github.com/COMBINE-lab/piscem#building>`_. Then, piscem can be executed from both Rosetta2 enabled and disabled shell.
