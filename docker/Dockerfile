@@ -1,7 +1,12 @@
 # image: COMBINE-lab/usefulaf
-FROM condaforge/mambaforge:22.9.0-3
+FROM condaforge/mambaforge:22.11.1-4
 
-RUN mamba install -c anaconda git
+RUN mamba config --add channels defaults
+RUN mamba config --add channels bioconda
+RUN mamba config --add channels conda-forge
+RUN mamba config --set channel_priority strict
+RUN mamba install git
+
 # should pull in salmon, alevin-fry, and pyroe
 RUN mamba install -c bioconda simpleaf
 RUN mamba install -c bioconda piscem
