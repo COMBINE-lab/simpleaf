@@ -1,0 +1,350 @@
+<!doctype html>
+<html class="no-js" lang="en">
+  <head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta name="color-scheme" content="light dark"><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+<link rel="index" title="Index" href="genindex.html" /><link rel="search" title="Search" href="search.html" /><link rel="next" title="License" href="LICENSE.html" /><link rel="prev" title="index command" href="index-command.html" />
+
+    <!-- Generated with Sphinx 5.3.0 and Furo 2022.12.07 -->
+        <title>quant command - simpleaf 0.9.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?digest=91d0f0d1c444bdcb17a68e833c7a53903343c195" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?digest=30d1aed668e5c3a91c3e3bf6a60b675221979f0e" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #eeffcc;
+  --color-code-foreground: black;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #272822;
+  --color-code-foreground: #f8f8f2;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #272822;
+  --color-code-foreground: #f8f8f2;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-half" viewBox="0 0 24 24">
+    <title>Auto light/dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-shadow">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M13 12h5" />
+      <path d="M13 15h4" />
+      <path d="M13 18h1" />
+      <path d="M13 9h4" />
+      <path d="M13 6h1" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
+<label class="overlay sidebar-overlay" for="__navigation">
+  <div class="visually-hidden">Hide navigation sidebar</div>
+</label>
+<label class="overlay toc-overlay" for="__toc">
+  <div class="visually-hidden">Hide table of contents sidebar</div>
+</label>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <div class="visually-hidden">Toggle site navigation sidebar</div>
+        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="index.html"><div class="brand">simpleaf 0.9.0 documentation</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle">
+          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+          <svg class="theme-icon-when-auto"><use href="#svg-sun-half"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <div class="visually-hidden">Toggle table of contents sidebar</div>
+        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand centered" href="index.html">
+  
+  <div class="sidebar-logo-container">
+    <img class="sidebar-logo" src="_static/logo.png" alt="Logo"/>
+  </div>
+  
+  <span class="sidebar-brand-text">simpleaf 0.9.0 documentation</span>
+  
+</a><form class="sidebar-search-container" method="get" action="search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="set-paths.html"><code class="docutils literal notranslate"><span class="pre">set-paths</span></code> command</a></li>
+<li class="toctree-l1"><a class="reference internal" href="add-chemistry-command.html"><code class="docutils literal notranslate"><span class="pre">add-chemistry</span></code> command</a></li>
+<li class="toctree-l1"><a class="reference internal" href="inspect-command.html"><code class="docutils literal notranslate"><span class="pre">inspect</span></code> command</a></li>
+<li class="toctree-l1"><a class="reference internal" href="index-command.html"><code class="docutils literal notranslate"><span class="pre">index</span></code> command</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#"><code class="docutils literal notranslate"><span class="pre">quant</span></code> command</a></li>
+<li class="toctree-l1"><a class="reference internal" href="LICENSE.html">License</a></li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle">
+              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+              <svg class="theme-icon-when-auto"><use href="#svg-sun-half"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <div class="visually-hidden">Toggle table of contents sidebar</div>
+            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+          </label>
+        </div>
+        <article role="main">
+          <section id="quant-command">
+<h1><code class="docutils literal notranslate"><span class="pre">quant</span></code> command<a class="headerlink" href="#quant-command" title="Permalink to this heading">#</a></h1>
+<dl class="simple">
+<dt>The <code class="docutils literal notranslate"><span class="pre">quant</span></code> command takes as input <strong>either</strong>:</dt><dd><ol class="arabic simple">
+<li><p>the index, reads, and relevant information about the experiment (e.g. the chemistry) OR</p></li>
+<li><p>the directory containing the result of a previous mapping run, and relevant information about the experiemnt (e.g. the chemistry)</p></li>
+</ol>
+</dd>
+</dl>
+<p>and runs all relevant the steps of the <code class="docutils literal notranslate"><span class="pre">alevin-fry</span></code> pipeline. When processing a new dataset from scratch, the first option is the one you are likely interested in (you will provide the <code class="docutils literal notranslate"><span class="pre">--index</span></code>, <code class="docutils literal notranslate"><span class="pre">--reads1</span></code> and <code class="docutils literal notranslate"><span class="pre">--reads2</span></code> arguments). <strong>If multiple read files are provided to the</strong> <code class="docutils literal notranslate"><span class="pre">--reads1</span></code> <strong>and</strong> <code class="docutils literal notranslate"><span class="pre">--reads2</span></code> <strong>arguments, those files must be comma (,) separated.</strong></p>
+<p>On the other hand, if you have already performed quantification or have, for some other reason, already mapped the reads to produce a RAD file, you can start the process from the mapped read directory directly using the <code class="docutils literal notranslate"><span class="pre">--map-dir</span></code> argument instead. This latter approach makes it easy to test out different quantification approaches (e.g. different filtering options or UMI resolution strategies).</p>
+<p><strong>Note</strong>: If you use the unfiltered-permit-list <code class="docutils literal notranslate"><span class="pre">-u</span></code> mode for permit-list generation, and you are using either <code class="docutils literal notranslate"><span class="pre">10xv2</span></code> or <code class="docutils literal notranslate"><span class="pre">10xv3</span></code> chemistry, you can provide the flag by itself, and <code class="docutils literal notranslate"><span class="pre">simpleaf</span></code> will automatically fetch and apply the appropriate unifltered permit list.  However, if you are using <code class="docutils literal notranslate"><span class="pre">-u</span></code> with any other chemistry, you must explicitly provide a path to the unfiltered permit list to be used.  The <code class="docutils literal notranslate"><span class="pre">-d</span></code>/<code class="docutils literal notranslate"><span class="pre">--expected-ori</span></code> flag allows controlling the like-named option that is passed to the <code class="docutils literal notranslate"><span class="pre">generate-permit-list</span></code> command of <code class="docutils literal notranslate"><span class="pre">alevin-fry</span></code>. This is an “optional” option.  If it is not provided explicitly, it is set to “both” (allowing reads aligning in both orientations to pass through), unless the chemistry is set as <code class="docutils literal notranslate"><span class="pre">10xv2</span></code> or <code class="docutils literal notranslate"><span class="pre">10xv3</span></code>, in which case it is set as “fw”.  Regardless of the chemistry, if the user sets this option explicitly, this choice is respected.</p>
+<section id="a-note-on-the-chemistry-flag">
+<h2>A note on the <code class="docutils literal notranslate"><span class="pre">--chemistry</span></code> flag<a class="headerlink" href="#a-note-on-the-chemistry-flag" title="Permalink to this heading">#</a></h2>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The geometry specification language has changed in <code class="docutils literal notranslate"><span class="pre">simpleaf</span></code> v0.9.0 and above. This change is to unify the geometry description language between <code class="docutils literal notranslate"><span class="pre">simpleaf</span></code> and the tools in the backend that actually perform the fragment mapping.  Further, the new laguage is more general, capable and exensible, so it will be easier to add more features in the future in a backward compatible manner.  However, this means that if you have a <code class="docutils literal notranslate"><span class="pre">custom_chemistries.json</span></code> file from before <code class="docutils literal notranslate"><span class="pre">simpleaf</span></code> v0.9.0, you will have to re-create that file with the new chemistries by overwriting them with the custom geometry descriptions in the new format.</p>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">--chemistry</span></code> option can take either a string describing the specific chemisty, or a string describing the geometry of the barcode, umi and mappable read. For example, the string <code class="docutils literal notranslate"><span class="pre">10xv2</span></code> and <code class="docutils literal notranslate"><span class="pre">10xv3</span></code> will apply the appropriate settings for the 10x chromium v2 and v3 protocols respectively.  However, general geometries can be provided as well, in case the chemistry you are trying to use has not been added as a pre-registered option.  For example, the instead of providing the <code class="docutils literal notranslate"><span class="pre">--chemistry</span></code> flag with the string <code class="docutils literal notranslate"><span class="pre">10xv2</span></code>, you could instead provide it with the string <code class="docutils literal notranslate"><span class="pre">&quot;1{b[16]u[10]x:}2{r:}&quot;</span></code>, or, instead of providing <code class="docutils literal notranslate"><span class="pre">10xv3</span></code> you could provide <code class="docutils literal notranslate"><span class="pre">&quot;1{b[16]u[12]x:}2{r:}&quot;</span></code>.</p>
+<p>The custom format is as follows; you must specify the content of read 1 and read 2 in terms of the barcode, UMI, and mappable read sequence. A specification looks like this:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="m">1</span><span class="o">{</span>b<span class="o">[</span><span class="m">16</span><span class="o">]</span>u<span class="o">[</span><span class="m">12</span><span class="o">]</span>x:<span class="o">}</span><span class="m">2</span><span class="o">{</span>r:<span class="o">}</span>
+</pre></div>
+</div>
+<p>In particular, this is how one would specify the 10x Chromium v3 geometry using the custom syntax.  The format string says that the read pair should be interpreted as read 1 <code class="docutils literal notranslate"><span class="pre">1{...}</span></code> followed by read 2 <code class="docutils literal notranslate"><span class="pre">2{...}</span></code>.  The syntax inside the <code class="docutils literal notranslate"><span class="pre">{}</span></code> says how the read should be interpreted.  Here <code class="docutils literal notranslate"><span class="pre">b[16]u[12]x:</span></code> means that the first 16 bases constitute the barcode, the next 12 constitute the UMI, and anything that comes after that (if it exists) until the end of read 1 should be discarded (<code class="docutils literal notranslate"><span class="pre">x</span></code>).  For read 2, we have <code class="docutils literal notranslate"><span class="pre">2{r:}</span></code>, meaning that we should interpret read 2, in it’s full length, as biological sequence.</p>
+<p>It is possible to have pieces of geometry repeated, in which case they will be extracted and concatenated together.  For example, <code class="docutils literal notranslate"><span class="pre">1{b[16]u[12]b[4]x:}</span></code> would mean that we should obtain the barcode by extracting bases 1-16 (1-based indexing) and 29-32 and concatenating them togehter to obtain the full barcode.  A</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>If you use a custom geometry frequently, you can add it to a <cite>json</cite> file <code class="docutils literal notranslate"><span class="pre">custom_chemistries.json</span></code> in the <code class="docutils literal notranslate"><span class="pre">ALEVIN_FRY_HOME</span></code> directory.  This file simply acts as a key-value store mapping each custom geometry to the name you wish to use for it.  For example, putting the contents below into this file would allow you to pass <code class="docutils literal notranslate"><span class="pre">--chemistry</span> <span class="pre">flarb</span></code> to the <code class="docutils literal notranslate"><span class="pre">simpleaf</span> <span class="pre">quant</span></code> command, and it would interpret the reads as having the specified geometry (in this case, the same as the <code class="docutils literal notranslate"><span class="pre">10xv3</span></code> geometry).  Multiple custom chemistries can be added by simply adding more entries to this <cite>json</cite> file.</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;flarb&quot;</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1{b[16]u[12]x:}2{r:}&quot;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<p>The relevant options (which you can obtain by running <code class="docutils literal notranslate"><span class="pre">simpleaf</span> <span class="pre">quant</span> <span class="pre">-h</span></code>) are below:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>quantify<span class="w"> </span>a<span class="w"> </span>sample
+
+Usage:<span class="w"> </span>simpleaf<span class="w"> </span>quant<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>--chemistry<span class="w"> </span>&lt;CHEMISTRY&gt;<span class="w"> </span>--output<span class="w"> </span>&lt;OUTPUT&gt;<span class="w"> </span>--resolution<span class="w"> </span>&lt;RESOLUTION&gt;<span class="w"> </span>&lt;--knee<span class="p">|</span>--unfiltered-pl<span class="w"> </span><span class="o">[</span>&lt;UNFILTERED_PL&gt;<span class="o">]</span><span class="p">|</span>--forced-cells<span class="w"> </span>&lt;FORCED_CELLS&gt;<span class="p">|</span>--expect-cells<span class="w"> </span>&lt;EXPECT_CELLS&gt;&gt;<span class="w"> </span>&lt;--index<span class="w"> </span>&lt;INDEX&gt;<span class="p">|</span>--map-dir<span class="w"> </span>&lt;MAP_DIR&gt;&gt;
+
+Options:
+<span class="w">  </span>-c,<span class="w"> </span>--chemistry<span class="w"> </span>&lt;CHEMISTRY&gt;<span class="w">  </span>chemistry
+<span class="w">  </span>-o,<span class="w"> </span>--output<span class="w"> </span>&lt;OUTPUT&gt;<span class="w">        </span>output<span class="w"> </span>directory
+<span class="w">  </span>-t,<span class="w"> </span>--threads<span class="w"> </span>&lt;THREADS&gt;<span class="w">      </span>number<span class="w"> </span>of<span class="w"> </span>threads<span class="w"> </span>to<span class="w"> </span>use<span class="w"> </span>when<span class="w"> </span>running<span class="w"> </span><span class="o">[</span>default:<span class="w"> </span><span class="m">16</span><span class="o">]</span>
+<span class="w">  </span>-h,<span class="w"> </span>--help<span class="w">                   </span>Print<span class="w"> </span><span class="nb">help</span><span class="w"> </span>information
+<span class="w">  </span>-V,<span class="w"> </span>--version<span class="w">                </span>Print<span class="w"> </span>version<span class="w"> </span>information
+
+Mapping<span class="w"> </span>Options:
+<span class="w">  </span>-i,<span class="w"> </span>--index<span class="w"> </span>&lt;INDEX&gt;<span class="w">            </span>path<span class="w"> </span>to<span class="w"> </span>index
+<span class="w">  </span>-1,<span class="w"> </span>--reads1<span class="w"> </span>&lt;READS1&gt;<span class="w">          </span>comma-separated<span class="w"> </span>list<span class="w"> </span>of<span class="w"> </span>paths<span class="w"> </span>to<span class="w"> </span><span class="nb">read</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>files
+<span class="w">  </span>-2,<span class="w"> </span>--reads2<span class="w"> </span>&lt;READS2&gt;<span class="w">          </span>comma-separated<span class="w"> </span>list<span class="w"> </span>of<span class="w"> </span>paths<span class="w"> </span>to<span class="w"> </span><span class="nb">read</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>files
+<span class="w">  </span>-s,<span class="w"> </span>--use-selective-alignment<span class="w">  </span>use<span class="w"> </span>selective-alignment<span class="w"> </span><span class="k">for</span><span class="w"> </span>mapping<span class="w"> </span><span class="o">(</span>instead<span class="w"> </span>of<span class="w"> </span>pseudoalignment<span class="w"> </span>with<span class="w"> </span>structural<span class="w"> </span>constraints<span class="o">)</span>
+<span class="w">      </span>--use-piscem<span class="w">               </span>use<span class="w"> </span>piscem<span class="w"> </span><span class="k">for</span><span class="w"> </span>mapping<span class="w"> </span><span class="o">(</span>requires<span class="w"> </span>that<span class="w"> </span>index<span class="w"> </span>points<span class="w"> </span>to<span class="w"> </span>the<span class="w"> </span>piscem<span class="w"> </span>index<span class="o">)</span>
+<span class="w">      </span>--map-dir<span class="w"> </span>&lt;MAP_DIR&gt;<span class="w">        </span>path<span class="w"> </span>to<span class="w"> </span>a<span class="w"> </span>mapped<span class="w"> </span>output<span class="w"> </span>directory<span class="w"> </span>containing<span class="w"> </span>a<span class="w"> </span>RAD<span class="w"> </span>file<span class="w"> </span>to<span class="w"> </span>skip<span class="w"> </span>mapping
+
+Permit<span class="w"> </span>List<span class="w"> </span>Generation<span class="w"> </span>Options:
+<span class="w">  </span>-k,<span class="w"> </span>--knee<span class="w">                             </span>use<span class="w"> </span>knee<span class="w"> </span>filtering<span class="w"> </span>mode
+<span class="w">  </span>-u,<span class="w"> </span>--unfiltered-pl<span class="w"> </span><span class="o">[</span>&lt;UNFILTERED_PL&gt;<span class="o">]</span><span class="w">  </span>use<span class="w"> </span>unfiltered<span class="w"> </span>permit<span class="w"> </span>list
+<span class="w">  </span>-f,<span class="w"> </span>--forced-cells<span class="w"> </span>&lt;FORCED_CELLS&gt;<span class="w">      </span>use<span class="w"> </span>forced<span class="w"> </span>number<span class="w"> </span>of<span class="w"> </span>cells
+<span class="w">  </span>-x,<span class="w"> </span>--explicit-pl<span class="w"> </span>&lt;EXPLICIT_PL&gt;<span class="w">        </span>use<span class="w"> </span>a<span class="w"> </span>filtered,<span class="w"> </span>explicit<span class="w"> </span>permit<span class="w"> </span>list
+<span class="w">  </span>-e,<span class="w"> </span>--expect-cells<span class="w"> </span>&lt;EXPECT_CELLS&gt;<span class="w">      </span>use<span class="w"> </span>expected<span class="w"> </span>number<span class="w"> </span>of<span class="w"> </span>cells
+<span class="w">  </span>-d,<span class="w"> </span>--expected-ori<span class="w"> </span>&lt;EXPECTED_ORI&gt;<span class="w">      </span>The<span class="w"> </span>expected<span class="w"> </span>direction/orientation<span class="w"> </span>of<span class="w"> </span>alignments<span class="w"> </span><span class="k">in</span><span class="w"> </span>the<span class="w"> </span>chemistry<span class="w"> </span>being<span class="w"> </span>processed.<span class="w"> </span>If<span class="w"> </span>not<span class="w"> </span>provided,<span class="w"> </span>will<span class="w"> </span>default<span class="w"> </span>to<span class="w"> </span><span class="sb">`</span>fw<span class="sb">`</span><span class="w"> </span><span class="k">for</span><span class="w"> </span>10xv2/10xv3,<span class="w"> </span>otherwise<span class="w"> </span><span class="sb">`</span>both<span class="sb">`</span><span class="w"> </span><span class="o">[</span>possible
+<span class="w">                                         </span>values:<span class="w"> </span>fw,<span class="w"> </span>rc,<span class="w"> </span>both<span class="o">]</span>
+<span class="w">      </span>--min-reads<span class="w"> </span>&lt;MIN_READS&gt;<span class="w">            </span>minimum<span class="w"> </span><span class="nb">read</span><span class="w"> </span>count<span class="w"> </span>threshold<span class="w"> </span><span class="k">for</span><span class="w"> </span>a<span class="w"> </span>cell<span class="w"> </span>to<span class="w"> </span>be<span class="w"> </span>retained/processed<span class="p">;</span><span class="w"> </span>only<span class="w"> </span>used<span class="w"> </span>with<span class="w"> </span>--unfiltered-pl<span class="w"> </span><span class="o">[</span>default:<span class="w"> </span><span class="m">10</span><span class="o">]</span>
+
+UMI<span class="w"> </span>Resolution<span class="w"> </span>Options:
+<span class="w">  </span>-m,<span class="w"> </span>--t2g-map<span class="w"> </span>&lt;T2G_MAP&gt;<span class="w">        </span>transcript<span class="w"> </span>to<span class="w"> </span>gene<span class="w"> </span>map
+<span class="w">  </span>-r,<span class="w"> </span>--resolution<span class="w"> </span>&lt;RESOLUTION&gt;<span class="w">  </span>resolution<span class="w"> </span>mode<span class="w"> </span><span class="o">[</span>possible<span class="w"> </span>values:<span class="w"> </span>cr-like,<span class="w"> </span>cr-like-em,<span class="w"> </span>parsimony,<span class="w"> </span>parsimony-em,<span class="w"> </span>parsimony-gene,<span class="w"> </span>parsimony-gene-em<span class="o">]</span>
+</pre></div>
+</div>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="LICENSE.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">License</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="index-command.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title"><code class="docutils literal notranslate"><span class="pre">index</span></code> command</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2022-, Dongze He, Rob Patro
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#"><code class="docutils literal notranslate"><span class="pre">quant</span></code> command</a><ul>
+<li><a class="reference internal" href="#a-note-on-the-chemistry-flag">A note on the <code class="docutils literal notranslate"><span class="pre">--chemistry</span></code> flag</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+    <script src="_static/doctools.js"></script>
+    <script src="_static/sphinx_highlight.js"></script>
+    <script src="_static/scripts/furo.js"></script>
+    </body>
+</html>
