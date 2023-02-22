@@ -1459,8 +1459,7 @@ fn map_and_quant(af_home_path: &Path, quant_cmd: Commands) -> anyhow::Result<()>
 //                  and optionally, some extra variables
 // Program Output: a json file that contains the actual simpelaf workflow information, which can be
 //         consumed directly by the simpleaf execute-workflow command.
-
-// This crate is used for generating a simpleaf workflow JSON file
+// Program Description: This program is used for generating a simpleaf workflow JSON file
 // that can be consumed directly by the `simpleaf workflow` program.
 // Thir program takes a template from our template library as the input
 // and do the following:
@@ -1474,6 +1473,23 @@ fn map_and_quant(af_home_path: &Path, quant_cmd: Commands) -> anyhow::Result<()>
 //      the required arguments.
 
 
+/// ## simpleaf run-workflow
+/// #### Input
+/// one or more simpleaf workflow JSON file (s) with all required fields
+/// 
+/// #### Output
+/// the output of the simpleaf commands recorded in the input JSON file
+/// 
+/// #### Description
+/// This program is used for running the commands recorded in the 
+/// user-provided simpleaf workflow JSON file(s). 
+/// Simpleaf Workflow JSON format required fields:
+/// 1. json_type: This field has to exist and have the value "Simpleaf Workflow"
+/// 2. simpleaf_version: This field has to exist and contains the version of simpleaf
+///     used for making the file. If the files are made manually, this value has to be 
+///      higher than 0.11.0
+/// 3. index: (Optional): this field records all simpleaf index commands that need to be run.
+/// 4. quant: (Optional): this field records all simpleaf quant commands that need to be run.
 
 fn run_workflow(af_home_path: PathBuf, rw_args: Commands) -> anyhow::Result<()> {
     match rw_args {
@@ -1495,8 +1511,10 @@ fn run_workflow(af_home_path: PathBuf, rw_args: Commands) -> anyhow::Result<()> 
 
                 // process simpleaf index command records if any
                 if let Some(index_records) = json_records.index {
+                    info!("Processing simpleaf index commands");
+
                     for (index_name, index_record) in index_records {
-                        info!("processing simpleaf index - {}", index_name);
+                        info!("Name: {}", index_name);
                         if let Some(cmd_string) = index_record.get("cmd") {
                             let cmd_vec: Vec<String> = cmd_string
                                 .to_string()
@@ -1512,8 +1530,10 @@ fn run_workflow(af_home_path: PathBuf, rw_args: Commands) -> anyhow::Result<()> 
 
                 // process simpleaf quant command records if any
                 if let Some(quant_records) = json_records.quant {
+                    info!("Processing simpleaf quant commands..");
+
                     for (quant_name, quant_record) in quant_records {
-                        info!("processing simpleaf quant - {}", quant_name);
+                        info!("name: {}", quant_name);
                         if let Some(cmd_string) = quant_record.get("cmd") {
                             let cmd_vec: Vec<String> = cmd_string
                                 .to_string()
@@ -1521,6 +1541,7 @@ fn run_workflow(af_home_path: PathBuf, rw_args: Commands) -> anyhow::Result<()> 
                                 .split_whitespace()
                                 .map(|x| x.to_string())
                                 .collect();
+                            println!("{:?}", cmd_vec);
                             let parsed_cmd = Cli::parse_from(cmd_vec);
                             quant_cmd_v.push(parsed_cmd);
                         }
@@ -1529,27 +1550,40 @@ fn run_workflow(af_home_path: PathBuf, rw_args: Commands) -> anyhow::Result<()> 
             }
 
             info!(
-                "Found {} simpleaf index commands and {} simpleaf quant commands",
+                "Found {} simpleaf index commands and {} simpleaf quant commands.",
                 index_cmd_v.len(),
                 quant_cmd_v.len()
             );
 
-            info!("Running commands");
+            info!("Running commands.");
 
-            // run simpleaf index commands
-            for index_cmd in index_cmd_v {
-                build_ref_and_index(af_home_path.as_path(), index_cmd.command)?;
+            if !index_cmd_v.is_empty() {
+                info!("Running simpleaf index commands...");
+
+                // run simpleaf index commands
+                for index_cmd in index_cmd_v {
+                    build_ref_and_index(af_home_path.as_path(), index_cmd.command)?;
+                }
+
             }
 
-            // run simpleaf quant commands
-            for quant_cmd in quant_cmd_v {
-                build_ref_and_index(af_home_path.as_path(), quant_cmd.command)?;
+            if !quant_cmd_v.is_empty() {
+                info!("Running simpleaf quant commands...");
+
+                // run simpleaf quant commands
+                for quant_cmd in quant_cmd_v {
+                    map_and_quant(af_home_path.as_path(), quant_cmd.command)?;
+                }
             }
+
         }
         _ => {
             bail!("unknown command")
         }
     }
+
+    info!("All commands ran successfully.");
+
     Ok(())
 }
 
