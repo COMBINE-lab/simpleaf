@@ -6,22 +6,25 @@ use anyhow::{bail, Context};
 use clap::{builder::ArgPredicate, ArgGroup, Parser, Subcommand};
 use cmd_lib::run_fun;
 use serde_json::json;
+
 use time::{Duration, Instant};
 
 use std::io::BufReader;
 use std::io::Write;
-use std::io::{Seek, SeekFrom};
-use std::path::PathBuf;
+// use std::io::{Seek, SeekFrom};
+use std::io::{Seek};
+use std::path::{PathBuf,Path};
 use std::{env, fs};
 
 mod utils;
 use utils::af_utils::*;
 use utils::prog_utils::*;
+use utils::workflow_utils::*;
 
 use crate::utils::prog_utils;
 
 #[derive(Clone, Debug)]
-enum ReferenceType {
+pub enum ReferenceType {
     SplicedIntronic,
     SplicedUnspliced,
 }
@@ -35,7 +38,7 @@ fn ref_type_parser(s: &str) -> Result<ReferenceType, String> {
 }
 
 #[derive(Debug, Subcommand)]
-enum Commands {
+pub enum Commands {
     /// build the (expanded) reference index
     #[command(arg_required_else_help = true)]
     #[command(group(
@@ -84,7 +87,7 @@ enum Commands {
             help_heading = "Expanded Reference Options",
             display_order = 5,
             requires = "fasta",
-            conflicts_with = "ref-seq"
+            conflicts_with = "ref_seq"
         )]
         dedup: bool,
 
@@ -302,6 +305,13 @@ enum Commands {
         #[arg(short = 'r', long)]
         pyroe: Option<PathBuf>,
     },
+
+    /// run workflow according to a JSON file
+    RunWorkflow {
+        /// comma-separated list of paths to read 1 files
+        #[arg(short, long, value_delimiter = ',')]
+        jsons: Vec<PathBuf>,
+    },
 }
 
 /// simplifying alevin-fry workflows
@@ -312,6 +322,7 @@ struct Cli {
     #[command(subcommand)]
     command: Commands,
 }
+
 
 fn set_paths(af_home_path: PathBuf, set_path_args: Commands) -> anyhow::Result<()> {
     const AF_HOME: &str = "ALEVIN_FRY_HOME";
@@ -361,7 +372,7 @@ fn set_paths(af_home_path: PathBuf, set_path_args: Commands) -> anyhow::Result<(
     Ok(())
 }
 
-fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::Result<()> {
+fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow::Result<()> {
     match index_args {
         // if we are building the reference and indexing
         Commands::Index {
@@ -382,17 +393,8 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
             sparse,
             mut threads,
         } => {
-            // Open the file in read-only mode with buffer.
-            let af_info_p = af_home_path.join("simpleaf_info.json");
-            let simpleaf_info_file = std::fs::File::open(&af_info_p).with_context({
-                ||
-                format!("Could not open file {}; please run `simpleaf set-paths` command before using `index` or `quant`.", af_info_p.display())
-            })?;
-
-            let simpleaf_info_reader = BufReader::new(simpleaf_info_file);
-
-            // Read the JSON contents of the file
-            let v: serde_json::Value = serde_json::from_reader(simpleaf_info_reader)?;
+            let v: serde_json::Value = inspect_af_home(af_home_path)?;
+            // Read the JSON contents of the file as an instance of `User`.
             let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
             // we are building a custom reference
@@ -578,7 +580,7 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
                 // ensure we have piscem
                 if rp.piscem.is_none() {
                     bail!("The construction of a piscem index was requested, but a valid piscem executable was not available. \n\
-                           Please either set a path using the `set-paths` command, or ensure the `PISCEM` environment variable is set properly.");
+                            Please either set a path using the `set-paths` command, or ensure the `PISCEM` environment variable is set properly.");
                 }
 
                 let mut piscem_index_cmd = std::process::Command::new(format!(
@@ -800,20 +802,8 @@ fn build_ref_and_index(af_home_path: PathBuf, index_args: Commands) -> anyhow::R
 }
 
 fn inspect_simpleaf(af_home_path: PathBuf) -> anyhow::Result<()> {
-    let af_info_p = af_home_path.join("simpleaf_info.json");
-    let simpleaf_info_file = std::fs::File::open(&af_info_p).with_context({
-        || {
-            format!(
-                "Could not open file {}; please run the set-paths command",
-                af_info_p.display()
-            )
-        }
-    })?;
-
-    let simpleaf_info_reader = BufReader::new(simpleaf_info_file);
-
     // Read the JSON contents of the file as an instance of `User`.
-    let v: serde_json::Value = serde_json::from_reader(simpleaf_info_reader)?;
+    let v: serde_json::Value = inspect_af_home(af_home_path.as_path())?;
     println!(
         "\n----- simpleaf info -----\n{}",
         serde_json::to_string_pretty(&v).unwrap()
@@ -885,7 +875,9 @@ fn add_chemistry(af_home_path: PathBuf, add_chem_cmd: Commands) -> anyhow::Resul
             }
 
             custom_chem_file.set_len(0)?;
-            custom_chem_file.seek(SeekFrom::Start(0))?;
+            // custom_chem_file.seek(SeekFrom::Start(0))?;
+            // suggested by cargo clippy
+            custom_chem_file.rewind()?;
 
             custom_chem_file
                 .write_all(serde_json::to_string_pretty(&v).unwrap().as_bytes())
@@ -898,7 +890,7 @@ fn add_chemistry(af_home_path: PathBuf, add_chem_cmd: Commands) -> anyhow::Resul
     Ok(())
 }
 
-fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<()> {
+fn map_and_quant(af_home_path: &Path, quant_cmd: Commands) -> anyhow::Result<()> {
     match quant_cmd {
         Commands::Quant {
             index,
@@ -920,21 +912,11 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
             chemistry,
             output,
         } => {
-            // Open the file in read-only mode with buffer.
-            let af_info_p = af_home_path.join("simpleaf_info.json");
-            let simpleaf_info_file = std::fs::File::open(&af_info_p).with_context({
-                ||
-                format!("Could not open file {}; please run the `simpleaf set-paths` command before using `index` or `quant`.", af_info_p.display())
-            })?;
-
-            let simpleaf_info_reader = BufReader::new(&simpleaf_info_file);
-
             // Read the JSON contents of the file as an instance of `User`.
-            info!("deserializing from {:?}", simpleaf_info_file);
-            let v: serde_json::Value = serde_json::from_reader(simpleaf_info_reader)?;
+            let v: serde_json::Value = inspect_af_home(af_home_path)?;
             let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
-            info!("prog info = {:?}", rp);
+            // info!("prog info = {:?}", rp);
 
             let mut had_simpleaf_index_json = false;
             let mut index_type_str = String::new();
@@ -1112,7 +1094,7 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                     // using 10xv2 or 10xv3
 
                     // check the chemistry
-                    let pl_res = get_permit_if_absent(&af_home_path, &chem)?;
+                    let pl_res = get_permit_if_absent(af_home_path, &chem)?;
                     let min_cells = min_reads;
                     match pl_res {
                         PermitListResult::DownloadSuccessful(p)
@@ -1181,7 +1163,13 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                 let reads2 = reads2.expect(
                     "since mapping against an index is requested, read2 files must be provided.",
                 );
-                assert_eq!(reads1.len(), reads2.len(), "{} read1 files and {} read2 files were given; Cannot proceed!",reads1.len(), reads2.len());
+                assert_eq!(
+                    reads1.len(),
+                    reads2.len(),
+                    "{} read1 files and {} read2 files were given; Cannot proceed!",
+                    reads1.len(),
+                    reads2.len()
+                );
 
                 match index_type {
                     IndexType::Piscem(index_base) => {
@@ -1466,6 +1454,105 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
     Ok(())
 }
 
+// Program Name: simpleaf generate-workflow
+// Program Input: a json file that records all top level variables needed by the template
+//                  and optionally, some extra variables
+// Program Output: a json file that contains the actual simpelaf workflow information, which can be
+//         consumed directly by the simpleaf execute-workflow command.
+
+// This crate is used for generating a simpleaf workflow JSON file
+// that can be consumed directly by the `simpleaf workflow` program.
+// Thir program takes a template from our template library as the input
+// and do the following:
+// 1. It loads the required arguments of that template and
+//      find them in the user-provided JSON file.
+// 2. It validates the files in the user-provided JSON file.
+//      This can be checking the existance and validate the first few records
+// 3. It feeds the template the required inputs, and
+//      generates a simpleaf workflow JSON file.
+//      This JSON file contains the simpleaf programs need to be run and
+//      the required arguments.
+
+
+
+fn run_workflow(af_home_path: PathBuf, rw_args: Commands) -> anyhow::Result<()> {
+    match rw_args {
+        Commands::RunWorkflow { jsons } => {
+            //  check the validity of the JSON file
+            check_files_exist(&jsons)?;
+
+            info!("Parsing provided simpleaf workflow JSON files");
+            // define vectors for index and quant commands
+            let mut index_cmd_v: Vec<Cli> = Vec::new();
+            index_cmd_v.reserve(jsons.len());
+
+            let mut quant_cmd_v: Vec<Cli> = Vec::new();
+            quant_cmd_v.reserve(jsons.len());
+
+            // iterate json files and parse records to commands
+            for jf in jsons {
+                let json_records = read_workflow_json(&jf)?;
+
+                // process simpleaf index command records if any
+                if let Some(index_records) = json_records.index {
+                    for (index_name, index_record) in index_records {
+                        info!("processing simpleaf index - {}", index_name);
+                        if let Some(cmd_string) = index_record.get("cmd") {
+                            let cmd_vec: Vec<String> = cmd_string
+                                .to_string()
+                                .trim_matches('"')
+                                .split_whitespace()
+                                .map(|x| x.to_string())
+                                .collect();
+                            let parsed_cmd = Cli::parse_from(cmd_vec);
+                            index_cmd_v.push(parsed_cmd);
+                        }
+                    }
+                }
+
+                // process simpleaf quant command records if any
+                if let Some(quant_records) = json_records.quant {
+                    for (quant_name, quant_record) in quant_records {
+                        info!("processing simpleaf quant - {}", quant_name);
+                        if let Some(cmd_string) = quant_record.get("cmd") {
+                            let cmd_vec: Vec<String> = cmd_string
+                                .to_string()
+                                .trim_matches('"')
+                                .split_whitespace()
+                                .map(|x| x.to_string())
+                                .collect();
+                            let parsed_cmd = Cli::parse_from(cmd_vec);
+                            quant_cmd_v.push(parsed_cmd);
+                        }
+                    }
+                }
+            }
+
+            info!(
+                "Found {} simpleaf index commands and {} simpleaf quant commands",
+                index_cmd_v.len(),
+                quant_cmd_v.len()
+            );
+
+            info!("Running commands");
+
+            // run simpleaf index commands
+            for index_cmd in index_cmd_v {
+                build_ref_and_index(af_home_path.as_path(), index_cmd.command)?;
+            }
+
+            // run simpleaf quant commands
+            for quant_cmd in quant_cmd_v {
+                build_ref_and_index(af_home_path.as_path(), quant_cmd.command)?;
+            }
+        }
+        _ => {
+            bail!("unknown command")
+        }
+    }
+    Ok(())
+}
+
 enum IndexType {
     Salmon(PathBuf),
     Piscem(PathBuf),
@@ -1493,7 +1580,12 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    let cli_args = Cli::parse();
+    let cli_args = Cli::parse_from([
+        "simplef",
+        "run-workflow",
+        "-j",
+        "/mnt/scratch5/dongze/CODE/rust/playground/CITE-seq.json",
+    ]);
 
     match cli_args.command {
         // set the paths where the relevant tools live
@@ -1534,7 +1626,7 @@ fn main() -> anyhow::Result<()> {
             sparse,
             threads,
         } => build_ref_and_index(
-            af_home_path,
+            af_home_path.as_path(),
             Commands::Index {
                 ref_type,
                 fasta,
@@ -1576,7 +1668,7 @@ fn main() -> anyhow::Result<()> {
             chemistry,
             output,
         } => map_and_quant(
-            af_home_path,
+            af_home_path.as_path(),
             Commands::Quant {
                 index,
                 use_piscem,
@@ -1598,6 +1690,9 @@ fn main() -> anyhow::Result<()> {
                 output,
             },
         ),
+        Commands::RunWorkflow { jsons } => {
+            run_workflow(af_home_path, Commands::RunWorkflow { jsons })
+        }
     }
     // success, yay!
 }
