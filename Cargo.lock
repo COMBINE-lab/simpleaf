@@ -631,7 +631,7 @@ dependencies = [
 [[package]]
 name = "seq_geom_xform"
 version = "0.1.0"
-source = "git+https://github.com/COMBINE-lab/seq_geom_xform?branch=dev#ad0e4f3c2ee7e64e12257483508dfef2e75a81de"
+source = "git+https://github.com/COMBINE-lab/seq_geom_xform?branch=dev#314deea728f32e3f2fac8aabf1aee232e82bfea1"
 dependencies = [
  "anyhow",
  "clap",

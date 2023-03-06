@@ -208,7 +208,7 @@ pub fn add_or_transform_fragment_library(
         // parse into a "regex" description
         let regex_geo = frag_geom.as_regex()?;
         // the simplified geometry corresponding to this regex geo
-        let simp_geo_string = regex_geo.get_simplified_piscem_description_string();
+        let simp_geo_string = regex_geo.get_simplified_description_string();
 
         // start a thread to transform our complex geometry into
         // simplified geometry
