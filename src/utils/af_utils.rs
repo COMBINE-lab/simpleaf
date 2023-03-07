@@ -6,6 +6,9 @@ use seq_geom_xform::{FifoXFormData, FragmentGeomDescExt};
 use std::path::{Path, PathBuf};
 use tracing::error;
 
+/// The map from pre-specified chemistry types that salmon knows
+/// to the corresponding command line flag that salmon should be passed
+/// to use this chemistry.
 static KNOWN_CHEM_MAP_SALMON: phf::Map<&'static str, &'static str> = phf_map! {
         "10xv2" => "--chromium",
         "10xv3" => "--chromiumV3",
@@ -20,6 +23,9 @@ static KNOWN_CHEM_MAP_SALMON: phf::Map<&'static str, &'static str> = phf_map! {
         "sciseq3" => "--sciseq3"
 };
 
+/// The map from pre-specified chemistry types that piscem knows
+/// to the corresponding geometry name that piscem's `--geometry` option
+/// should be passed to use this chemistry.
 static KNOWN_CHEM_MAP_PISCEM: phf::Map<&'static str, &'static str> = phf_map! {
     "10xv2" => "chromium_v2",
     "10xv3" => "chromium_v3"
@@ -193,6 +199,31 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
     }
 }
 
+/// This function performs the necessary work to register the fragment libraries represented by
+/// `reads1` and `reads2` with the quantification command `quant_cmd`. The logic is as follows:
+///
+/// If the `fragment_geometry_str` is of a known known pre-specified type with respect to the
+/// given `mapper_type`, then the reads are passed directly to the mapper along with the
+/// appropriate geometry flag, and this function returns Ok(FragmentTransformationType::Identity).
+///
+/// Otherwise, the `fragment_geometry_str` is parsed in accordance with the fragment specification
+/// description.
+///
+/// * If the `fragment_geometry_str` representes a "complex" geometry (i.e. a description with
+/// an anchor or one or more bounded range parts), then the provided reads are passed through
+/// the transformation function, and the fragment library is "normalized" to one with fixed
+/// length geometry.  The new reads are written to a pair of fifos, and the mapper is provided
+/// with the corresponding simplified geometry description.  In this case, the function returns
+/// Ok(FragmentTransformationType::TransformedIntoFifo(FifoXFormData)), where the FifoXFormData
+/// contains the names of the fifos being populated and a `JoinHandle` for the thread performing
+/// the transformation.
+///
+/// * If the `fragment_geometry_str` represents a "simple" geometry, then the provided reads are
+/// given directly to the underlying mapper and `fragment_geometry_str` is transformed into the
+/// appropriate argument format for `mapper_type`.  In this case, the function returns
+/// Ok(FragmentTransformationType::Identity).
+///
+/// In any case, if an error occurs, this function returns an anyhow::Error.
 pub fn add_or_transform_fragment_library(
     mapper_type: MapperType,
     fragment_geometry_str: &str,
