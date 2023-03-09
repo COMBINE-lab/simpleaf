@@ -1181,13 +1181,7 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                 let reads2 = reads2.expect(
                     "since mapping against an index is requested, read2 files must be provided.",
                 );
-                assert_eq!(
-                    reads1.len(),
-                    reads2.len(),
-                    "{} read1 files and {} read2 files were given; Cannot proceed!",
-                    reads1.len(),
-                    reads2.len()
-                );
+                assert_eq!(reads1.len(), reads2.len());
 
                 match index_type {
                     IndexType::Piscem(index_base) => {
@@ -1210,15 +1204,22 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                             .arg("-o")
                             .arg(&map_output);
 
-                        // check if we can parse the geometry directly, or if we are dealing with a
-                        // "complex" geometry.
-                        let frag_lib_xform = add_or_transform_fragment_library(
-                            MapperType::Piscem,
-                            chem.as_str(),
-                            &reads1,
-                            &reads2,
-                            &mut piscem_quant_cmd,
-                        )?;
+                        let reads1_str = reads1
+                            .iter()
+                            .map(|x| x.to_string_lossy().into_owned())
+                            .collect::<Vec<String>>()
+                            .join(",");
+                        piscem_quant_cmd.arg("-1").arg(reads1_str);
+
+                        let reads2_str = reads2
+                            .iter()
+                            .map(|x| x.to_string_lossy().into_owned())
+                            .collect::<Vec<String>>()
+                            .join(",");
+                        piscem_quant_cmd.arg("-2").arg(reads2_str);
+
+                        // setting the technology / chemistry
+                        add_chemistry_to_args_piscem(chem.as_str(), &mut piscem_quant_cmd)?;
 
                         map_cmd_string = get_cmd_line_string(&piscem_quant_cmd);
                         info!("piscem map-sc cmd : {}", map_cmd_string);
@@ -1240,26 +1241,6 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                             CommandVerbosityLevel::Quiet,
                         )
                         .expect("failed to execute piscem [mapping phase]");
-
-                        // if we had to filter the reads through a fifo
-                        // wait for the thread feeding the fifo to finish
-                        match frag_lib_xform {
-                            FragmentTransformationType::TransformedIntoFifo(xform_data) => {
-                                // wait for it to join
-                                match xform_data.join_handle.join() {
-                                    Ok(thread_ret) => {
-                                        thread_ret?;
-                                    }
-                                    Err(e) => {
-                                        bail!("Thread panicked with {:?}", e);
-                                    }
-                                }
-                            }
-                            FragmentTransformationType::Identity => {
-                                // nothing to do.
-                            }
-                        }
-
                         map_duration = map_start.elapsed();
 
                         if !cres.status.success() {
@@ -1282,15 +1263,19 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                             .arg("-l")
                             .arg("A");
 
-                        // check if we can parse the geometry directly, or if we are dealing with a
-                        // "complex" geometry.
-                        let frag_lib_xform = add_or_transform_fragment_library(
-                            MapperType::Salmon,
-                            chem.as_str(),
-                            &reads1,
-                            &reads2,
-                            &mut salmon_quant_cmd,
-                        )?;
+                        // location of the reads
+                        // note: salmon uses space so separate
+                        // these, not commas, so build the proper
+                        // strings here.
+
+                        salmon_quant_cmd.arg("-1");
+                        for rf in &reads1 {
+                            salmon_quant_cmd.arg(rf);
+                        }
+                        salmon_quant_cmd.arg("-2");
+                        for rf in &reads2 {
+                            salmon_quant_cmd.arg(rf);
+                        }
 
                         // location of output directory, number of threads
                         map_output = output.join("af_map");
@@ -1309,6 +1294,9 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                             salmon_quant_cmd.arg("--sketch");
                         }
 
+                        // setting the technology / chemistry
+                        add_chemistry_to_args_salmon(chem.as_str(), &mut salmon_quant_cmd)?;
+
                         map_cmd_string = get_cmd_line_string(&salmon_quant_cmd);
                         info!("salmon alevin cmd : {}", map_cmd_string);
                         sc_mapper = String::from("salmon");
@@ -1325,26 +1313,6 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                             CommandVerbosityLevel::Quiet,
                         )
                         .expect("failed to execute salmon [mapping phase]");
-
-                        // if we had to filter the reads through a fifo
-                        // wait for the thread feeding the fifo to finish
-                        match frag_lib_xform {
-                            FragmentTransformationType::TransformedIntoFifo(xform_data) => {
-                                // wait for it to join
-                                match xform_data.join_handle.join() {
-                                    Ok(thread_ret) => {
-                                        thread_ret?;
-                                    }
-                                    Err(e) => {
-                                        bail!("Thread panicked with {:?}", e);
-                                    }
-                                }
-                            }
-                            FragmentTransformationType::Identity => {
-                                // nothing to do.
-                            }
-                        }
-
                         map_duration = map_start.elapsed();
 
                         if !cres.status.success() {
@@ -1473,7 +1441,7 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                 "cmd_info" : {
                     "map_cmd" : map_cmd_string,
                     "gpl_cmd" : get_cmd_line_string(&alevin_gpl_cmd),
-                    "collate_cmd" : get_cmd_line_string(&alevin_gpl_cmd),
+                    "collate_cmd" : get_cmd_line_string(&alevin_collate_cmd),
                     "quant_cmd" : get_cmd_line_string(&alevin_quant_cmd)
                     },
                 "map_info" : {
