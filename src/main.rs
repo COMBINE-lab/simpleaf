@@ -1473,7 +1473,7 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                 "cmd_info" : {
                     "map_cmd" : map_cmd_string,
                     "gpl_cmd" : get_cmd_line_string(&alevin_gpl_cmd),
-                    "collate_cmd" : get_cmd_line_string(&alevin_gpl_cmd),
+                    "collate_cmd" : get_cmd_line_string(&alevin_collate_cmd),
                     "quant_cmd" : get_cmd_line_string(&alevin_quant_cmd)
                     },
                 "map_info" : {
