@@ -3,7 +3,7 @@ use cmd_lib::run_fun;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::env;
-use std::path::{PathBuf,Path};
+use std::path::{Path, PathBuf};
 use tracing::{error, info};
 use which::which;
 
@@ -338,7 +338,6 @@ pub fn read_json(json_path: &Path) -> anyhow::Result<serde_json::Value> {
     let v: serde_json::Value = serde_json::from_reader(json_file)?;
     Ok(v)
 }
-
 
 pub fn inspect_af_home(af_home_path: &Path) -> anyhow::Result<serde_json::Value> {
     // Open the file in read-only mode with buffer.

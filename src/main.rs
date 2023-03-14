@@ -1,6 +1,5 @@
 use tracing::{info, warn};
-use tracing_subscriber::filter::LevelFilter;
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing_subscriber::{filter::LevelFilter, fmt, prelude::*, EnvFilter};
 
 use anyhow::{bail, Context};
 use clap::{builder::ArgPredicate, ArgGroup, Parser, Subcommand};
@@ -9,11 +8,10 @@ use serde_json::json;
 
 use time::{Duration, Instant};
 
-use std::io::BufReader;
-use std::io::Write;
+use std::io::{BufReader, Seek, Write};
 // use std::io::{Seek, SeekFrom};
-use std::io::{Seek};
-use std::path::{PathBuf,Path};
+use serde_json::Value;
+use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 mod utils;
@@ -306,11 +304,42 @@ pub enum Commands {
         pyroe: Option<PathBuf>,
     },
 
-    /// run workflow according to a JSON file
-    RunWorkflow {
-        /// comma-separated list of paths to read 1 files
-        #[arg(short, long, value_delimiter = ',')]
-        jsons: Vec<PathBuf>,
+    GetWorkflowConfig {
+        /// path to output configuration file, the directory will be created if it doesn't exist
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// name of the queried workflow.
+        #[arg(short, long)]
+        workflow: String,
+
+        /// only write the essential information without any instructions
+        #[arg(short, long)]
+        essential_only: bool,
+    },
+
+    #[command(group(
+        ArgGroup::new("workflow file")
+        .required(true)
+        .args(["config_path", "workflow_path"])
+        ))]
+    /// parse the input configuration/workflow files and execute the corresponding workflow(s).
+    Workflow {
+        /// comma-separated list of path to simpleaf workflow configuration files.
+        #[arg(short, long)]
+        config_path: Option<PathBuf>,
+
+        /// comma-separated list of path to simpleaf complete workflow JSON files.
+        #[arg(short, long)]
+        workflow_path: Option<PathBuf>,
+
+        /// Output directory for log files and  the results of workflows that have no explicit output directory.
+        #[arg(short, long)]
+        output: PathBuf,
+
+        // convert the workflow configuration files to complete workflow files without executing the workflow.
+        #[arg(short, long)]
+        no_execution: bool,
     },
 }
 
@@ -318,11 +347,10 @@ pub enum Commands {
 #[derive(Debug, Parser)]
 #[command(author, version, about)]
 #[command(propagate_version = true)]
-struct Cli {
+pub struct Cli {
     #[command(subcommand)]
     command: Commands,
 }
-
 
 fn set_paths(af_home_path: PathBuf, set_path_args: Commands) -> anyhow::Result<()> {
     const AF_HOME: &str = "ALEVIN_FRY_HOME";
@@ -393,7 +421,7 @@ fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow::Res
             sparse,
             mut threads,
         } => {
-            let v: serde_json::Value = inspect_af_home(af_home_path)?;
+            let v: Value = inspect_af_home(af_home_path)?;
             // Read the JSON contents of the file as an instance of `User`.
             let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
@@ -670,7 +698,7 @@ fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow::Res
                 // ensure we have piscem
                 if rp.salmon.is_none() {
                     bail!("The construction of a salmon index was requested, but a valid piscem executable was not available. \n\
-                           Please either set a path using the `simpleaf set-paths` command, or ensure the `SALMON` environment variable is set properly.");
+                            Please either set a path using the `simpleaf set-paths` command, or ensure the `SALMON` environment variable is set properly.");
                 }
 
                 let mut salmon_index_cmd = std::process::Command::new(format!(
@@ -803,7 +831,7 @@ fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow::Res
 
 fn inspect_simpleaf(af_home_path: PathBuf) -> anyhow::Result<()> {
     // Read the JSON contents of the file as an instance of `User`.
-    let v: serde_json::Value = inspect_af_home(af_home_path.as_path())?;
+    let v: Value = inspect_af_home(af_home_path.as_path())?;
     println!(
         "\n----- simpleaf info -----\n{}",
         serde_json::to_string_pretty(&v).unwrap()
@@ -826,7 +854,7 @@ fn inspect_simpleaf(af_home_path: PathBuf) -> anyhow::Result<()> {
             }
         })?;
         let custom_chem_reader = BufReader::new(custom_chem_file);
-        let v: serde_json::Value = serde_json::from_reader(custom_chem_reader)?;
+        let v: Value = serde_json::from_reader(custom_chem_reader)?;
         println!("{}", serde_json::to_string_pretty(&v).unwrap());
     }
     Ok(())
@@ -857,7 +885,7 @@ fn add_chemistry(af_home_path: PathBuf, add_chem_cmd: Commands) -> anyhow::Resul
                 })?;
 
             let custom_chem_reader = BufReader::new(&custom_chem_file);
-            let mut v: serde_json::Value = match serde_json::from_reader(custom_chem_reader) {
+            let mut v: Value = match serde_json::from_reader(custom_chem_reader) {
                 Ok(sv) => sv,
                 Err(_) => {
                     // the file was empty so here return an empty json object
@@ -913,7 +941,7 @@ fn map_and_quant(af_home_path: &Path, quant_cmd: Commands) -> anyhow::Result<()>
             output,
         } => {
             // Read the JSON contents of the file as an instance of `User`.
-            let v: serde_json::Value = inspect_af_home(af_home_path)?;
+            let v: Value = inspect_af_home(af_home_path)?;
             let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
             // info!("prog info = {:?}", rp);
@@ -931,7 +959,7 @@ fn map_and_quant(af_home_path: &Path, quant_cmd: Commands) -> anyhow::Result<()>
                             })?;
 
                         let index_json_reader = BufReader::new(&index_json_file);
-                        let v: serde_json::Value = serde_json::from_reader(index_json_reader)?;
+                        let v: Value = serde_json::from_reader(index_json_reader)?;
                         had_simpleaf_index_json = true;
                         index_type_str = serde_json::from_value(v["index_type"].clone())?;
                         // if the user didn't pass in a t2g_map, try and populate it
@@ -1028,7 +1056,7 @@ fn map_and_quant(af_home_path: &Path, quant_cmd: Commands) -> anyhow::Result<()>
                                 }
                             })?;
                         let custom_chem_reader = BufReader::new(custom_chem_file);
-                        let v: serde_json::Value = serde_json::from_reader(custom_chem_reader)?;
+                        let v: Value = serde_json::from_reader(custom_chem_reader)?;
                         let rchem = match v[s.to_string()].as_str() {
                             Some(chem_str) => {
                                 info!("custom chemistry {} maps to geometry {}", s, &chem_str);
@@ -1458,7 +1486,8 @@ fn map_and_quant(af_home_path: &Path, quant_cmd: Commands) -> anyhow::Result<()>
 // Program Input: a json file that records all top level variables needed by the template
 //                  and optionally, some extra variables
 // Program Output: a json file that contains the actual simpelaf workflow information, which can be
-//         consumed directly by the simpleaf execute-workflow command.
+//         consumed directly by the simpleaf run-workflow command. Additionally, if --execute is specified,
+//          the generated simpleaf workflow will be executed.
 // Program Description: This program is used for generating a simpleaf workflow JSON file
 // that can be consumed directly by the `simpleaf workflow` program.
 // Thir program takes a template from our template library as the input
@@ -1472,118 +1501,243 @@ fn map_and_quant(af_home_path: &Path, quant_cmd: Commands) -> anyhow::Result<()>
 //      This JSON file contains the simpleaf programs need to be run and
 //      the required arguments.
 
+fn generate_workflow(_af_home_path: &Path, _gw_cmd: Commands) {
+    unimplemented!()
+}
 
 /// ## simpleaf run-workflow
 /// #### Input
 /// one or more simpleaf workflow JSON file (s) with all required fields
-/// 
+///
 /// #### Output
 /// the output of the simpleaf commands recorded in the input JSON file
-/// 
+///
 /// #### Description
-/// This program is used for running the commands recorded in the 
-/// user-provided simpleaf workflow JSON file(s). 
+/// This program is used for running the commands recorded in the
+/// user-provided simpleaf workflow JSON file(s).
 /// Simpleaf Workflow JSON format required fields:
 /// 1. json_type: This field has to exist and have the value "Simpleaf Workflow"
 /// 2. simpleaf_version: This field has to exist and contains the version of simpleaf
-///     used for making the file. If the files are made manually, this value has to be 
+///     used for making the file. If the files are made manually, this value has to be
 ///      higher than 0.11.0
 /// 3. index: (Optional): this field records all simpleaf index commands that need to be run.
 /// 4. quant: (Optional): this field records all simpleaf quant commands that need to be run.
 
-fn run_workflow(af_home_path: PathBuf, rw_args: Commands) -> anyhow::Result<()> {
-    match rw_args {
-        Commands::RunWorkflow { jsons } => {
-            //  check the validity of the JSON file
-            check_files_exist(&jsons)?;
+fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<()> {
+    match workflow_cmd {
+        Commands::Workflow {
+            config_path,
+            workflow_path,
+            output,
+            // TODO: write JSON only if no execution
+            no_execution,
+        } => {
+            let simpleaf_workflow: SimpleafWorkflow;
+            let mut workflow_log: WorkflowLog;
+            // If no workflow/config files are given. return with an error
+            if config_path.is_none() & workflow_path.is_none() {
+                bail!("Neither configuration file nor workflow file is provided; Cannot proceed.");
+            }
 
-            info!("Parsing provided simpleaf workflow JSON files");
-            // define vectors for index and quant commands
-            let mut index_cmd_v: Vec<Cli> = Vec::new();
-            index_cmd_v.reserve(jsons.len());
+            // if we see config files. process it
+            if let Some(cp) = config_path {
+                //  check the validity of the JSON file
+                if !cp.exists() {
+                    bail!("the path of the given workflow configuratioin file doesn't exist; Cannot proceed.")
+                }
 
-            let mut quant_cmd_v: Vec<Cli> = Vec::new();
-            quant_cmd_v.reserve(jsons.len());
+                info!("Processing simpleaf workflow configurations file...");
 
-            // iterate json files and parse records to commands
-            for jf in jsons {
-                let json_records = read_workflow_json(&jf)?;
+                // iterate json files and parse records to commands
+                // convert files into json string vector
+                let workflow_json_string =
+                    parse_workflow_config(af_home_path, cp.as_path(), output.as_path())?;
 
-                // process simpleaf index command records if any
-                if let Some(index_records) = json_records.index {
-                    info!("Processing simpleaf index commands");
+                // write complete workflow json to output folder
+                // the execution order in this json file will be changed to "-1"
+                // once the command is run successfully.
+                // The final workflow file name will be the same as the input config but
+                // with json as the extention.
+                let workflow_json_value: Value =
+                    serde_json::from_str(workflow_json_string.as_str())?;
 
-                    for (index_name, index_record) in index_records {
-                        info!("Name: {}", index_name);
-                        if let Some(cmd_string) = index_record.get("cmd") {
-                            let cmd_vec: Vec<String> = cmd_string
-                                .to_string()
-                                .trim_matches('"')
-                                .split_whitespace()
-                                .map(|x| x.to_string())
-                                .collect();
-                            let parsed_cmd = Cli::parse_from(cmd_vec);
-                            index_cmd_v.push(parsed_cmd);
+                // initialize simpleaf workflow and log struct
+                (simpleaf_workflow, workflow_log) = initialize_workflow(
+                    af_home_path,
+                    cp.as_path(),
+                    output.as_path(),
+                    workflow_json_value,
+                )?;
+            } else {
+                let wp = workflow_path.expect(
+                    "Neither configuration file nor workflow file is provided; Cannot proceed.",
+                );
+
+                // check the existence of the file
+                if !wp.exists() {
+                    bail!("the path of the given workflow configuratioin file doesn't exist; Cannot proceed.")
+                }
+                // load each file as a wrapper struct of a vector of simpleaf commands
+                let json_file = fs::File::open(wp.as_path())
+                    .with_context(|| format!("Could not open JSON file {}.", wp.display()))?;
+
+                let workflow_json_value: Value = serde_json::from_reader(json_file)?;
+
+                (simpleaf_workflow, workflow_log) = initialize_workflow(
+                    af_home_path,
+                    wp.as_path(),
+                    output.as_path(),
+                    workflow_json_value,
+                )?;
+            }
+            if !no_execution {
+                for cr in simpleaf_workflow.cmd_queue {
+                    if !cr.execution_order.is_negative() {
+                        if let Some(cmd) = cr.simpleaf_cmd {
+                            info!(
+                                "Running command # {} : {}",
+                                cr.execution_order,
+                                cr.program_name
+                            );
+
+                            let exec_result = match cmd {
+                                Commands::Index {
+                                    ref_type,
+                                    fasta,
+                                    gtf,
+                                    rlen,
+                                    spliced,
+                                    unspliced,
+                                    dedup,
+                                    keep_duplicates,
+                                    ref_seq,
+                                    output,
+                                    use_piscem,
+                                    kmer_length,
+                                    minimizer_length,
+                                    overwrite,
+                                    sparse,
+                                    threads,
+                                } => build_ref_and_index(
+                                    af_home_path,
+                                    Commands::Index {
+                                        ref_type,
+                                        fasta,
+                                        gtf,
+                                        rlen,
+                                        spliced,
+                                        unspliced,
+                                        dedup,
+                                        keep_duplicates,
+                                        ref_seq,
+                                        output,
+                                        use_piscem,
+                                        kmer_length,
+                                        minimizer_length,
+                                        overwrite,
+                                        sparse,
+                                        threads,
+                                    },
+                                ),
+
+                                // if we are running mapping and quantification
+                                Commands::Quant {
+                                    index,
+                                    use_piscem,
+                                    map_dir,
+                                    reads1,
+                                    reads2,
+                                    threads,
+                                    use_selective_alignment,
+                                    expected_ori,
+                                    knee,
+                                    unfiltered_pl,
+                                    explicit_pl,
+                                    forced_cells,
+                                    expect_cells,
+                                    min_reads,
+                                    resolution,
+                                    t2g_map,
+                                    chemistry,
+                                    output,
+                                } => map_and_quant(
+                                    af_home_path,
+                                    Commands::Quant {
+                                        index,
+                                        use_piscem,
+                                        map_dir,
+                                        reads1,
+                                        reads2,
+                                        threads,
+                                        use_selective_alignment,
+                                        expected_ori,
+                                        knee,
+                                        unfiltered_pl,
+                                        explicit_pl,
+                                        forced_cells,
+                                        expect_cells,
+                                        min_reads,
+                                        resolution,
+                                        t2g_map,
+                                        chemistry,
+                                        output,
+                                    },
+                                ),
+                                _ => todo!(),
+                            };
+                            if let Err(e) = exec_result {
+                                workflow_log.write()?;
+                                return Err(e);
+                            } else {
+                                workflow_log.update(&cr.field_trajectory_vec[..]);
+                            }
                         }
-                    }
-                }
 
-                // process simpleaf quant command records if any
-                if let Some(quant_records) = json_records.quant {
-                    info!("Processing simpleaf quant commands..");
+                        // If this is an external command, then initialize it and run
+                        if let Some(mut cmd) = cr.external_cmd {
+                            // log
+                            let cmd_string = get_cmd_line_string(&cmd);
+                            info!("Running command # {} : {}", cr.execution_order, cmd_string);
 
-                    for (quant_name, quant_record) in quant_records {
-                        info!("name: {}", quant_name);
-                        if let Some(cmd_string) = quant_record.get("cmd") {
-                            let cmd_vec: Vec<String> = cmd_string
-                                .to_string()
-                                .trim_matches('"')
-                                .split_whitespace()
-                                .map(|x| x.to_string())
-                                .collect();
-                            println!("{:?}", cmd_vec);
-                            let parsed_cmd = Cli::parse_from(cmd_vec);
-                            quant_cmd_v.push(parsed_cmd);
-                        }
-                    }
-                }
+                            // invoke command and time it
+                            let cmd_start = Instant::now();
+                            let cres =
+                                prog_utils::execute_command(&mut cmd, CommandVerbosityLevel::Quiet)
+                                    .with_context(|| {
+                                        format!(
+                                            "Could not execute {} for step # {}",
+                                            cr.program_name,
+                                            cr.execution_order
+                                        )
+                                    })?;
+                            let _cmd_duration = cmd_start.elapsed();
+
+                            // if succeed, update workflow_log,
+                            // else, write log and return with error
+                            if cres.status.success() {
+                                workflow_log.update(&cr.field_trajectory_vec[..]);
+                            } else {
+                                workflow_log.write()?;
+                                bail!(
+                                    "failed to invoke {} for step # {}: {:?}: ",
+                                    cr.program_name,
+                                    cr.execution_order,
+                                    cres.status
+                                );
+                            }
+                        } // invoke external cmd
+                    } // positive execution order
+                } // for cmd_queue
+
+                info!("All workflows ran successfully.");
+            } else {
+                workflow_log.write()?;
             }
-
-            info!(
-                "Found {} simpleaf index commands and {} simpleaf quant commands.",
-                index_cmd_v.len(),
-                quant_cmd_v.len()
-            );
-
-            info!("Running commands.");
-
-            if !index_cmd_v.is_empty() {
-                info!("Running simpleaf index commands...");
-
-                // run simpleaf index commands
-                for index_cmd in index_cmd_v {
-                    build_ref_and_index(af_home_path.as_path(), index_cmd.command)?;
-                }
-
-            }
-
-            if !quant_cmd_v.is_empty() {
-                info!("Running simpleaf quant commands...");
-
-                // run simpleaf quant commands
-                for quant_cmd in quant_cmd_v {
-                    map_and_quant(af_home_path.as_path(), quant_cmd.command)?;
-                }
-            }
-
-        }
+        } //
         _ => {
             bail!("unknown command")
         }
-    }
-
-    info!("All commands ran successfully.");
-
+    } // match Commands::Workflow
     Ok(())
 }
 
@@ -1724,8 +1878,34 @@ fn main() -> anyhow::Result<()> {
                 output,
             },
         ),
-        Commands::RunWorkflow { jsons } => {
-            run_workflow(af_home_path, Commands::RunWorkflow { jsons })
+        Commands::Workflow {
+            config_path,
+            workflow_path,
+            output,
+            no_execution,
+        } => workflow(
+            af_home_path.as_path(),
+            Commands::Workflow {
+                config_path,
+                workflow_path,
+                output,
+                no_execution,
+            },
+        ),
+        Commands::GetWorkflowConfig {
+            output,
+            workflow,
+            essential_only,
+        } => {
+            generate_workflow(
+                af_home_path.as_path(),
+                Commands::GetWorkflowConfig {
+                    output,
+                    workflow,
+                    essential_only,
+                },
+            );
+            Ok(())
         }
     }
     // success, yay!
