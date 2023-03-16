@@ -63,8 +63,8 @@ pub fn parse_jsonnet(
 ) -> anyhow::Result<String> {
     // define top level argumetns
     // let tla_af_home_path = format!("af_home_path='{}'", af_home_path.display());
-    let tla_output = format!("\"output_dir='{}'\"", output.to_string_lossy().into_owned());
-    let ext_utils_file_path = format!("\"utils = import '{}'\"", utils_libsonnet_path.display());
+    let tla_output = format!(r#"output='{}'"#, output.to_string_lossy().into_owned());
+    let ext_utils_file_path = format!(r#"utils = import '{}'"#, utils_libsonnet_path.display());
     let input_config_file_path = config_file_path.to_string_lossy().into_owned();
 
     // create command vector for clap parser

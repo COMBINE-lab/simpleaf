@@ -3,7 +3,7 @@ use tracing_subscriber::{filter::LevelFilter, fmt, prelude::*, EnvFilter};
 
 use anyhow::{bail, Context};
 use clap::{builder::ArgPredicate, ArgGroup, Parser, Subcommand};
-use cmd_lib::run_fun;
+use cmd_lib::{run_cmd, run_fun};
 use serde_json::json;
 
 use time::{Duration, Instant};
@@ -325,21 +325,25 @@ pub enum Commands {
         ))]
     /// parse the input configuration/workflow files and execute the corresponding workflow(s).
     Workflow {
-        /// comma-separated list of path to simpleaf workflow configuration files.
+        /// path to a simpleaf workflow configuration file.
         #[arg(short, long)]
         config_path: Option<PathBuf>,
 
-        /// comma-separated list of path to simpleaf complete workflow JSON files.
+        /// path to a simpleaf complete workflow JSON file.
         #[arg(short, long)]
         workflow_path: Option<PathBuf>,
 
-        /// Output directory for log files and  the results of workflows that have no explicit output directory.
+        /// output directory for log files and the workflow outputs that have no explicit output directory.
         #[arg(short, long)]
         output: PathBuf,
 
-        // convert the workflow configuration files to complete workflow files without executing the workflow.
+        /// if this flag is passed, return after parsing the wofklow config or JSON file without executing the workflow.
         #[arg(short, long)]
         no_execution: bool,
+
+        /// the start exectuion order when executing the workflow. All commands with a smaller execution order will be ignored.  
+        #[arg(short, long, default_value_t = 1)]
+        start_at: isize,
     },
 }
 
@@ -1531,22 +1535,22 @@ fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<()> {
             output,
             // TODO: write JSON only if no execution
             no_execution,
+            start_at,
         } => {
+            run_fun!(mkdir -p $output)?;
+
             let simpleaf_workflow: SimpleafWorkflow;
             let mut workflow_log: WorkflowLog;
-            // If no workflow/config files are given. return with an error
-            if config_path.is_none() & workflow_path.is_none() {
-                bail!("Neither configuration file nor workflow file is provided; Cannot proceed.");
-            }
 
+            // we will have either a config_path or a workflow_path
             // if we see config files. process it
             if let Some(cp) = config_path {
-                //  check the validity of the JSON file
+                //  check the validity of the file
                 if !cp.exists() {
                     bail!("the path of the given workflow configuratioin file doesn't exist; Cannot proceed.")
                 }
 
-                info!("Processing simpleaf workflow configurations file...");
+                info!("Processing simpleaf workflow configuration file...");
 
                 // iterate json files and parse records to commands
                 // convert files into json string vector
@@ -1562,11 +1566,13 @@ fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<()> {
                     serde_json::from_str(workflow_json_string.as_str())?;
 
                 // initialize simpleaf workflow and log struct
+                // TODO: print some log using meta_info fields
                 (simpleaf_workflow, workflow_log) = initialize_workflow(
                     af_home_path,
                     cp.as_path(),
                     output.as_path(),
                     workflow_json_value,
+                    start_at,
                 )?;
             } else {
                 let wp = workflow_path.expect(
@@ -1581,6 +1587,7 @@ fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<()> {
                 let json_file = fs::File::open(wp.as_path())
                     .with_context(|| format!("Could not open JSON file {}.", wp.display()))?;
 
+                // TODO: print some log using meta_info fields
                 let workflow_json_value: Value = serde_json::from_reader(json_file)?;
 
                 (simpleaf_workflow, workflow_log) = initialize_workflow(
@@ -1588,16 +1595,18 @@ fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<()> {
                     wp.as_path(),
                     output.as_path(),
                     workflow_json_value,
+                    start_at,
                 )?;
             }
             if !no_execution {
                 for cr in simpleaf_workflow.cmd_queue {
+                    // this if statement is no longer needed as commands with a negative exec order
+                    // are ignore when constructing the the cmd queue
                     if !cr.execution_order.is_negative() {
                         if let Some(cmd) = cr.simpleaf_cmd {
                             info!(
                                 "Running command # {} : {}",
-                                cr.execution_order,
-                                cr.program_name
+                                cr.execution_order, cr.program_name
                             );
 
                             let exec_result = match cmd {
@@ -1701,34 +1710,59 @@ fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<()> {
 
                             // invoke command and time it
                             let cmd_start = Instant::now();
-                            let cres =
-                                prog_utils::execute_command(&mut cmd, CommandVerbosityLevel::Quiet)
-                                    .with_context(|| {
-                                        format!(
-                                            "Could not execute {} for step # {}",
-                                            cr.program_name,
-                                            cr.execution_order
-                                        )
-                                    })?;
-                            let _cmd_duration = cmd_start.elapsed();
-
-                            // if succeed, update workflow_log,
-                            // else, write log and return with error
-                            if cres.status.success() {
-                                workflow_log.update(&cr.field_trajectory_vec[..]);
-                            } else {
-                                workflow_log.write()?;
-                                bail!(
-                                    "failed to invoke {} for step # {}: {:?}: ",
-                                    cr.program_name,
-                                    cr.execution_order,
-                                    cres.status
-                                );
-                            }
-                        } // invoke external cmd
-                    } // positive execution order
-                } // for cmd_queue
-
+                            match cmd.output() {
+                                Ok(cres) => {
+                                    // check the return status of external command
+                                    if cres.status.success() {
+                                        workflow_log.update(&cr.field_trajectory_vec[..]);
+                                    } else {
+                                        let cmd_string = get_cmd_line_string(&cmd);
+                                        match run_cmd!(sh -c $cmd_string) {
+                                            Ok(_) => {
+                                                workflow_log.update(&cr.field_trajectory_vec[..]);
+                                            }
+                                            Err(e2) => {
+                                                workflow_log.write()?;
+                                                bail!(
+                                                    "failed to invoke {} for step # {} in two attempts.\n\
+                                                    The exit status of the first attempt was: {:?}. \n\
+                                                    The stderr of the first attempt was: {:?}. \n\
+                                                    The error message of the second attempt was: {:?}.",
+                                                    cr.program_name,
+                                                    cr.execution_order,
+                                                    cres.status,
+                                                    std::str::from_utf8(&cres.stderr[..]).unwrap(),
+                                                    e2
+                                                );
+                                            }
+                                        };
+                                    }
+                                }
+                                Err(e) => {
+                                    let cmd_string = get_cmd_line_string(&cmd);
+                                    match run_cmd!(sh -c $cmd_string) {
+                                        Ok(_) => {
+                                            workflow_log.update(&cr.field_trajectory_vec[..]);
+                                        }
+                                        Err(e2) => {
+                                            workflow_log.write()?;
+                                            bail!(
+                                                "failed to invoke {} for step # {} in two attempts.\n\
+                                                The stderr of the first attempt was: {:?}. \n\
+                                                The error message of the second attempt was: {:?}.",
+                                                cr.program_name,
+                                                cr.execution_order,
+                                                e,
+                                                e2
+                                            );
+                                        }
+                                    };
+                                    let _cmd_duration = cmd_start.elapsed();
+                                } // TODO: use this in the log somewhere.
+                            } // invoke external cmd
+                        } // positive execution order
+                    } // for cmd_queue
+                }
                 info!("All workflows ran successfully.");
             } else {
                 workflow_log.write()?;
@@ -1768,12 +1802,7 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    let cli_args = Cli::parse_from([
-        "simplef",
-        "run-workflow",
-        "-j",
-        "/mnt/scratch5/dongze/CODE/rust/playground/CITE-seq.json",
-    ]);
+    let cli_args = Cli::parse();
 
     match cli_args.command {
         // set the paths where the relevant tools live
@@ -1883,6 +1912,7 @@ fn main() -> anyhow::Result<()> {
             workflow_path,
             output,
             no_execution,
+            start_at,
         } => workflow(
             af_home_path.as_path(),
             Commands::Workflow {
@@ -1890,6 +1920,7 @@ fn main() -> anyhow::Result<()> {
                 workflow_path,
                 output,
                 no_execution,
+                start_at,
             },
         ),
         Commands::GetWorkflowConfig {
