@@ -1247,8 +1247,14 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                             FragmentTransformationType::TransformedIntoFifo(xform_data) => {
                                 // wait for it to join
                                 match xform_data.join_handle.join() {
-                                    Ok(thread_ret) => {
-                                        thread_ret?;
+                                    Ok(join_res) => {
+                                        let xform_stats = join_res?;
+                                        let total = xform_stats.total_fragments;
+                                        let failed = xform_stats.failed_parsing;
+                                        info!(
+                                            "seq_geom_xform : observed {} input fragments. {} ({:.2}%) of them failed to parse and were not transformed",
+                                            total, failed, if total > 0 { (failed as f64) / (total as f64) } else { 0_f64 } * 100_f64
+                                        );
                                     }
                                     Err(e) => {
                                         bail!("Thread panicked with {:?}", e);
@@ -1332,8 +1338,14 @@ fn map_and_quant(af_home_path: PathBuf, quant_cmd: Commands) -> anyhow::Result<(
                             FragmentTransformationType::TransformedIntoFifo(xform_data) => {
                                 // wait for it to join
                                 match xform_data.join_handle.join() {
-                                    Ok(thread_ret) => {
-                                        thread_ret?;
+                                    Ok(join_res) => {
+                                        let xform_stats = join_res?;
+                                        let total = xform_stats.total_fragments;
+                                        let failed = xform_stats.failed_parsing;
+                                        info!(
+                                            "seq_geom_xform : observed {} input fragments. {} ({:.2}%) of them failed to parse and were not transformed",
+                                            total, failed, if total > 0 { (failed as f64) / (total as f64) } else { 0_f64 } * 100_f64
+                                        );
                                     }
                                     Err(e) => {
                                         bail!("Thread panicked with {:?}", e);
