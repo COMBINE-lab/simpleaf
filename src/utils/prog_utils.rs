@@ -1,9 +1,9 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use cmd_lib::run_fun;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::{error, info};
 use which::which;
 
@@ -330,4 +330,28 @@ pub fn check_files_exist(file_vec: &[PathBuf]) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+pub fn read_json(json_path: &Path) -> anyhow::Result<serde_json::Value> {
+    let json_file = std::fs::File::open(json_path)
+        .with_context(|| format!("Could not open JSON file {}.", json_path.display()))?;
+    let v: serde_json::Value = serde_json::from_reader(json_file)?;
+    Ok(v)
+}
+
+pub fn inspect_af_home(af_home_path: &Path) -> anyhow::Result<serde_json::Value> {
+    // Open the file in read-only mode with buffer.
+    let af_info_p = af_home_path.join("simpleaf_info.json");
+
+    // try read af info
+    let v = read_json(af_info_p.as_path());
+
+    // handle the error
+    match v {
+        Ok(okv) => Ok(okv),
+        Err(e) => Err(anyhow!(
+            "{} Please run the `simpleaf set-paths` command before using `index` or `quant`.",
+            e
+        )),
+    }
 }

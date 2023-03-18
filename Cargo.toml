@@ -44,7 +44,12 @@ serde = {version = "1.0.152", features = ["derive"]}
 serde_json = "1.0.94"
 time = {version = "^0.3.20", features = ["macros", "formatting", "parsing", "serde", "serde-human-readable"]}
 which = "^4.4.0"
+jrsonnet-evaluator = "0.5.0-pre6"
+jrsonnet-cli = "0.5.0-pre6"
+jrsonnet-parser = "0.5.0-pre6"
+thiserror = "1.0"
 phf = { version = "0.11.1", features = ["macros"] }
+
 
 [profile.release]
 lto = "thin"
