@@ -1,9 +1,53 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use cmd_lib::run_fun;
+use phf::phf_map;
 use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonSeparateGeomDesc};
-use std::collections::HashMap;
+use seq_geom_xform::{FifoXFormData, FragmentGeomDescExt};
 use std::path::{Path, PathBuf};
 use tracing::error;
+
+/// The map from pre-specified chemistry types that salmon knows
+/// to the corresponding command line flag that salmon should be passed
+/// to use this chemistry.
+static KNOWN_CHEM_MAP_SALMON: phf::Map<&'static str, &'static str> = phf_map! {
+        "10xv2" => "--chromium",
+        "10xv3" => "--chromiumV3",
+        "dropseq" => "--dropseq",
+        "indropv2" => "--indropV2",
+        "citeseq" => "--citeseq",
+        "gemcode" => "--gemcode",
+        "celseq" => "--celseq",
+        "celseq2" => "--celseq2",
+        "splitseqv1" => "--splitseqV1",
+        "splitseqv2" => "--splitseqV2",
+        "sciseq3" => "--sciseq3"
+};
+
+/// The map from pre-specified chemistry types that piscem knows
+/// to the corresponding geometry name that piscem's `--geometry` option
+/// should be passed to use this chemistry.
+static KNOWN_CHEM_MAP_PISCEM: phf::Map<&'static str, &'static str> = phf_map! {
+    "10xv2" => "chromium_v2",
+    "10xv3" => "chromium_v3"
+};
+
+/// The types of "mappers" we know about
+#[derive(Debug, Clone)]
+pub enum MapperType {
+    Salmon,
+    Piscem,
+    #[allow(dead_code)]
+    MappedRadFile,
+}
+
+/// Were the reads fed directly to the mapper, or was
+/// it transformed into fifos because they represent a
+/// complex fragment library.
+#[derive(Debug)]
+pub enum FragmentTransformationType {
+    Identity,
+    TransformedIntoFifo(FifoXFormData),
+}
 
 #[derive(Debug, Clone)]
 pub enum CellFilterMethod {
@@ -77,21 +121,7 @@ pub fn extract_geometry(geo: &str) -> Result<FragmentGeomDesc> {
 }
 
 pub fn add_chemistry_to_args_salmon(chem_str: &str, cmd: &mut std::process::Command) -> Result<()> {
-    let known_chem_map = HashMap::from([
-        ("10xv2", "--chromium"),
-        ("10xv3", "--chromiumV3"),
-        ("dropseq", "--dropseq"),
-        ("indropv2", "--indropV2"),
-        ("citeseq", "--citeseq"),
-        ("gemcode", "--gemcode"),
-        ("celseq", "--celseq"),
-        ("celseq2", "--celseq2"),
-        ("splitseqv1", "--splitseqV1"),
-        ("splitseqv2", "--splitseqV2"),
-        ("sciseq3", "--sciseq3"),
-    ]);
-
-    match known_chem_map.get(chem_str) {
+    match KNOWN_CHEM_MAP_SALMON.get(chem_str) {
         Some(v) => {
             cmd.arg(v);
         }
@@ -113,9 +143,7 @@ pub fn add_chemistry_to_args_salmon(chem_str: &str, cmd: &mut std::process::Comm
 }
 
 pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Command) -> Result<()> {
-    let known_chem_map = HashMap::from([("10xv2", "chromium_v2"), ("10xv3", "chromium_v3")]);
-
-    match known_chem_map.get(chem_str) {
+    match KNOWN_CHEM_MAP_PISCEM.get(chem_str) {
         Some(v) => {
             cmd.arg("--geometry").arg(v);
         }
@@ -168,5 +196,141 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
             return Err(anyhow!("failed to download permit list {:?}", r.status));
         }
         Ok(PermitListResult::DownloadSuccessful(odir.join(chem_file)))
+    }
+}
+
+/// This function performs the necessary work to register the fragment libraries represented by
+/// `reads1` and `reads2` with the quantification command `quant_cmd`. The logic is as follows:
+///
+/// If the `fragment_geometry_str` is of a known known pre-specified type with respect to the
+/// given `mapper_type`, then the reads are passed directly to the mapper along with the
+/// appropriate geometry flag, and this function returns Ok(FragmentTransformationType::Identity).
+///
+/// Otherwise, the `fragment_geometry_str` is parsed in accordance with the fragment specification
+/// description.
+///
+/// * If the `fragment_geometry_str` representes a "complex" geometry (i.e. a description with
+/// an anchor or one or more bounded range parts), then the provided reads are passed through
+/// the transformation function, and the fragment library is "normalized" to one with fixed
+/// length geometry.  The new reads are written to a pair of fifos, and the mapper is provided
+/// with the corresponding simplified geometry description.  In this case, the function returns
+/// Ok(FragmentTransformationType::TransformedIntoFifo(FifoXFormData)), where the FifoXFormData
+/// contains the names of the fifos being populated and a `JoinHandle` for the thread performing
+/// the transformation.
+///
+/// * If the `fragment_geometry_str` represents a "simple" geometry, then the provided reads are
+/// given directly to the underlying mapper and `fragment_geometry_str` is transformed into the
+/// appropriate argument format for `mapper_type`.  In this case, the function returns
+/// Ok(FragmentTransformationType::Identity).
+///
+/// In any case, if an error occurs, this function returns an anyhow::Error.
+pub fn add_or_transform_fragment_library(
+    mapper_type: MapperType,
+    fragment_geometry_str: &str,
+    reads1: &Vec<PathBuf>,
+    reads2: &Vec<PathBuf>,
+    quant_cmd: &mut std::process::Command,
+) -> Result<FragmentTransformationType> {
+    let known_chem = match mapper_type {
+        MapperType::MappedRadFile => {
+            bail!("Cannot add_or_transform_fragment library when dealing with an already-mapped RAD file.");
+        }
+        MapperType::Piscem => KNOWN_CHEM_MAP_PISCEM.contains_key(fragment_geometry_str),
+        MapperType::Salmon => KNOWN_CHEM_MAP_SALMON.contains_key(fragment_geometry_str),
+    };
+
+    let frag_geom_opt = if known_chem {
+        Some(FragmentGeomDesc::try_from(fragment_geometry_str)?)
+    } else {
+        None
+    };
+
+    // We have a "complex" geometry, so transform the reads through a fifo
+    match frag_geom_opt {
+        Some(frag_geom) if frag_geom.is_complex_geometry() => {
+            // parse into a "regex" description
+            let regex_geo = frag_geom.as_regex()?;
+            // the simplified geometry corresponding to this regex geo
+            let simp_geo_string = regex_geo.get_simplified_description_string();
+
+            // start a thread to transform our complex geometry into
+            // simplified geometry
+            let fifo_xform_data = seq_geom_xform::xform_read_pairs_to_fifo(
+                regex_geo,
+                reads1.clone(),
+                reads2.clone(),
+            )?;
+
+            let r1_path = std::path::Path::new(&fifo_xform_data.r1_fifo);
+            assert!(r1_path.exists());
+            let r2_path = std::path::Path::new(&fifo_xform_data.r2_fifo);
+            assert!(r2_path.exists());
+
+            quant_cmd
+                .arg("-1")
+                .arg(fifo_xform_data.r1_fifo.to_string_lossy().into_owned());
+            quant_cmd
+                .arg("-2")
+                .arg(fifo_xform_data.r2_fifo.to_string_lossy().into_owned());
+
+            match mapper_type {
+                MapperType::Piscem => {
+                    add_chemistry_to_args_piscem(simp_geo_string.as_str(), quant_cmd)?;
+                }
+                MapperType::Salmon => {
+                    add_chemistry_to_args_salmon(simp_geo_string.as_str(), quant_cmd)?;
+                }
+                MapperType::MappedRadFile => {
+                    unimplemented!();
+                }
+            }
+            Ok(FragmentTransformationType::TransformedIntoFifo(
+                fifo_xform_data,
+            ))
+        }
+        _ => {
+            // just feed the reads directly to the mapper
+            match mapper_type {
+                MapperType::Piscem => {
+                    let reads1_str = reads1
+                        .iter()
+                        .map(|x| x.to_string_lossy().into_owned())
+                        .collect::<Vec<String>>()
+                        .join(",");
+                    quant_cmd.arg("-1").arg(reads1_str);
+
+                    let reads2_str = reads2
+                        .iter()
+                        .map(|x| x.to_string_lossy().into_owned())
+                        .collect::<Vec<String>>()
+                        .join(",");
+                    quant_cmd.arg("-2").arg(reads2_str);
+
+                    add_chemistry_to_args_piscem(fragment_geometry_str, quant_cmd)?;
+                }
+                MapperType::Salmon => {
+                    // location of the reads
+                    // note: salmon uses space so separate
+                    // these, not commas, so build the proper
+                    // strings here.
+
+                    quant_cmd.arg("-1");
+                    for rf in reads1 {
+                        quant_cmd.arg(rf);
+                    }
+                    quant_cmd.arg("-2");
+                    for rf in reads2 {
+                        quant_cmd.arg(rf);
+                    }
+
+                    // setting the technology / chemistry
+                    add_chemistry_to_args_salmon(fragment_geometry_str, quant_cmd)?;
+                }
+                MapperType::MappedRadFile => {
+                    unimplemented!();
+                }
+            }
+            Ok(FragmentTransformationType::Identity)
+        }
     }
 }
