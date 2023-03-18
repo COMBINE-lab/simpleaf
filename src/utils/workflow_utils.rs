@@ -651,7 +651,7 @@ pub fn parse_workflow_config(
 }
 
 pub fn get_protocol_estuary(af_home_path: &Path) -> anyhow::Result<ProtocolEstuary> {
-    let dl_url = "https://github.com/DONGZEHE/protocol-estuary/archive/refs/heads/main.zip";
+    let dl_url = "https://github.com/COMBINE-lab/protocol-estuary/archive/refs/heads/main.zip";
 
     // define expected dirs and files
     let pe_dir = af_home_path.join("protocol-estuary");
