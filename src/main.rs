@@ -312,10 +312,9 @@ pub enum Commands {
         /// name of the queried workflow.
         #[arg(short, long)]
         workflow: String,
-
-        /// only write the essential information without any instructions
-        #[arg(short, long)]
-        essential_only: bool,
+        // only write the essential information without any instructions
+        // #[arg(short, long)]
+        // essential_only: bool,
     },
 
     #[command(group(
@@ -326,24 +325,59 @@ pub enum Commands {
     /// parse the input configuration/workflow files and execute the corresponding workflow(s).
     Workflow {
         /// path to a simpleaf workflow configuration file.
-        #[arg(short, long)]
+        #[arg(short, long, display_order = 1, help_heading = "Workflow File")]
         config_path: Option<PathBuf>,
 
         /// path to a simpleaf complete workflow JSON file.
-        #[arg(short, long)]
+        #[arg(short, long, display_order = 2, help_heading = "Workflow File")]
         workflow_path: Option<PathBuf>,
 
         /// output directory for log files and the workflow outputs that have no explicit output directory.
-        #[arg(short, long)]
+        #[arg(short, long, display_order = 3)]
         output: PathBuf,
 
-        /// if this flag is passed, return after parsing the wofklow config or JSON file without executing the workflow.
-        #[arg(short, long)]
+        /// return after parsing the wofklow config or JSON file without executing the commands.
+        #[arg(short, long, display_order = 4, conflicts_with_all=["start_at", "resume"])]
         no_execution: bool,
 
-        /// the start exectuion order when executing the workflow. All commands with a smaller execution order will be ignored.  
-        #[arg(short, long, default_value_t = 1)]
+        /// Start the execution from a specific step. All previous steps will be ignored.  
+        #[arg(
+            short,
+            long,
+            default_value_t = 1,
+            display_order = 5,
+            help_heading = "Start Step"
+        )]
         start_at: isize,
+        // TODO: add a --resume arg which reads the log at starts at the step that failed in the previous run
+        /// resume execution from the termination step of a previous run. To use this flag, the output directory must contains the log file from a previous run.
+        #[arg(
+            short,
+            long,
+            conflicts_with = "start_at",
+            display_order = 6,
+            help_heading = "Start Step"
+        )]
+        resume: bool,
+
+        /// comma separated library search paths when processing the (custom) workflow configuration file. (right-most wins)
+        #[arg(
+            short,
+            long,
+            conflicts_with = "workflow_path",
+            display_order = 7,
+            value_delimiter = ','
+        )]
+        lib_paths: Option<Vec<PathBuf>>,
+
+        /// comma separated integers indicating which steps (commands) will be skipped during the execution.
+        #[arg(
+            long,
+            conflicts_with = "workflow_path",
+            display_order = 7,
+            value_delimiter = ','
+        )]
+        skip_step: Option<Vec<isize>>,
     },
 }
 
@@ -845,7 +879,7 @@ fn inspect_simpleaf(af_home_path: PathBuf) -> anyhow::Result<()> {
     let custom_chem_p = af_home_path.join("custom_chemistries.json");
     if custom_chem_p.is_file() {
         println!(
-            "\nCustom chemistries exist at path: {}\n----- custom chemistries -----\n",
+            "\nCustom chemistries exist at path : {}\n----- custom chemistries -----\n",
             custom_chem_p.display()
         );
         // parse the custom chemistry json file
@@ -1138,7 +1172,7 @@ fn map_and_quant(af_home_path: &Path, quant_cmd: Commands) -> anyhow::Result<()>
                         }
                         PermitListResult::UnregisteredChemistry => {
                             bail!(
-                                    "Cannot automatically obtain an unfiltered permit list for non-Chromium chemistry: {}.",
+                                    "Cannot automatically obtain an unfiltered permit list for non-Chromium chemistry : {}.",
                                     chem.as_str()
                                     );
                         }
@@ -1486,27 +1520,153 @@ fn map_and_quant(af_home_path: &Path, quant_cmd: Commands) -> anyhow::Result<()>
     Ok(())
 }
 
-// Program Name: simpleaf generate-workflow
-// Program Input: a json file that records all top level variables needed by the template
-//                  and optionally, some extra variables
-// Program Output: a json file that contains the actual simpelaf workflow information, which can be
-//         consumed directly by the simpleaf run-workflow command. Additionally, if --execute is specified,
-//          the generated simpleaf workflow will be executed.
-// Program Description: This program is used for generating a simpleaf workflow JSON file
-// that can be consumed directly by the `simpleaf workflow` program.
-// Thir program takes a template from our template library as the input
-// and do the following:
-// 1. It loads the required arguments of that template and
-//      find them in the user-provided JSON file.
-// 2. It validates the files in the user-provided JSON file.
-//      This can be checking the existance and validate the first few records
-// 3. It feeds the template the required inputs, and
-//      generates a simpleaf workflow JSON file.
-//      This JSON file contains the simpleaf programs need to be run and
-//      the required arguments.
+/// ### Program Name
+/// simpleaf generate-workflow
+///
+/// ### Program Input
+/// A json file that records all top level variables needed by the template
+///                  and optionally, some extra variables
+/// ### Program Output
+/// A json file that contains the actual simpelaf workflow information, which can be
+///         consumed directly by the simpleaf run-workflow command. Additionally, if --execute is specified,
+///          the generated simpleaf workflow will be executed.
+/// ### Program Description
+/// This program is used for generating a simpleaf workflow JSON file
+/// that can be consumed directly by the `simpleaf workflow` program.\
+/// This program takes a template from our template library as the input
+/// and do the following:
+/// 1. It loads the required arguments of that template and
+///      find them in the user-provided JSON file.
+/// 2. It validates the files in the user-provided JSON file.
+///      This can be checking the existance and validate the first few records
+/// 3. It feeds the template the required inputs, and
+///      generates a simpleaf workflow JSON file.
+///      This JSON file contains the simpleaf programs need to be run and
+///      the required arguments.
 
-fn generate_workflow(_af_home_path: &Path, _gw_cmd: Commands) {
-    unimplemented!()
+// TODO:
+// 1. figure out the layout of protocol estuary
+// 2. find workflow using name, if doesn't exist, find similar names and return error
+// 3. copy the config file from af_home protocol estuary dir to the output dir.
+// 4. allow name change?
+
+fn get_workflow_config(af_home_path: &Path, gw_cmd: Commands) -> anyhow::Result<()> {
+    match gw_cmd {
+        Commands::GetWorkflowConfig {
+            output,
+            workflow,
+            // essential_only: _,
+        } => {
+            // get af_home
+            let v: Value = inspect_af_home(af_home_path)?;
+            // Read the JSON contents of the file as an instance of `User`.
+            let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+
+            // get protocol library path
+            let protocol_estuary = get_protocol_estuary(af_home_path)?;
+            // get the corresponding workflow directory path
+            let workflow_path = protocol_estuary.protocols_dir.join(workflow.as_str());
+            // make output dir
+            let mut output_dir_name = workflow.clone();
+            output_dir_name.push_str("_config");
+            let output_path = output.join(output_dir_name);
+
+            // check if workflow path exists
+            match workflow_path.try_exists() {
+                // if it exists, then copy this folder to the output dir
+                Ok(true) => {
+                    info!("Exporting workflow files to the output folder");
+
+                    match copy_dir_all(workflow_path.as_path(), output_path.as_path()) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            bail!("Could not copy workflow files to the output folder. The error was: {}", e);
+                        }
+                    };
+                }
+                Ok(false) => {
+                    // if doesn't exist, check if there are similar workflow names
+                    // return with error and report similar workflow name if any.
+                    let protocol_library_dir = fs::read_dir(
+                        protocol_estuary.protocols_dir.as_path(),
+                    )
+                    .with_context(|| {
+                        format!(
+                            "Could not get protocol library in directory: {} ",
+                            protocol_estuary.protocols_dir.display()
+                        )
+                    })?;
+                    let mut similar_names: Vec<String> = Vec::new();
+                    // iterate over protocol library folder
+                    for p in protocol_library_dir {
+                        let pp = p
+                            .expect("Could not read directory protocol library directory")
+                            .path();
+                        let curr_workflow_name = pp
+                            .file_name()
+                            .expect("Could not get the directory name")
+                            .to_str()
+                            .expect("Could not convert dir name to str.");
+                        // if finds similar file names, push to the vec
+                        if curr_workflow_name.contains(workflow.as_str()) {
+                            similar_names.push(curr_workflow_name.to_string());
+                        }
+                    }
+
+                    // decide the final log info
+                    let similar_name_hints = if similar_names.is_empty() {
+                        String::from("")
+                    } else {
+                        similar_names.insert(
+                            0,
+                            String::from("Workflows with a similar name exist, which are"),
+                        );
+                        similar_names.join(", ")
+                    };
+
+                    // return with an error
+                    bail!(
+                        "Could not find a workflow with name: {}. {}",
+                        workflow,
+                        similar_name_hints
+                    );
+                }
+                Err(e) => {
+                    bail!(e)
+                }
+            }
+
+            // write log
+            let gwc_info_path = output_path.join("get_workflow_config.json");
+            let gwc_info = json!({
+                "command" : "get-workflow-config",
+                "version_info" : rp,
+                "workflow dir": output_path,
+
+                "args" : {
+                    "output" : output,
+                    "workflow" : workflow,
+                    // "essential_only" : essential_only,
+                }
+            });
+
+            std::fs::write(
+                &gwc_info_path,
+                serde_json::to_string_pretty(&gwc_info).unwrap(),
+            )
+            .with_context(|| format!("could not write {}", gwc_info_path.display()))?;
+
+            info!(
+                "Successfully export {} workflow to {}",
+                workflow,
+                output_path.display()
+            );
+        }
+        _ => {
+            bail!("Unknown Command.")
+        }
+    }
+    Ok(())
 }
 
 /// ## simpleaf run-workflow
@@ -1527,6 +1687,7 @@ fn generate_workflow(_af_home_path: &Path, _gw_cmd: Commands) {
 /// 3. index: (Optional): this field records all simpleaf index commands that need to be run.
 /// 4. quant: (Optional): this field records all simpleaf quant commands that need to be run.
 
+// TODO: add a `skip` argument for skipping steps
 fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<()> {
     match workflow_cmd {
         Commands::Workflow {
@@ -1536,11 +1697,26 @@ fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<()> {
             // TODO: write JSON only if no execution
             no_execution,
             start_at,
+            resume,
+            lib_paths,
+            skip_step,
         } => {
             run_fun!(mkdir -p $output)?;
 
             let simpleaf_workflow: SimpleafWorkflow;
             let mut workflow_log: WorkflowLog;
+
+            let final_start_at = if resume {
+                update_start_at(output.as_path())?
+            } else {
+                start_at
+            };
+
+            let final_skip_step = if let Some(ss) = skip_step {
+                ss
+            } else {
+                Vec::new()
+            };
 
             // we will have either a config_path or a workflow_path
             // if we see config files. process it
@@ -1550,15 +1726,19 @@ fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<()> {
                     bail!("the path of the given workflow configuratioin file doesn't exist; Cannot proceed.")
                 }
 
-                info!("Processing simpleaf workflow configuration file...");
+                info!("Processing simpleaf workflow configuration file.");
 
                 // iterate json files and parse records to commands
                 // convert files into json string vector
-                let workflow_json_string =
-                    parse_workflow_config(af_home_path, cp.as_path(), output.as_path())?;
+                let workflow_json_string = parse_workflow_config(
+                    af_home_path,
+                    cp.as_path(),
+                    output.as_path(),
+                    &lib_paths,
+                )?;
 
                 // write complete workflow json to output folder
-                // the execution order in this json file will be changed to "-1"
+                // the `Step` of each command in this json file will be changed to "-1"
                 // once the command is run successfully.
                 // The final workflow file name will be the same as the input config but
                 // with json as the extention.
@@ -1572,9 +1752,11 @@ fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<()> {
                     cp.as_path(),
                     output.as_path(),
                     workflow_json_value,
-                    start_at,
+                    final_start_at,
+                    final_skip_step,
                 )?;
             } else {
+                // This file has to exist
                 let wp = workflow_path.expect(
                     "Neither configuration file nor workflow file is provided; Cannot proceed.",
                 );
@@ -1595,21 +1777,43 @@ fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<()> {
                     wp.as_path(),
                     output.as_path(),
                     workflow_json_value,
-                    start_at,
+                    final_start_at,
+                    final_skip_step,
                 )?;
             }
             if !no_execution {
                 for cr in simpleaf_workflow.cmd_queue {
+                    let pn = cr.program_name;
+                    let step = cr.step;
                     // this if statement is no longer needed as commands with a negative exec order
                     // are ignore when constructing the the cmd queue
-                    if !cr.execution_order.is_negative() {
-                        if let Some(cmd) = cr.simpleaf_cmd {
-                            info!(
-                                "Running command # {} : {}",
-                                cr.execution_order, cr.program_name
-                            );
+                    // say something
+                    info!("Running {} command with step {}.", pn, step,);
 
-                            let exec_result = match cmd {
+                    // initiliaze a stopwatch
+                    workflow_log.timeit(step);
+
+                    if let Some(cmd) = cr.simpleaf_cmd {
+                        let exec_result = match cmd {
+                            Commands::Index {
+                                ref_type,
+                                fasta,
+                                gtf,
+                                rlen,
+                                spliced,
+                                unspliced,
+                                dedup,
+                                keep_duplicates,
+                                ref_seq,
+                                output,
+                                use_piscem,
+                                kmer_length,
+                                minimizer_length,
+                                overwrite,
+                                sparse,
+                                threads,
+                            } => build_ref_and_index(
+                                af_home_path,
                                 Commands::Index {
                                     ref_type,
                                     fasta,
@@ -1627,29 +1831,31 @@ fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<()> {
                                     overwrite,
                                     sparse,
                                     threads,
-                                } => build_ref_and_index(
-                                    af_home_path,
-                                    Commands::Index {
-                                        ref_type,
-                                        fasta,
-                                        gtf,
-                                        rlen,
-                                        spliced,
-                                        unspliced,
-                                        dedup,
-                                        keep_duplicates,
-                                        ref_seq,
-                                        output,
-                                        use_piscem,
-                                        kmer_length,
-                                        minimizer_length,
-                                        overwrite,
-                                        sparse,
-                                        threads,
-                                    },
-                                ),
+                                },
+                            ),
 
-                                // if we are running mapping and quantification
+                            // if we are running mapping and quantification
+                            Commands::Quant {
+                                index,
+                                use_piscem,
+                                map_dir,
+                                reads1,
+                                reads2,
+                                threads,
+                                use_selective_alignment,
+                                expected_ori,
+                                knee,
+                                unfiltered_pl,
+                                explicit_pl,
+                                forced_cells,
+                                expect_cells,
+                                min_reads,
+                                resolution,
+                                t2g_map,
+                                chemistry,
+                                output,
+                            } => map_and_quant(
+                                af_home_path,
                                 Commands::Quant {
                                     index,
                                     use_piscem,
@@ -1669,103 +1875,89 @@ fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<()> {
                                     t2g_map,
                                     chemistry,
                                     output,
-                                } => map_and_quant(
-                                    af_home_path,
-                                    Commands::Quant {
-                                        index,
-                                        use_piscem,
-                                        map_dir,
-                                        reads1,
-                                        reads2,
-                                        threads,
-                                        use_selective_alignment,
-                                        expected_ori,
-                                        knee,
-                                        unfiltered_pl,
-                                        explicit_pl,
-                                        forced_cells,
-                                        expect_cells,
-                                        min_reads,
-                                        resolution,
-                                        t2g_map,
-                                        chemistry,
-                                        output,
-                                    },
-                                ),
-                                _ => todo!(),
-                            };
-                            if let Err(e) = exec_result {
-                                workflow_log.write()?;
-                                return Err(e);
-                            } else {
-                                workflow_log.update(&cr.field_trajectory_vec[..]);
-                            }
+                                },
+                            ),
+                            _ => todo!(),
+                        };
+                        if let Err(e) = exec_result {
+                            workflow_log.write(false)?;
+                            info!("Execution terminated at {} command with step {}", pn, step);
+                            return Err(e);
+                        } else {
+                            info!("Successfully ran {} command with step {}", pn, step);
+
+                            workflow_log.update(&cr.field_trajectory_vec[..]);
                         }
+                    }
 
-                        // If this is an external command, then initialize it and run
-                        if let Some(mut cmd) = cr.external_cmd {
-                            // log
-                            let cmd_string = get_cmd_line_string(&cmd);
-                            info!("Running command # {} : {}", cr.execution_order, cmd_string);
+                    // If this is an external command, then initialize it and run
+                    if let Some(mut cmd) = cr.external_cmd {
+                        // log
+                        let cmd_string = get_cmd_line_string(&cmd);
+                        info!("Invoking command : {}", cmd_string);
 
-                            // invoke command and time it
-                            let cmd_start = Instant::now();
-                            match cmd.output() {
-                                Ok(cres) => {
-                                    // check the return status of external command
-                                    if cres.status.success() {
-                                        workflow_log.update(&cr.field_trajectory_vec[..]);
-                                    } else {
-                                        let cmd_string = get_cmd_line_string(&cmd);
-                                        match run_cmd!(sh -c $cmd_string) {
-                                            Ok(_) => {
-                                                workflow_log.update(&cr.field_trajectory_vec[..]);
-                                            }
-                                            Err(e2) => {
-                                                workflow_log.write()?;
-                                                bail!(
-                                                    "failed to invoke {} for step # {} in two attempts.\n\
-                                                    The exit status of the first attempt was: {:?}. \n\
-                                                    The stderr of the first attempt was: {:?}. \n\
-                                                    The error message of the second attempt was: {:?}.",
-                                                    cr.program_name,
-                                                    cr.execution_order,
-                                                    cres.status,
-                                                    std::str::from_utf8(&cres.stderr[..]).unwrap(),
-                                                    e2
-                                                );
-                                            }
-                                        };
-                                    }
-                                }
-                                Err(e) => {
+                        // initiate a stopwatch
+                        workflow_log.timeit(cr.step);
+
+                        match cmd.output() {
+                            Ok(cres) => {
+                                // check the return status of external command
+                                if cres.status.success() {
+                                    // succeed. update log
+                                    workflow_log.update(&cr.field_trajectory_vec[..]);
+                                } else {
                                     let cmd_string = get_cmd_line_string(&cmd);
                                     match run_cmd!(sh -c $cmd_string) {
                                         Ok(_) => {
+                                            // succeed. update log
                                             workflow_log.update(&cr.field_trajectory_vec[..]);
                                         }
                                         Err(e2) => {
-                                            workflow_log.write()?;
+                                            workflow_log.write(false)?;
                                             bail!(
-                                                "failed to invoke {} for step # {} in two attempts.\n\
+                                                "{} with step {} failed in two different attempts.\n\
+                                                The exit status of the first attempt was: {:?}. \n\
                                                 The stderr of the first attempt was: {:?}. \n\
                                                 The error message of the second attempt was: {:?}.",
-                                                cr.program_name,
-                                                cr.execution_order,
-                                                e,
+                                                pn, step,
+                                                cres.status,
+                                                std::str::from_utf8(&cres.stderr[..]).unwrap(),
                                                 e2
                                             );
                                         }
                                     };
-                                    let _cmd_duration = cmd_start.elapsed();
-                                } // TODO: use this in the log somewhere.
-                            } // invoke external cmd
-                        } // positive execution order
+                                }
+                            }
+                            Err(e) => {
+                                let cmd_string = get_cmd_line_string(&cmd);
+                                match run_cmd!(sh -c $cmd_string) {
+                                    Ok(_) => {
+                                        workflow_log.update(&cr.field_trajectory_vec[..]);
+                                    }
+                                    Err(e2) => {
+                                        workflow_log.write(false)?;
+                                        bail!(
+                                            "{} command with step {} failed in two different attempts.\n\
+                                            The stderr of the first attempt was: {:?}. \n\
+                                            The error message of the second attempt was: {:?}.",
+                                            pn, step,
+                                            e,
+                                            e2
+                                        );
+                                    }
+                                };
+                            } // TODO: use this in the log somewhere.
+                        } // invoke external cmd
+
+                        info!("Successfully ran {} command with step {}.", pn, step);
                     } // for cmd_queue
                 }
-                info!("All workflows ran successfully.");
+                // write log
+                workflow_log.write(true)?;
+
+                info!("All commands ran successfully.");
             } else {
-                workflow_log.write()?;
+                workflow_log.write(false)?;
             }
         } //
         _ => {
@@ -1913,6 +2105,9 @@ fn main() -> anyhow::Result<()> {
             output,
             no_execution,
             start_at,
+            resume,
+            lib_paths,
+            skip_step,
         } => workflow(
             af_home_path.as_path(),
             Commands::Workflow {
@@ -1921,23 +2116,23 @@ fn main() -> anyhow::Result<()> {
                 output,
                 no_execution,
                 start_at,
+                resume,
+                lib_paths,
+                skip_step,
             },
         ),
         Commands::GetWorkflowConfig {
             output,
             workflow,
-            essential_only,
-        } => {
-            generate_workflow(
-                af_home_path.as_path(),
-                Commands::GetWorkflowConfig {
-                    output,
-                    workflow,
-                    essential_only,
-                },
-            );
-            Ok(())
-        }
+            // essential_only,
+        } => get_workflow_config(
+            af_home_path.as_path(),
+            Commands::GetWorkflowConfig {
+                output,
+                workflow,
+                // essential_only,
+            },
+        ),
     }
     // success, yay!
 }

@@ -1,10 +1,13 @@
 use anyhow::{anyhow, bail, Context};
 use clap::Parser;
-use cmd_lib::run_fun;
-use serde_json::{json, Value};
+use cmd_lib::run_cmd;
+use serde_json::{json, Map, Value};
+use std::fs;
+use std::io::BufReader;
 use std::isize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use time::Instant;
 use tracing::warn;
 
 use crate::utils::jrsonnet_main::parse_jsonnet;
@@ -13,18 +16,75 @@ use crate::{Cli, Commands};
 /// intialize simpleaf workflow realted structs,
 /// which includes SimpleafWorkflow and WorkfowLog
 
+pub fn update_start_at(output: &Path) -> anyhow::Result<isize> {
+    let exec_log_path = output.join("workflow_info.json");
+    match exec_log_path.try_exists() {
+        Ok(true) => {
+            // we have the simpleaf_index.json file, so parse it.
+            let exec_log_file = std::fs::File::open(&exec_log_path).with_context({
+                || {
+                    format!(
+                        "Could not open file {}; Cannot resume.",
+                        exec_log_path.display()
+                    )
+                }
+            })?;
+
+            let exec_log_reader = BufReader::new(&exec_log_file);
+            let v: Value = serde_json::from_reader(exec_log_reader)?;
+
+            let succeed = v
+                .get("Succeed")
+                .with_context(|| {
+                    "Could not get `Execution Terminated at` from the log file; Cannot resume."
+                })?
+                .as_bool()
+                .with_context(|| "cannot parse `Succeed` as bool; Cannot resume.")?;
+
+            let start_at_str = v
+                .get("Execution Terminated at")
+                .with_context(|| {
+                    "Could not get `Execution Terminated at` from the log file; Cannot resume."
+                })?
+                .as_str()
+                .with_context(|| "cannot parse `Execution Terminated at` as str; Cannot resume.")?;
+
+            if succeed {
+                bail!("The previous run succeed. Cannot resume.");
+            } else if start_at_str == "N/A" {
+                bail!("The `Execution Terminated at` in the log file is N/A; Cannot resume. Please use the `--start-at` argument instead.")
+            } else {
+                Ok(start_at_str.parse::<isize>()?)
+            }
+        }
+        Ok(false) => {
+            bail!("Could not find `workflow_execution_log.json` in the output directory {}; Cannot resume.", output.display())
+        }
+        Err(e) => {
+            bail!(e)
+        }
+    }
+}
+
 pub fn initialize_workflow(
     af_home_path: &Path,
     config_path: &Path,
     output: &Path,
     workflow_json_value: Value,
     start_at: isize,
+    skip_step: Vec<isize>,
 ) -> anyhow::Result<(SimpleafWorkflow, WorkflowLog)> {
     // Instantiate a workflow log struct
-    let mut wl = WorkflowLog::new(output, config_path, &workflow_json_value)?;
+    let mut wl = WorkflowLog::new(
+        output,
+        config_path,
+        &workflow_json_value,
+        start_at,
+        skip_step,
+    )?;
 
     // instantiate a simpleaf workflow struct, and complete the workflow struct
-    let sw = SimpleafWorkflow::new(af_home_path, &workflow_json_value, &mut wl, start_at)?;
+    let sw = SimpleafWorkflow::new(af_home_path, &workflow_json_value, &mut wl)?;
 
     Ok((sw, wl))
 }
@@ -32,9 +92,6 @@ pub fn initialize_workflow(
 // Each SimpleafWorkflow represents a json
 /// Simpleaf Workflow record
 pub struct SimpleafWorkflow {
-    // TODO: Currently this is optional
-    // can change to a hashmap if we need this in the future to do validation
-    pub meta_info: Option<Value>,
     pub af_home_path: PathBuf,
 
     // This command queue contains all commands that need to be run
@@ -48,18 +105,8 @@ impl SimpleafWorkflow {
         af_home_path: &Path,
         workflow_json_value: &Value,
         workflow_log: &mut WorkflowLog,
-        start_at: isize,
     ) -> anyhow::Result<SimpleafWorkflow> {
-        // get meta_info
-        let meta_info = workflow_json_value.get("meta_info").map(|v| v.to_owned());
-
-        // if we don't see an meta info section, report a warning
-        if meta_info.is_none() {
-            warn!("Found config file without meta_info field.");
-            // warning and create a empty string
-        };
-
-        // Then we recursively get all simpleaf command and put them into a queue
+        // we recursively get all simpleaf command and put them into a queue
         // currently it is a recursive function.
         let mut cmd_queue: Vec<CommandRecord> = Vec::new();
 
@@ -72,14 +119,12 @@ impl SimpleafWorkflow {
             &mut cmd_queue,
             field_trajectory_vec,
             workflow_log,
-            start_at,
         )?;
 
-        // sort the cmd queue by it execution order.
-        cmd_queue.sort_by(|cmd1, cmd2| cmd1.execution_order.cmp(&cmd2.execution_order));
+        // sort the cmd queue by its `Step`.
+        cmd_queue.sort_by(|cmd1, cmd2| cmd1.step.cmp(&cmd2.step));
 
         Ok(SimpleafWorkflow {
-            meta_info,
             af_home_path: af_home_path.to_owned(),
             cmd_queue,
         })
@@ -89,9 +134,9 @@ impl SimpleafWorkflow {
     /// parse them as `CommandRecord` structs and push them into the `cmd_queue` vector.
     /// ### Details
     /// This function will iterate over all layers in the `Value` object to find the command records
-    /// with both `Execution Order` and `Program Name`. **These two fields must appear simutaneously**, otherwise this function
+    /// with both `Step` and `Program Name`. **These two fields must appear simutaneously**, otherwise this function
     /// will return an error.  
-    /// A CommandRecord struct will be initilizaed from Each command record with a positive execution order,
+    /// A CommandRecord struct will be initilizaed from Each command record with a positive `Step`,
     /// including external commands and simpleaf command,
     /// and will be pushed into the `cmd_queue` vector.
     /// At the same time, a `WorkflowLog` struct will be completed for logging purpose.
@@ -100,7 +145,6 @@ impl SimpleafWorkflow {
         cmd_queue: &mut Vec<CommandRecord>,
         field_trajectory_vec: Vec<usize>,
         workflow_log: &mut WorkflowLog,
-        start_at: isize,
     ) -> anyhow::Result<()> {
         // save some allocation
         let mut pn: ProgramName;
@@ -112,25 +156,29 @@ impl SimpleafWorkflow {
 
                 curr_field_trajectory_vec.push(workflow_log.get_field_id(field_name));
 
-                // If "Execution Order" exists, then this field records an external or a simpleaf command
-                if field.get("Execution Order").is_some() {
-                    // parse execution order
-                    let execution_order = field
-                        .get("Execution Order")
-                        .expect("Cannot get Execution Order")
+                // If "Step" exists, then this field records an external or a simpleaf command
+                if field.get("Step").is_some() {
+                    // parse "Step"
+                    let step = field
+                        .get("Step")
+                        .expect("Cannot get Step")
                         .as_str()
-                        .expect("cannot parse Execution Order as str")
+                        .expect("cannot parse Step as str")
                         .parse::<isize>()
-                        .expect("Cannot parse Execution Order as an integer");
+                        .expect("Cannot parse Step as an integer");
 
-                    // only parse commands with a positive execution order
-                    if !execution_order.is_negative() && execution_order >= start_at {
-                        // The field must contains an Program Name
-                        if let Some(program_name) = field.get("Program Name") {
-                            pn = ProgramName::from_str(program_name.as_str().unwrap());
-
-                            // The execution order will be used for sorting the cmd_queue vector.
-                            // All commands must have an valid execution order.
+                    // The field must contains an Program Name
+                    if let Some(program_name) = field.get("Program Name") {
+                        pn = ProgramName::from_str(
+                            program_name
+                                .as_str()
+                                .expect("Cannot create ProgramName struct from a program name"),
+                        );
+                        // if not in skip steps, and not less than start at
+                        if !workflow_log.skip_step.contains(&step) && step >= workflow_log.start_at
+                        {
+                            // The `Step` will be used for sorting the cmd_queue vector.
+                            // All commands must have an valid `Step`.
                             // Note that we store this as a string in json b/c all value in config
                             // file are strings.
                             if pn.is_external() {
@@ -138,7 +186,7 @@ impl SimpleafWorkflow {
                                 let external_cmd = pn.create_external_cmd(field)?;
 
                                 cmd_queue.push(CommandRecord {
-                                    execution_order,
+                                    step,
                                     program_name: pn,
                                     simpleaf_cmd: None,
                                     external_cmd: Some(external_cmd),
@@ -149,12 +197,20 @@ impl SimpleafWorkflow {
                                 let simpleaf_cmd = pn.create_simpleaf_cmd(field)?;
 
                                 cmd_queue.push(CommandRecord {
-                                    execution_order,
+                                    step,
                                     program_name: pn,
                                     simpleaf_cmd: Some(simpleaf_cmd),
                                     external_cmd: None,
                                     field_trajectory_vec: curr_field_trajectory_vec,
                                 });
+                            }
+                        } else {
+                            // we still need to change the step to a negative number as it is invalid
+                            let step = workflow_log.get_execution_order(&curr_field_trajectory_vec);
+                            let step_str =
+                                step.as_str().expect("Cannot convert `Step` as an integer");
+                            if !step_str.starts_with('-') {
+                                *step = json!(format!("-{}", step_str));
                             }
                         }
                     }
@@ -165,7 +221,6 @@ impl SimpleafWorkflow {
                         cmd_queue,
                         curr_field_trajectory_vec,
                         workflow_log,
-                        start_at,
                     )?;
                 }
             }
@@ -174,10 +229,16 @@ impl SimpleafWorkflow {
     }
 }
 
+#[derive(Copy, Clone)]
+struct CommandRuntime {
+    start_time: Instant,
+    step: isize,
+}
+
 /// This struct is used for writing the workflow log JSON file.
 /// ### What?
 /// This struct contains the parsed and complete workflow JSON record.\
-/// The `Execution Order` field of the successfully invoked commands will be set as a negatvie integer
+/// The `Step` field of the successfully invoked commands will be set as a negatvie integer
 /// and will be ignored by simpleaf if feeding the output JSON file to simpleaf workflow.\
 /// ### Why?
 /// The purpose of having this log is that if some command in the workflow fails, the user can
@@ -185,20 +246,33 @@ impl SimpleafWorkflow {
 /// ### How?
 /// It will be initialized together with the `SimpleafWorkflow` struct and
 /// will be used to write a workflow JSON file that is the same as the one
-/// interpreted from user-provided JSONNET file except the Execution Order
+/// interpreted from user-provided JSONNET file except the Step
 /// field of the commands that were run sucessfully are negative values.
 pub struct WorkflowLog {
-    out_path: PathBuf,
+    // meta info log file path
+    meta_info_path: PathBuf,
+    // execution log
+    exec_log_path: PathBuf,
+    workflow_start_time: Instant,
+    command_runtime: Option<CommandRuntime>,
+    num_succ: usize,
+    start_at: isize,
+    skip_step: Vec<isize>,
+    workflow_name: String, // doesn't matter, can convert to string
+    workflow_meta_info: Option<Value>,
     // The value records the complete simpleaf workflow
     value: Value,
+
+    cmd_runtime_records: Map<String, Value>,
     // this vector records all field names in the complete workflow.
-    // This is used for locating the Execution Order for each command
+    // This is used for locating the Step for each command
     field_id_to_name: Vec<String>,
     // TODO: the trajectory vector in each CommandRecord can be
     // move here as a long vector, and in each CommandRecord
     // we just need to record the start pos and the length of its trajectory.
     // cmds_field_id_trajectory: Vec<usize>,
 }
+
 impl WorkflowLog {
     /// This function instantiate a workflow log
     /// with a valid output path and complete workflow as a `serde_json::Value` object
@@ -206,35 +280,107 @@ impl WorkflowLog {
         output: &Path,
         config_path: &Path,
         workflow_json_value: &Value,
+        start_at: isize,
+        skip_step: Vec<isize>,
     ) -> anyhow::Result<WorkflowLog> {
         // get output json path
-        let mut out_path =
-            output.join(config_path.file_stem().unwrap_or_else(|| {
-                panic!("Cannot parse file name of file {}", config_path.display())
-            }));
-        out_path.set_extension("json");
+        let workflow_name = config_path
+            .file_stem()
+            .unwrap_or_else(|| panic!("Cannot parse file name of file {}", config_path.display()))
+            .to_string_lossy()
+            .into_owned();
+
+        // get meta_info
+        let workflow_meta_info = workflow_json_value.get("meta_info").map(|v| v.to_owned());
+
+        // if we don't see an meta info section, report a warning
+        if workflow_meta_info.is_none() {
+            warn!("Found config file without meta_info field.");
+            // warning and create a empty string
+        };
 
         Ok(WorkflowLog {
-            out_path,
+            meta_info_path: output.join("workflow_info.json"),
+            exec_log_path: output.join("workflow_execution_log.json"),
+            workflow_name,
+            workflow_meta_info,
+            workflow_start_time: Instant::now(),
+            command_runtime: None,
+            num_succ: 0,
+            start_at,
+            skip_step,
             value: workflow_json_value.clone(),
+            cmd_runtime_records: Map::new(),
             field_id_to_name: Vec::new(),
             // cmds_field_id_trajectory: Vec::new()
         })
     }
 
-    /// Write the current workflow record to the output path.
-    pub fn write(&self) -> anyhow::Result<()> {
+    pub fn timeit(&mut self, step: isize) {
+        self.command_runtime = Some(CommandRuntime {
+            start_time: Instant::now(),
+            step,
+        });
+    }
+
+    /// Write log to the output path.
+    /// 1. an execution log file includes the whole workflow,
+    ///    in which succeffully invoked commands have
+    ///     a negative `Step`
+    /// 2. an info log file records runtime, workflow name,
+    ///     output path etc.
+    pub fn write(&self, succeed: bool) -> anyhow::Result<()> {
+        // initiate meta_info
+        let workflow_meta_info = if let Some(workflow_meta_info) = &self.workflow_meta_info {
+            workflow_meta_info.to_owned()
+        } else {
+            json!("{}")
+        };
+
+        // will be NA if used --no-execution
+        let execution_terminated_at = if let Some(command_runtime) = &self.command_runtime {
+            command_runtime.step.to_string()
+        } else {
+            "N/A".to_string()
+        };
+
+        let meta_info = json!({
+            "Succeed": succeed,
+            "Workflow Name": self.workflow_name,
+            "Workflow Meta Info":  workflow_meta_info,
+            "Execution Elapsed Time": self.workflow_start_time.elapsed().to_string(),
+            "Execution Started at": self.start_at,
+            "Skipped Steps": self.skip_step,
+            "Execution Terminated at":  execution_terminated_at,
+            "Number of Succeed Commands": self.num_succ,
+            "Command Runtime by Step": Value::from(self.cmd_runtime_records.clone()),
+        });
+
+        // execution log
         std::fs::write(
-            self.out_path.as_path(),
+            self.meta_info_path.as_path(),
+            serde_json::to_string_pretty(&meta_info).expect("Cannot convert json value to string."),
+        )
+        .with_context(|| {
+            format!(
+                "could not write workflow meta info JSON file to {}",
+                self.meta_info_path.display()
+            )
+        })?;
+
+        // execution log
+        std::fs::write(
+            self.exec_log_path.as_path(),
             serde_json::to_string_pretty(&self.value)
                 .expect("Cannot convert json value to string."),
         )
         .with_context(|| {
             format!(
                 "could not write complete simpleaf workflow JSON file to {}",
-                self.out_path.display()
+                self.exec_log_path.display()
             )
         })?;
+
         Ok(())
     }
 
@@ -251,7 +397,7 @@ impl WorkflowLog {
     #[allow(dead_code)]
     /// This function is used for testing if the exection order of
     /// successfully invoked command can be updated to a negative value
-    pub fn get_execution_order(&mut self, field_trajectory_vec: &[usize]) -> String {
+    pub fn get_execution_order(&mut self, field_trajectory_vec: &[usize]) -> &mut Value {
         // get iterator of field_trajectory vector
         let field_trajectory_vec_iter = field_trajectory_vec.iter();
 
@@ -272,20 +418,40 @@ impl WorkflowLog {
                 .expect("Cannot get field from json value");
         }
 
-        // prepend a "-" to the execution order
-        curr_field = curr_field
-            .get_mut("Execution Order")
-            .expect("Cannot get execution order of the command.");
-
+        // prepend a "-" to the `Step` field.
+        // curr_field =
         curr_field
-            .as_str()
-            .expect("Cannot convert execution order as an integer")
-            .to_string()
+            .get_mut("Step")
+            .expect("Cannot get the `Step` field of the command.")
+        //     ;
+
+        // curr_field
+        //     .as_str()
+        //     .expect("Cannot convert `Step` of a command as an integer")
+        //     .to_string()
     }
 
-    // Update the Execution order of a command record in the complete workflow serde_json::Value object
-    // by following a trajectory path.
+    /// Update WorkflowLog:
+    /// 1. the `Step` the a command in the of execution log
+    /// 2. cmd runtime
+    /// 3. number of succeed commands.
+
     pub fn update(&mut self, field_trajectory_vec: &[usize]) {
+        // update cmd run time
+        if let Some(command_runtime) = &self.command_runtime {
+            let cmd_duration = command_runtime.start_time.elapsed();
+            self.cmd_runtime_records.insert(
+                command_runtime.step.to_string(),
+                Value::from(cmd_duration.to_string()),
+            );
+        } else {
+            warn!("Execution start time is not set.");
+        }
+
+        //update num_succ
+        self.num_succ += 1;
+
+        // update `Step`
         // get iterator of field_trajectory vector
         let field_trajectory_vec_iter = field_trajectory_vec.iter();
 
@@ -306,15 +472,15 @@ impl WorkflowLog {
                 .expect("Cannot get field from json value");
         }
 
-        // prepend a "-" to the execution order
+        // prepend a "-" to the `Step`
         curr_field = curr_field
-            .get_mut("Execution Order")
-            .expect("Cannot get execution order of the command.");
+            .get_mut("Step")
+            .expect("Cannot get the `Step` field of the command.");
         *curr_field = json!(format!(
             "-{}",
             curr_field
                 .as_str()
-                .expect("Cannot convert execution order as an integer")
+                .expect("Cannot convert `Step` as an integer")
         ));
     }
 }
@@ -322,12 +488,12 @@ impl WorkflowLog {
 /// This struct contains a command record and some supporting information.
 /// It can be either a simpleaf command or an external command.
 pub struct CommandRecord {
-    pub execution_order: isize,
+    pub step: isize,
     pub program_name: ProgramName,
     pub simpleaf_cmd: Option<Commands>,
     pub external_cmd: Option<Command>,
     // This vector records the field name trajectory from the top level
-    // this is used to update the execution order after invoked successfully.
+    // this is used to update the `Step` after invoked successfully.
     pub field_trajectory_vec: Vec<usize>,
 }
 
@@ -344,10 +510,12 @@ pub enum ProgramName {
 impl ProgramName {
     /// Instantiate a ProgramName enum according to a str
     pub fn from_str(field_name: &str) -> ProgramName {
-        match field_name {
-            "simpleaf index" => ProgramName::Index,
-            "simpleaf quant" => ProgramName::Quant,
-            exp_name => ProgramName::External(exp_name.to_string()),
+        if field_name.starts_with("simpleaf") && field_name.ends_with("index") {
+            ProgramName::Index
+        } else if field_name.starts_with("simpleaf") && field_name.ends_with("quant") {
+            ProgramName::Quant
+        } else {
+            ProgramName::External(field_name.to_string())
         }
     }
 
@@ -357,7 +525,7 @@ impl ProgramName {
     }
 
     /// Create a valid simpleaf command object using the arguments recoreded in the field.
-    /// Execution order and Program name will be ignored in this procedure
+    /// Step and Program name will be ignored in this procedure
     pub fn create_simpleaf_cmd(&self, value: &Value) -> anyhow::Result<Commands> {
         let mut arg_vec = match self {
             ProgramName::Index => vec![String::from("simpleaf"), String::from("index")],
@@ -370,9 +538,8 @@ impl ProgramName {
         // They are all strings
 
         if let Value::Object(args) = value {
-            // the "Execution order" field will be ignore as it is not a valid simpleaf arg
             for (k, v) in args {
-                if k.as_str() != "Execution Order" && k.as_str() != "Program Name" {
+                if k.as_str() != "Step" && k.as_str() != "Program Name" {
                     arg_vec.push(k.to_string());
                     if let Some(sv) = v.as_str() {
                         if !sv.is_empty() {
@@ -403,9 +570,9 @@ impl ProgramName {
         let mut arg_vec: Vec<(usize, String)> = Vec::new();
         // iterate the command object, record the arg into a vector
         if let Value::Object(args) = value {
-            // the "Execution order" and "Program Name" fields will be ignore as it is not a valid simpleaf arg
+            // the "Step" and "Program Name" fields will be ignore as it is not a valid simpleaf arg
             for (p, v) in args {
-                if p.as_str() != "Execution Order" && p.as_str() != "Program Name" {
+                if p.as_str() != "Step" && p.as_str() != "Program Name" {
                     arg_vec.push((
                                 p.parse::<usize>().expect("Cannot convert the argument position in the external command to an integer"),
                                 v.as_str().expect("Cannot convert the argument value in external program call to a string.").to_string(),
@@ -445,36 +612,34 @@ impl std::fmt::Display for ProgramName {
     }
 }
 
+pub struct ProtocolEstuary {
+    pub utils_dir: PathBuf,
+    pub protocols_dir: PathBuf,
+}
+
+impl ProtocolEstuary {
+    pub fn exists(&self) -> bool {
+        self.protocols_dir.exists() && self.utils_dir.exists()
+    }
+}
+
 /// parse the input file (either a workflow configuration file or a complete workflow JSON file) to obtain a JSON string.
 pub fn parse_workflow_config(
     af_home_path: &Path,
     config_file_path: &Path,
     output: &Path,
+    lib_paths: &Option<Vec<PathBuf>>,
 ) -> anyhow::Result<String> {
-    // TODO do something like the `get_permit_if_absent function`
-    // let protocol_estuary_path = af_home_path
-    // .join("protocol_estuary");
-    let utils_libsonnet_path = af_home_path
-        .join("protocol_estuary")
-        .join("utils.libsonnet");
-
-    // check if the config parser file exist
-    let utils_libsonnet_exist = utils_libsonnet_path
-    .as_path()
-    .try_exists()
-    .with_context(|| format!("Could not find util fu for {}. Please make sure this is a valid simpleaf workflow configuration file.", config_file_path.display()))?;
-
-    // TODO: download utils file if it doesn't exist.
-    if !utils_libsonnet_exist {
-        get_protocol_repo_if_absent(af_home_path)?;
-    }
+    // get protocol_estuary path
+    let protocol_estuary = get_protocol_estuary(af_home_path)?;
 
     // the parse_jsonnet function calls the main function of jrsonnet.
     match parse_jsonnet(
         // af_home_path,
         config_file_path,
-        utils_libsonnet_path.as_path(),
         output,
+        protocol_estuary,
+        lib_paths,
     ) {
         Ok(js) => Ok(js),
         Err(e) => Err(anyhow!(
@@ -485,20 +650,34 @@ pub fn parse_workflow_config(
     }
 }
 
-pub fn get_protocol_repo_if_absent(af_home: &Path) -> anyhow::Result<()> {
-    let dl_url = "https://github.com/COMBINE-lab/protocol-estuary/archive/refs/heads/main.zip";
+pub fn get_protocol_estuary(af_home_path: &Path) -> anyhow::Result<ProtocolEstuary> {
+    let dl_url = "https://github.com/DONGZEHE/protocol-estuary/archive/refs/heads/main.zip";
 
-    let odir = af_home.join("protocol_estuary");
-    let ofile = odir.join("protocol-estuary.zip");
-    if odir.exists() {
-        Ok(())
+    // define expected dirs and files
+    let pe_dir = af_home_path.join("protocol-estuary");
+    let pe_main_dir = pe_dir.join("protocol-estuary-main");
+    let protocols_dir = pe_main_dir.join("protocols");
+    let utils_dir = pe_main_dir.join("utils");
+    let pe_zip_file = pe_dir.join("protocol-estuary.zip");
+
+    let protocol_estuary = ProtocolEstuary {
+        protocols_dir,
+        utils_dir,
+    };
+
+    // if output dir exists, then return
+    if protocol_estuary.exists() {
+        Ok(protocol_estuary)
     } else {
-        run_fun!(mkdir -p $odir)?;
+        // make pe
+        run_cmd!(mkdir -p $pe_dir)?;
+
+        // download github repo as a zip file
         let mut dl_cmd = std::process::Command::new("wget");
         dl_cmd
             .arg("-v")
             .arg("-O")
-            .arg(ofile.to_string_lossy().to_string())
+            .arg(pe_zip_file.to_string_lossy().to_string())
             .arg("-L")
             .arg(dl_url);
         let r = dl_cmd.output()?;
@@ -509,35 +688,79 @@ pub fn get_protocol_repo_if_absent(af_home: &Path) -> anyhow::Result<()> {
             ));
         }
 
+        // unzip
         let mut unzip_cmd = std::process::Command::new("unzip");
         unzip_cmd
+            .arg(pe_zip_file.to_string_lossy().to_string())
             .arg("-d")
-            .arg(ofile.to_string_lossy().to_string())
-            .arg("-O")
-            .arg(odir.to_string_lossy().to_string());
+            .arg(pe_dir.to_string_lossy().to_string());
 
         let r = unzip_cmd.output()?;
+        // if failed, then remove dir and return with an error
         if !r.status.success() {
+            std::fs::remove_dir(pe_dir.as_path()).with_context({
+                || {
+                    format!(
+                        "failed to unzip protocol library zip file, \
+                        then failed to remove the protocol library directory. \n\
+                        Please remove it manually, for example, using `rm -rf {}`",
+                        pe_dir.display()
+                    )
+                }
+            })?;
+
             return Err(anyhow!(
-                "failed to unzip protocol-estuary GitHub Repository zip file: {:?}",
+                "failed to unzip protocol library zip file at {}. The error was: {:?}",
+                pe_zip_file.display(),
                 r.status
             ));
         }
-        Ok(())
+
+        // final check
+        if protocol_estuary.exists() {
+            Ok(protocol_estuary)
+        } else {
+            bail!(
+                "Could not fetch protocol library. \
+                    This should not happen. \
+                    Please submit an issue at Simpleaf GitHub Repository."
+            )
+        }
     }
+}
+
+/// Copy all files from the src folder to the dst folder.\
+/// Adapted from https://stackoverflow.com/a/65192210.
+pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> anyhow::Result<()> {
+    fs::create_dir_all(&dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            copy_dir_all(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        } else {
+            fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     // use clap::Parser;
 
+    use serde_json::{json, Map, Value};
+
     use super::ProgramName;
     // use crate::Cli;
     // use crate::Commands;
     // use crate::SimpleafCmdRecord;
     use crate::{
-        utils::{prog_utils::get_cmd_line_string, workflow_utils::initialize_workflow},
-        Commands, ReferenceType,
+        utils::{
+            prog_utils::get_cmd_line_string,
+            workflow_utils::{initialize_workflow, WorkflowLog},
+        },
+        Commands,
     };
     use core::panic;
     use std::path::PathBuf;
@@ -579,7 +802,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simpleaf_workflow() {
+    fn test_simpleaf_workflow_skip_start_at() {
         let af_home_path = PathBuf::from("af_home");
         let config_path = PathBuf::from("data_dir/fake_config.config");
         let output = PathBuf::from("output_dir");
@@ -590,8 +813,8 @@ mod tests {
                 "output_dir": "output_dir"
             },
             "rna": {
-                "simpleaf index": {
-                    "Execution Order": "1",
+                "simpleaf_index": {
+                    "Step": "1",
                     "Program Name": "simpleaf index", 
                     "--ref-type": "spliced+unspliced",
                     "--fasta": "genome.fa",
@@ -600,8 +823,8 @@ mod tests {
                     "--use-piscem": "",
                     "--overwrite": ""
                 },
-                "simpleaf quant": {
-                    "Execution Order": "2",
+                "simpleaf_quant": {
+                    "Step": "2",
                     "Program Name": "simpleaf quant",  
                     "--chemistry": "10xv3",
                     "--resolution": "cr-like",
@@ -618,7 +841,7 @@ mod tests {
             }, 
             "External Commands": {
                 "HTO ref gunzip": {
-                    "Execution Order": "3",
+                    "Step": "3",
                     "Program Name": "gunzip",
                     "1": "-c",
                     "2": "hto_ref.csv.gz",
@@ -626,7 +849,7 @@ mod tests {
                     "4": "hto_ref.csv"
                 },
                 "ADT ref gunzip": {
-                    "Execution Order": "4",
+                    "Step": "4",
                     "Program Name": "gunzip",
                     "1": "-c",
                     "2": "adt_ref.csv.gz",
@@ -637,38 +860,103 @@ mod tests {
         }"#,
         );
 
-        let workflow_json_value = serde_json::from_str(workflow_json_string.as_str()).unwrap();
+        let workflow_json_value: Value =
+            serde_json::from_str(workflow_json_string.as_str()).unwrap();
 
         // initialize simpleaf workflow and log struct
         let (mut sw, mut wl) = initialize_workflow(
             af_home_path.as_path(),
             config_path.as_path(),
             output.as_path(),
-            workflow_json_value,
-            1,
+            workflow_json_value.clone(),
+            2,
+            vec![3],
         )
         .unwrap();
 
-        // test wl
-        // check JSON log output json
-        assert_eq!(wl.out_path, PathBuf::from("output_dir/fake_config.json"));
+        // println!("\n\n\n{:?}\n\n\n", wl.field_id_to_name);
+        match &wl {
+            WorkflowLog {
+                meta_info_path,
+                exec_log_path,
+                workflow_start_time: _,
+                command_runtime,
+                num_succ,
+                start_at,
+                workflow_name,
+                workflow_meta_info,
+                value,
+                cmd_runtime_records,
+                field_id_to_name,
+                skip_step,
+            } => {
+                // test wl
+                // check JSON log output json
+                assert_eq!(
+                    exec_log_path,
+                    &PathBuf::from("output_dir/workflow_execution_log.json")
+                );
+                assert_eq!(
+                    meta_info_path,
+                    &PathBuf::from("output_dir/workflow_info.json")
+                );
 
-        let first_cmd = sw.cmd_queue.first().unwrap();
+                assert_eq!(workflow_name, &String::from("fake_config"));
 
-        wl.update(&first_cmd.field_trajectory_vec);
+                assert_eq!(
+                    workflow_meta_info,
+                    &Some(workflow_json_value.get("meta_info").unwrap().to_owned())
+                );
 
-        wl.get_execution_order(&first_cmd.field_trajectory_vec);
+                let mut new_value = value.to_owned();
+                new_value["rna"]["simpleaf_index"]["Step"] = json!("1");
+                new_value["External Commands"]["HTO ref gunzip"]["Step"] = json!("3");
+
+                assert_eq!(new_value, workflow_json_value);
+
+                assert_eq!(cmd_runtime_records, &Map::new());
+
+                assert_eq!(start_at, &2isize);
+                assert_eq!(skip_step, &vec![3]);
+                assert!(
+                    field_id_to_name.contains(&"rna".to_string())
+                        && field_id_to_name.contains(&"meta_info".to_string())
+                        && field_id_to_name.contains(&"simpleaf_index".to_string())
+                        && field_id_to_name.contains(&"simpleaf_quant".to_string())
+                        && field_id_to_name.contains(&"External Commands".to_string())
+                        && field_id_to_name.contains(&"HTO ref gunzip".to_string())
+                        && field_id_to_name.contains(&"ADT ref gunzip".to_string())
+                );
+
+                assert!(command_runtime.is_none());
+
+                assert_eq!(num_succ, &0);
+            }
+        }
+
+        // we started at 2, and skipped 3. So there are two commands
+        // simpleaf_quant and ADT ref gunzip
+
+        // first we check ADT ref gunzip
+        let cmd = sw.cmd_queue.pop().unwrap();
+        wl.timeit(cmd.step);
+
+        wl.update(&cmd.field_trajectory_vec);
+
+        wl.get_execution_order(&cmd.field_trajectory_vec);
 
         // check meta_info
+        // we skipped two
         assert_eq!(
-            wl.get_execution_order(&first_cmd.field_trajectory_vec),
-            String::from("-1")
+            wl.get_execution_order(&cmd.field_trajectory_vec).as_str(),
+            Some("-4")
         );
 
         // check command #4
+        assert_eq!(sw.cmd_queue.len(), 1);
 
-        let cmd = sw.cmd_queue.pop().unwrap();
-        assert_eq!(cmd.execution_order, 4);
+        // let cmd = sw.cmd_queue.pop().unwrap();
+        assert_eq!(cmd.step, 4);
         assert_eq!(cmd.program_name, ProgramName::from_str("gunzip"));
         assert!(cmd.external_cmd.is_some());
         assert!(cmd.simpleaf_cmd.is_none());
@@ -695,10 +983,9 @@ mod tests {
             String::from("gunzip -c adt_ref.csv.gz > adt_ref.csv")
         );
 
-        sw.cmd_queue.pop();
         // check command #2: simpleaf quant
         let cmd = sw.cmd_queue.pop().unwrap();
-        assert_eq!(cmd.execution_order, 2);
+        assert_eq!(cmd.step, 2);
         assert_eq!(cmd.program_name, ProgramName::from_str("simpleaf quant"));
         assert!(cmd.external_cmd.is_none());
 
@@ -717,7 +1004,7 @@ mod tests {
                 .get(field_trajectory_vec[1])
                 .unwrap()
                 .to_owned(),
-            String::from("simpleaf quant")
+            String::from("simpleaf_quant")
         );
 
         match cmd.simpleaf_cmd {
@@ -759,72 +1046,6 @@ mod tests {
                 assert_eq!(min_reads, 10);
                 assert_eq!(t2g_map, Some(PathBuf::from("t2g.tsv")));
                 assert_eq!(resolution, String::from("cr-like"));
-            }
-            _ => panic!(),
-        };
-
-        // check command #1: simpleaf index
-        let cmd = sw.cmd_queue.pop().unwrap();
-        assert_eq!(cmd.execution_order, 1);
-        assert_eq!(cmd.program_name, ProgramName::from_str("simpleaf index"));
-        assert!(cmd.external_cmd.is_none());
-
-        let field_trajectory_vec = cmd.field_trajectory_vec.clone();
-        let field_id_to_name = wl.field_id_to_name.clone();
-
-        assert_eq!(
-            field_id_to_name
-                .get(field_trajectory_vec[0])
-                .unwrap()
-                .to_owned(),
-            String::from("rna")
-        );
-        assert_eq!(
-            field_id_to_name
-                .get(field_trajectory_vec[1])
-                .unwrap()
-                .to_owned(),
-            String::from("simpleaf index")
-        );
-
-        match cmd.simpleaf_cmd {
-            Some(Commands::Index {
-                ref_type,
-                fasta,
-                gtf,
-                rlen,
-                dedup,
-                ref_seq,
-                spliced,
-                unspliced,
-                use_piscem,
-                minimizer_length,
-                output,
-                overwrite,
-                threads,
-                kmer_length,
-                keep_duplicates,
-                sparse,
-            }) => {
-                match ref_type {
-                    ReferenceType::SplicedUnspliced => {}
-                    ReferenceType::SplicedIntronic => panic!("should be spliceu"),
-                };
-                assert_eq!(fasta, Some(PathBuf::from("genome.fa")));
-                assert_eq!(gtf, Some(PathBuf::from("genes.gtf")));
-                assert_eq!(rlen, None);
-                assert_eq!(ref_seq, None);
-                assert_eq!(spliced, None);
-                assert_eq!(unspliced, None);
-                assert_eq!(use_piscem, true);
-                assert_eq!(minimizer_length, 19);
-                assert_eq!(output, PathBuf::from("index_output"));
-                assert_eq!(overwrite, true);
-                assert_eq!(threads, 16);
-                assert_eq!(kmer_length, 31);
-                assert_eq!(keep_duplicates, false);
-                assert_eq!(sparse, false);
-                assert_eq!(dedup, false);
             }
             _ => panic!(),
         };

@@ -9,7 +9,9 @@ use jrsonnet_evaluator::{
     error::{Error as JrError, ErrorKind},
     State,
 };
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use super::workflow_utils::ProtocolEstuary;
 
 #[derive(Parser)]
 #[command(next_help_heading = "DEBUG")]
@@ -56,26 +58,53 @@ struct Opts {
 }
 
 pub fn parse_jsonnet(
-    // af_home_path: &Path,
     config_file_path: &Path,
-    utils_libsonnet_path: &Path,
     output: &Path,
+    protocol_estuary: ProtocolEstuary,
+    lib_paths: &Option<Vec<PathBuf>>,
 ) -> anyhow::Result<String> {
-    // define top level argumetns
-    // let tla_af_home_path = format!("af_home_path='{}'", af_home_path.display());
-    let tla_output = format!(r#"output='{}'"#, output.to_string_lossy().into_owned());
-    let ext_utils_file_path = format!(r#"utils = import '{}'"#, utils_libsonnet_path.display());
-    let input_config_file_path = config_file_path.to_string_lossy().into_owned();
+    // define jrsonnet argumetns
+    // config file
+    let input_config_file_path = config_file_path
+        .to_str()
+        .expect("Could not convert workflow config file path to str");
+    let jpath_config_file_path = config_file_path
+        .parent()
+        .expect("Could not get the parent dir of the config file.")
+        .to_str()
+        .expect("Could not convert the parent dir of the config file to str.");
+    // external code
+    let ext_output = format!(r#"output='{}'"#, output.display());
+    let ext_utils_file_path = r#"utils=import 'utils.libsonnet'"#;
+
+    // af_home_dir
+    let jpath_pe_utils = protocol_estuary
+        .utils_dir
+        .to_str()
+        .expect("Could not convert Protocol Estuarys path to str");
 
     // create command vector for clap parser
-    let jrsonnet_cmd_vec = vec![
+    let mut jrsonnet_cmd_vec = vec![
         "jrsonnet",
-        &input_config_file_path,
-        "--tla-code",
-        &tla_output,
+        input_config_file_path,
         "--ext-code",
-        &ext_utils_file_path,
+        &ext_output,
+        "--ext-code",
+        ext_utils_file_path,
+        "--jpath",
+        jpath_pe_utils,
+        "--jpath",
+        jpath_config_file_path,
     ];
+
+    // if the user provides more lib search path, then assign it.
+    if let Some(lib_paths) = lib_paths {
+        for lib_path in lib_paths {
+            jrsonnet_cmd_vec.push("--jpath");
+            jrsonnet_cmd_vec.push(lib_path.to_str().expect("Could not convert path to "));
+        }
+    }
+
     let opts: Opts = Opts::parse_from(jrsonnet_cmd_vec);
     main_catch(opts)
 }
