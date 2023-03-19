@@ -4,8 +4,20 @@ pub use self::inspect::inspect_simpleaf;
 pub mod chemistry;
 pub use self::chemistry::add_chemistry;
 
-use std::path::PathBuf;
+pub mod paths;
+pub use self::paths::set_paths;
+
+pub mod indexing;
+pub use self::indexing::build_ref_and_index;
+
+pub mod quant;
+pub use self::quant::map_and_quant;
+
+pub mod workflow;
+pub use self::workflow::{get_workflow_config, workflow};
+
 use clap::{builder::ArgPredicate, ArgGroup, Subcommand};
+use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
 pub enum ReferenceType {
@@ -366,5 +378,3 @@ pub enum Commands {
         skip_step: Option<Vec<isize>>,
     },
 }
-
-

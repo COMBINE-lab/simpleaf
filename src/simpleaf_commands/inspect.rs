@@ -1,10 +1,9 @@
-
 use crate::utils::prog_utils::*;
 
-use std::path::PathBuf;
-use std::io::BufReader;
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use serde_json::Value;
+use std::io::BufReader;
+use std::path::PathBuf;
 
 pub fn inspect_simpleaf(af_home_path: PathBuf) -> Result<()> {
     // Read the JSON contents of the file as an instance of `User`.
@@ -36,4 +35,3 @@ pub fn inspect_simpleaf(af_home_path: PathBuf) -> Result<()> {
     }
     Ok(())
 }
-

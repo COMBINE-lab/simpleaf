@@ -1,10 +1,10 @@
 use crate::utils::af_utils::*;
 
+use anyhow::{bail, Context, Result};
+use serde_json::json;
+use serde_json::Value;
 use std::io::{BufReader, Seek, Write};
 use std::path::PathBuf;
-use anyhow::{bail, Result, Context};
-use serde_json::Value;
-use serde_json::json;
 use tracing::info;
 
 use super::Commands;
