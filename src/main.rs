@@ -3,12 +3,13 @@ use tracing_subscriber::{filter::LevelFilter, fmt, prelude::*, EnvFilter};
 use anyhow::bail;
 use clap::Parser;
 
-// use std::io::{Seek, SeekFrom};
 use std::env;
 use std::path::PathBuf;
 
 mod utils;
 
+// all of the relevant commands 
+// live in this module.
 mod simpleaf_commands;
 use simpleaf_commands::*;
 
@@ -22,6 +23,10 @@ pub struct Cli {
 }
 
 fn main() -> anyhow::Result<()> {
+    // Check the `RUST_LOG` variable for the logger level and 
+    // respect the value found there. If this environment 
+    // variable is not set then set the logging level to 
+    // INFO.
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(
@@ -30,6 +35,13 @@ fn main() -> anyhow::Result<()> {
                 .from_env_lossy(),
         )
         .init();
+
+    // Before we do anything else, ensure that the user has 
+    // their `AF_HOME` variable set in the environment, as we
+    // will be using this with mostly every command.
+    // TODO: Should, instead of requiring a specific `AF_HOME` 
+    // we be following the 
+    // [XDG standard](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html)
     const AF_HOME: &str = "ALEVIN_FRY_HOME";
     let af_home_path = match env::var(AF_HOME) {
         Ok(p) => PathBuf::from(p),
@@ -44,6 +56,8 @@ fn main() -> anyhow::Result<()> {
 
     let cli_args = Cli::parse();
 
+    // Based on the command we parsed, dispatch
+    // to the appropriate function.
     match cli_args.command {
         // set the paths where the relevant tools live
         Commands::SetPaths {
@@ -147,6 +161,9 @@ fn main() -> anyhow::Result<()> {
                 output,
             },
         ),
+
+        // if we are running or parsing a 
+        // workflow file.
         Commands::Workflow {
             config_path,
             workflow_path,
@@ -169,6 +186,9 @@ fn main() -> anyhow::Result<()> {
                 skip_step,
             },
         ),
+
+        // if we are generating a workflow 
+        // configuration from a workflow template.
         Commands::GetWorkflowConfig {
             output,
             workflow,
@@ -183,4 +203,7 @@ fn main() -> anyhow::Result<()> {
         ),
     }
     // success, yay!
+    // we should not need an explicit value here as the 
+    // match above is exhaustive, and each command should 
+    // return an appropriate `Result`.
 }
