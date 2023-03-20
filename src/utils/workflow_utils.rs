@@ -11,6 +11,8 @@ use time::Instant;
 use tracing::warn;
 
 use crate::utils::jrsonnet_main::parse_jsonnet;
+use crate::utils::prog_utils;
+use crate::utils::prog_utils::CommandVerbosityLevel;
 use crate::{Cli, Commands};
 
 /// intialize simpleaf workflow realted structs,
@@ -680,12 +682,14 @@ pub fn get_protocol_estuary(af_home_path: &Path) -> anyhow::Result<ProtocolEstua
             .arg(pe_zip_file.to_string_lossy().to_string())
             .arg("-L")
             .arg(dl_url);
-        let r = dl_cmd.output()?;
-        if !r.status.success() {
-            return Err(anyhow!(
-                "failed to download protocol-estuary GitHub Repository {:?}",
-                r.status
-            ));
+        match prog_utils::execute_command(&mut dl_cmd, CommandVerbosityLevel::Quiet) {
+            Ok(_output) => {}
+            Err(e) => {
+                return Err(anyhow!(
+                    "failed to download protocol-estuary GitHub repository; error: {:?}",
+                    e
+                ));
+            }
         }
 
         // unzip
@@ -695,25 +699,26 @@ pub fn get_protocol_estuary(af_home_path: &Path) -> anyhow::Result<ProtocolEstua
             .arg("-d")
             .arg(pe_dir.to_string_lossy().to_string());
 
-        let r = unzip_cmd.output()?;
-        // if failed, then remove dir and return with an error
-        if !r.status.success() {
-            std::fs::remove_dir(pe_dir.as_path()).with_context({
-                || {
-                    format!(
-                        "failed to unzip protocol library zip file, \
-                        then failed to remove the protocol library directory. \n\
-                        Please remove it manually, for example, using `rm -rf {}`",
-                        pe_dir.display()
-                    )
-                }
-            })?;
-
-            return Err(anyhow!(
-                "failed to unzip protocol library zip file at {}. The error was: {:?}",
-                pe_zip_file.display(),
-                r.status
-            ));
+        match prog_utils::execute_command(&mut unzip_cmd, CommandVerbosityLevel::Quiet) {
+            Ok(_output) => {}
+            Err(e) => {
+                // if failed, then remove dir and return with an error
+                std::fs::remove_dir(pe_dir.as_path()).with_context({
+                    || {
+                        format!(
+                            "failed to unzip protocol library zip file, \
+                            then failed to remove the protocol library directory. \n\
+                            Please remove it manually, for example, using `rm -rf {}`",
+                            pe_dir.display()
+                        )
+                    }
+                })?;
+                return Err(anyhow!(
+                    "failed to unzip protocol library zip file at {}. The error was: {:?}.",
+                    pe_zip_file.display(),
+                    e
+                ));
+            }
         }
 
         // final check
@@ -723,7 +728,7 @@ pub fn get_protocol_estuary(af_home_path: &Path) -> anyhow::Result<ProtocolEstua
             bail!(
                 "Could not fetch protocol library. \
                     This should not happen. \
-                    Please submit an issue at Simpleaf GitHub Repository."
+                    Please submit an issue on the simpleaf GitHub repository."
             )
         }
     }

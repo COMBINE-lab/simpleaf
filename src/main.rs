@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 mod utils;
 
-// all of the relevant commands 
+// all of the relevant commands
 // live in this module.
 mod simpleaf_commands;
 use simpleaf_commands::*;
@@ -23,9 +23,9 @@ pub struct Cli {
 }
 
 fn main() -> anyhow::Result<()> {
-    // Check the `RUST_LOG` variable for the logger level and 
-    // respect the value found there. If this environment 
-    // variable is not set then set the logging level to 
+    // Check the `RUST_LOG` variable for the logger level and
+    // respect the value found there. If this environment
+    // variable is not set then set the logging level to
     // INFO.
     tracing_subscriber::registry()
         .with(fmt::layer())
@@ -36,11 +36,11 @@ fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    // Before we do anything else, ensure that the user has 
+    // Before we do anything else, ensure that the user has
     // their `AF_HOME` variable set in the environment, as we
     // will be using this with mostly every command.
-    // TODO: Should, instead of requiring a specific `AF_HOME` 
-    // we be following the 
+    // TODO: Should, instead of requiring a specific `AF_HOME`
+    // we be following the
     // [XDG standard](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html)
     const AF_HOME: &str = "ALEVIN_FRY_HOME";
     let af_home_path = match env::var(AF_HOME) {
@@ -162,7 +162,7 @@ fn main() -> anyhow::Result<()> {
             },
         ),
 
-        // if we are running or parsing a 
+        // if we are running or parsing a
         // workflow file.
         Commands::Workflow {
             config_path,
@@ -187,7 +187,7 @@ fn main() -> anyhow::Result<()> {
             },
         ),
 
-        // if we are generating a workflow 
+        // if we are generating a workflow
         // configuration from a workflow template.
         Commands::GetWorkflowConfig {
             output,
@@ -203,7 +203,7 @@ fn main() -> anyhow::Result<()> {
         ),
     }
     // success, yay!
-    // we should not need an explicit value here as the 
-    // match above is exhaustive, and each command should 
+    // we should not need an explicit value here as the
+    // match above is exhaustive, and each command should
     // return an appropriate `Result`.
 }

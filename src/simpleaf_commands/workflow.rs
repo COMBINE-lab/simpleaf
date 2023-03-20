@@ -26,8 +26,8 @@ use super::Commands;
 /// ### Program Description
 /// This program is used for generating a simpleaf workflow JSON file
 /// that can be consumed directly by the `simpleaf workflow` program.\
-/// This program takes a template from our template library as the input
-/// and do the following:
+/// This program takes a template from the template library as the input
+/// and does the following:
 /// 1. It loads the required arguments of that template and
 ///      find them in the user-provided JSON file.
 /// 2. It validates the files in the user-provided JSON file.

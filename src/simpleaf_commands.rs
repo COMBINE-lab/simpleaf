@@ -19,14 +19,14 @@ pub use self::workflow::{get_workflow_config, workflow};
 use clap::{builder::ArgPredicate, ArgGroup, Subcommand};
 use std::path::PathBuf;
 
-/// The type of references we might create 
-/// to map against for quantification with 
+/// The type of references we might create
+/// to map against for quantification with
 /// alevin-fry.
 #[derive(Clone, Debug)]
 pub enum ReferenceType {
     /// The spliced + intronic (splici) reference
     SplicedIntronic,
-    /// The spliced + unspliced (splicu) reference 
+    /// The spliced + unspliced (splicu) reference
     SplicedUnspliced,
 }
 
