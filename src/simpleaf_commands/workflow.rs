@@ -4,12 +4,12 @@ use crate::utils::workflow_utils;
 use crate::utils::workflow_utils::{SimpleafWorkflow, WorkflowLog};
 
 use anyhow::{bail, Context};
-use cmd_lib::{run_cmd, run_fun};
+use cmd_lib::run_fun;
 use serde_json::json;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
-use tracing::info;
+use tracing::{info, warn};
 
 use super::Commands;
 
@@ -387,77 +387,55 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                     }
 
                     // If this is an external command, then initialize it and run
-                    if let Some(mut cmd) = cr.external_cmd {
+                    if let Some(cmd) = cr.external_cmd {
                         // log
                         let cmd_string = prog_utils::get_cmd_line_string(&cmd);
                         info!("Invoking command : {}", cmd_string);
+                        let mut ext_cmd = prog_utils::shell(&cmd_string);
 
                         // initiate a stopwatch
                         workflow_log.timeit(cr.step);
 
-                        match cmd.output() {
+                        match ext_cmd.output() {
                             Ok(cres) => {
                                 // check the return status of external command
                                 if cres.status.success() {
                                     // succeed. update log
                                     workflow_log.update(&cr.field_trajectory_vec[..]);
                                 } else {
-                                    let cmd_string = prog_utils::get_cmd_line_string(&cmd);
-                                    match run_cmd!(sh -c $cmd_string) {
-                                        Ok(_) => {
-                                            // succeed. update log
-                                            workflow_log.update(&cr.field_trajectory_vec[..]);
-                                        }
-                                        Err(e2) => {
-                                            workflow_log.write(false)?;
-                                            bail!(
-                                                "{} with step {} failed in two different attempts.\n\
-                                                The exit status of the first attempt was: {:?}. \n\
-                                                The stderr of the first attempt was: {:?}. \n\
-                                                The error message of the second attempt was: {:?}.",
-                                                pn, step,
-                                                cres.status,
-                                                std::str::from_utf8(&cres.stderr[..]).unwrap(),
-                                                e2
-                                            );
-                                        }
-                                    };
+                                    let cmd_stderr = std::str::from_utf8(&cres.stderr[..])?;
+                                    let msg = format!("{} command with step {} failed to exit with code 0 under the shell.\n\
+                                                      The exit status was: {}.\n\
+                                                      The stderr of the invocation was: {}.", pn, step, cres.status, cmd_stderr);
+                                    warn!(msg);
+                                    bail!(msg);
                                 }
                             }
                             Err(e) => {
-                                let cmd_string = prog_utils::get_cmd_line_string(&cmd);
-                                match run_cmd!(sh -c $cmd_string) {
-                                    Ok(_) => {
-                                        workflow_log.update(&cr.field_trajectory_vec[..]);
-                                    }
-                                    Err(e2) => {
-                                        workflow_log.write(false)?;
-                                        bail!(
-                                            "{} command with step {} failed in two different attempts.\n\
-                                            The stderr of the first attempt was: {:?}. \n\
-                                            The error message of the second attempt was: {:?}.",
-                                            pn, step,
-                                            e,
-                                            e2
-                                        );
-                                    }
-                                };
+                                let msg = format!(
+                                    "{} command with step {} failed to execute under the shell.\n\
+                                     The returned error was: {:?}.\n",
+                                    pn, step, e
+                                );
+                                warn!(msg);
+                                bail!(msg);
                             } // TODO: use this in the log somewhere.
                         } // invoke external cmd
 
-                        info!("Successfully ran {} command with step {}.", pn, step);
+                        info!("successfully ran {} command with step {}.", pn, step);
                     } // for cmd_queue
                 }
                 // write log
                 workflow_log.write(true)?;
 
-                info!("All commands ran successfully.");
+                info!("all commands ran successfully.");
             } else {
                 workflow_log.write(false)?;
             }
         } //
         _ => {
-            bail!("unknown command")
+            warn!("encountered unknown command type!");
+            bail!("unknown command type!");
         }
     } // match Commands::Workflow
     Ok(())

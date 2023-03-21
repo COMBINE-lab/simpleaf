@@ -3,9 +3,50 @@ use cmd_lib::run_fun;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::env;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::Once;
 use tracing::{error, info};
 use which::which;
+
+// The below functions are taken from the [`execute`](https://crates.io/crates/execute)
+// crate.
+
+/// Create a `Command` instance which can be executed by the current command language interpreter (shell).
+#[cfg(unix)]
+#[inline]
+pub fn shell<S: AsRef<OsStr>>(cmd: S) -> Command {
+    static START: Once = Once::new();
+    static mut SHELL: Option<OsString> = None;
+
+    let shell = unsafe {
+        START.call_once(|| {
+            SHELL = Some(env::var_os("SHELL").unwrap_or_else(|| OsString::from(String::from("sh"))))
+        });
+
+        SHELL.as_ref().unwrap()
+    };
+
+    let mut command = Command::new(shell);
+
+    command.arg("-c");
+    command.arg(cmd);
+
+    command
+}
+
+/// Create a `Command` instance which can be executed by the current command language interpreter (shell).
+#[cfg(windows)]
+#[inline]
+pub fn shell<S: AsRef<OsStr>>(cmd: S) -> Command {
+    let mut command = Command::new("cmd.exe");
+
+    command.arg("/c");
+    command.arg(cmd);
+
+    command
+}
 
 pub fn get_cmd_line_string(prog: &std::process::Command) -> String {
     let mut prog_vec = vec![prog.get_program().to_string_lossy().to_string()];
