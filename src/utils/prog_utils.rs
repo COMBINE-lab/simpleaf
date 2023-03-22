@@ -157,6 +157,12 @@ pub fn check_version_constraints<S1: AsRef<str>>(
     }
 }
 
+/// Checks that the version returned from a given program's `--version`
+/// flag is compatible with the provided `req_string`.  The interpretation
+/// of compatible is according to the standard meaning of Semantic versioning.
+/// This returns either `Ok(Version)` of the parsed, compatible, version or
+/// an `anyhow::Error` describing the incompatibility of the version is not
+/// compatible.
 pub fn check_version_constraints_from_output<S1: AsRef<str>>(
     prog_name: &str,
     req_string: S1,
