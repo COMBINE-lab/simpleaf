@@ -14,34 +14,24 @@ use tracing::{info, warn};
 use super::Commands;
 
 /// ### Program Name
-/// simpleaf generate-workflow
+/// simpleaf get-workflow-config
 ///
 /// ### Program Input
-/// A json file that records all top level variables needed by the template
-///                  and optionally, some extra variables
+/// A string representing the name of an existing workflow in the protocol-estuary
+/// A output path 
+/// 
 /// ### Program Output
-/// A json file that contains the actual simpelaf workflow information, which can be
-///         consumed directly by the simpleaf run-workflow command. Additionally, if --execute is specified,
-///          the generated simpleaf workflow will be executed.
+/// A folder that in the protocol estuary that is named by the querying workflow.
+/// 
 /// ### Program Description
-/// This program is used for generating a simpleaf workflow JSON file
-/// that can be consumed directly by the `simpleaf workflow` program.\
-/// This program takes a template from the template library as the input
-/// and does the following:
-/// 1. It loads the required arguments of that template and
-///      find them in the user-provided JSON file.
-/// 2. It validates the files in the user-provided JSON file.
-///      This can be checking the existance and validate the first few records
-/// 3. It feeds the template the required inputs, and
-///      generates a simpleaf workflow JSON file.
-///      This JSON file contains the simpleaf programs need to be run and
-///      the required arguments.
+/// This program is used for getting the source files of a pubished workflow
+/// from the protocol estuary GitHub repo https://github.com/COMBINE-lab/protocol-estuary
+/// 
+/// This program takes a string representing the name of a published workflow, and copy the 
+/// folder of that workflow in the protocol estuary to the provided output directory 
+/// as a sub-directory.
 
-// TODO:
-// 1. figure out the layout of protocol estuary
-// 2. find workflow using name, if doesn't exist, find similar names and return error
-// 3. copy the config file from af_home protocol estuary dir to the output dir.
-// 4. allow name change?
+// TODO: implement essential only
 
 pub fn get_workflow_config(af_home_path: &Path, gw_cmd: Commands) -> anyhow::Result<()> {
     match gw_cmd {

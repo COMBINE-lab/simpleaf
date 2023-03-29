@@ -351,7 +351,7 @@ pub enum Commands {
             display_order = 5,
             help_heading = "Start Step"
         )]
-        start_at: isize,
+        start_at: i64,
         // TODO: add a --resume arg which reads the log at starts at the step that failed in the previous run
         /// resume execution from the termination step of a previous run. To use this flag, the output directory must contains the log file from a previous run.
         #[arg(
@@ -380,6 +380,6 @@ pub enum Commands {
             display_order = 7,
             value_delimiter = ','
         )]
-        skip_step: Option<Vec<isize>>,
+        skip_step: Option<Vec<i64>>,
     },
 }
