@@ -223,12 +223,12 @@ impl SimpleafWorkflow {
                             }
                         } else {
                             // we still need to change the step to a negative number as it is skipped
-                            let step_vlaue = workflow_log.get_step(&curr_field_trajectory_vec)?;
-                            let step = step_vlaue
+                            let step_value = workflow_log.get_step(&curr_field_trajectory_vec)?;
+                            let step = step_value
                                 .as_i64()
                                 .with_context(|| "Cannot convert `Step` as an integer")?;
                             if !step.is_negative() {
-                                *step_vlaue = json!(-step);
+                                *step_value = json!(-step);
                             }
                         }
                     }

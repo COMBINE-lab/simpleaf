@@ -189,13 +189,13 @@ fn main() -> anyhow::Result<()> {
         // configuration from a workflow template.
         Commands::GetWorkflowConfig {
             output,
-            workflow,
+            name,
             // essential_only,
         } => get_workflow_config(
             af_home_path.as_path(),
             Commands::GetWorkflowConfig {
                 output,
-                workflow,
+                name,
                 // essential_only,
             },
         ),

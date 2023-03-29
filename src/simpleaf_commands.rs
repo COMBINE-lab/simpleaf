@@ -315,7 +315,7 @@ pub enum Commands {
 
         /// name of the queried workflow.
         #[arg(short, long)]
-        workflow: String,
+        name: String,
         // only write the essential information without any instructions
         // #[arg(short, long)]
         // essential_only: bool,

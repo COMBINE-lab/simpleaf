@@ -36,7 +36,7 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: Commands) -> anyhow::Res
     match gw_cmd {
         Commands::GetWorkflowConfig {
             output,
-            workflow,
+            name,
             // essential_only: _,
         } => {
             // get af_home
@@ -48,9 +48,9 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: Commands) -> anyhow::Res
             // get protocol library path
             let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path)?;
             // get the corresponding workflow directory path
-            let workflow_path = protocol_estuary.protocols_dir.join(workflow.as_str());
+            let workflow_path = protocol_estuary.protocols_dir.join(name.as_str());
             // make output dir
-            let mut output_dir_name = workflow.clone();
+            let mut output_dir_name = name.clone();
             output_dir_name.push_str("_config");
             let output_path = output.join(output_dir_name);
 
@@ -94,7 +94,7 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: Commands) -> anyhow::Res
                             .to_str()
                             .expect("Could not convert dir name to str.");
                         // if finds similar file names, push to the vec
-                        if curr_workflow_name.contains(workflow.as_str()) {
+                        if curr_workflow_name.contains(name.as_str()) {
                             similar_names.push(curr_workflow_name.to_string());
                         }
                     }
@@ -113,7 +113,7 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: Commands) -> anyhow::Res
                     // return with an error
                     bail!(
                         "Could not find a workflow with name: {}. {}",
-                        workflow,
+                        name,
                         similar_name_hints
                     );
                 }
@@ -130,7 +130,7 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: Commands) -> anyhow::Res
 
                 "args" : {
                     "output" : output,
-                    "workflow" : workflow,
+                    "name" : name,
                     // "essential_only" : essential_only,
                 }
             });
@@ -142,8 +142,8 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: Commands) -> anyhow::Res
             .with_context(|| format!("could not write {}", gwc_info_path.display()))?;
 
             info!(
-                "Successfully export {} workflow to {}",
-                workflow,
+                "Successfully export {} workflow configuration files to {}",
+                name,
                 output_path.display()
             );
         }
