@@ -178,7 +178,6 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
     match workflow_cmd {
         Commands::Workflow {
             config_path,
-            workflow_path,
             output,
             // TODO: write JSON only if no execution
             no_execution,
@@ -188,9 +187,6 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
             skip_step,
         } => {
             run_fun!(mkdir -p $output)?;
-
-            let simpleaf_workflow: SimpleafWorkflow;
-            let mut workflow_log: WorkflowLog;
 
             let final_start_at = if resume {
                 workflow_utils::update_start_at(output.as_path())?
@@ -204,69 +200,41 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                 Vec::new()
             };
 
-            // we will have either a config_path or a workflow_path
-            // if we see config files. process it
-            if let Some(cp) = config_path {
-                //  check the validity of the file
-                if !cp.exists() {
-                    bail!("the path of the given workflow configuratioin file doesn't exist; Cannot proceed.")
-                }
-
-                info!("Processing simpleaf workflow configuration file.");
-
-                // iterate json files and parse records to commands
-                // convert files into json string vector
-                let workflow_json_string = workflow_utils::parse_workflow_config(
-                    af_home_path,
-                    cp.as_path(),
-                    output.as_path(),
-                    &lib_paths,
-                )?;
-
-                // write complete workflow json to output folder
-                // the `Step` of each command in this json file will be changed to "-1"
-                // once the command is run successfully.
-                // The final workflow file name will be the same as the input config but
-                // with json as the extention.
-                let workflow_json_value: Value =
-                    serde_json::from_str(workflow_json_string.as_str())?;
-
-                // initialize simpleaf workflow and log struct
-                // TODO: print some log using meta_info fields
-                (simpleaf_workflow, workflow_log) = workflow_utils::initialize_workflow(
-                    af_home_path,
-                    cp.as_path(),
-                    output.as_path(),
-                    workflow_json_value,
-                    final_start_at,
-                    final_skip_step,
-                )?;
-            } else {
-                // This file has to exist
-                let wp = workflow_path.expect(
-                    "Neither configuration file nor workflow file is provided; Cannot proceed.",
-                );
-
-                // check the existence of the file
-                if !wp.exists() {
-                    bail!("the path of the given workflow configuratioin file doesn't exist; Cannot proceed.")
-                }
-                // load each file as a wrapper struct of a vector of simpleaf commands
-                let json_file = fs::File::open(wp.as_path())
-                    .with_context(|| format!("Could not open JSON file {}.", wp.display()))?;
-
-                // TODO: print some log using meta_info fields
-                let workflow_json_value: Value = serde_json::from_reader(json_file)?;
-
-                (simpleaf_workflow, workflow_log) = workflow_utils::initialize_workflow(
-                    af_home_path,
-                    wp.as_path(),
-                    output.as_path(),
-                    workflow_json_value,
-                    final_start_at,
-                    final_skip_step,
-                )?;
+            //  check the validity of the file
+            if !config_path.exists() {
+                bail!("the path of the given workflow configuratioin file doesn't exist; Cannot proceed.")
             }
+
+            info!("Processing simpleaf workflow configuration file.");
+
+            // iterate json files and parse records to commands
+            // convert files into json string vector
+            let workflow_json_string = workflow_utils::parse_workflow_config(
+                af_home_path,
+                config_path.as_path(),
+                output.as_path(),
+                &lib_paths,
+            )?;
+
+            // write complete workflow json to output folder
+            // the `Step` of each command in this json file will be changed to "-1"
+            // once the command is run successfully.
+            // The final workflow file name will be the same as the input config but
+            // with json as the extention.
+            let workflow_json_value: Value =
+                serde_json::from_str(workflow_json_string.as_str())?;
+
+            // initialize simpleaf workflow and log struct
+            // TODO: print some log using meta_info fields
+            let (simpleaf_workflow, workflow_log) = workflow_utils::initialize_workflow(
+                af_home_path,
+                config_path.as_path(),
+                output.as_path(),
+                workflow_json_value,
+                final_start_at,
+                final_skip_step,
+            )?;
+            
             if !no_execution {
                 for cr in simpleaf_workflow.cmd_queue {
                     let pn = cr.program_name;

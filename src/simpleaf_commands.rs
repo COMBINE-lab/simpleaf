@@ -328,37 +328,34 @@ pub enum Commands {
     /// parse the input configuration/workflow files and execute the corresponding workflow(s).
     Workflow {
         /// path to a simpleaf workflow configuration file.
-        #[arg(short, long, display_order = 1, help_heading = "Workflow File")]
-        config_path: Option<PathBuf>,
-
-        /// path to a simpleaf complete workflow JSON file.
-        #[arg(short, long, display_order = 2, help_heading = "Workflow File")]
-        workflow_path: Option<PathBuf>,
+        #[arg(short, long, display_order = 1)]
+        config_path: PathBuf,
 
         /// output directory for log files and the workflow outputs that have no explicit output directory.
-        #[arg(short, long, display_order = 3)]
+        #[arg(short, long, display_order = 2)]
         output: PathBuf,
 
-        /// return after parsing the wofklow config or JSON file without executing the commands.
-        #[arg(short, long, display_order = 4, conflicts_with_all=["start_at", "resume"])]
+        /// return after parsing the wofklow config file without executing the commands.
+        #[arg(short, long, display_order = 3, conflicts_with_all=["start_at", "resume"])]
         no_execution: bool,
 
-        /// Start the execution from a specific step. All previous steps will be ignored.  
+        /// Start the execution from a specific Step. All previous steps will be ignored.  
         #[arg(
             short,
             long,
             default_value_t = 1,
-            display_order = 5,
+            display_order = 4,
             help_heading = "Start Step"
         )]
         start_at: i64,
-        // TODO: add a --resume arg which reads the log at starts at the step that failed in the previous run
-        /// resume execution from the termination step of a previous run. To use this flag, the output directory must contains the log file from a previous run.
+
+        /// resume execution from the termination step of a previous run. 
+        /// To use this flag, the output directory must contains the JSON file generated from a previous run.
         #[arg(
             short,
             long,
             conflicts_with = "start_at",
-            display_order = 6,
+            display_order = 5,
             help_heading = "Start Step"
         )]
         resume: bool,
@@ -368,7 +365,7 @@ pub enum Commands {
             short,
             long,
             conflicts_with = "workflow_path",
-            display_order = 7,
+            display_order = 6,
             value_delimiter = ','
         )]
         lib_paths: Option<Vec<PathBuf>>,
