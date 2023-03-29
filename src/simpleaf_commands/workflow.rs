@@ -240,7 +240,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                     // this if statement is no longer needed as commands with a negative exec order
                     // are ignore when constructing the the cmd queue
                     // say something
-                    info!("Running {} command with step {}.", pn, step,);
+                    info!("Running {} command for step {}.", pn, step,);
 
                     // initiliaze a stopwatch
                     workflow_log.timeit(step);
@@ -333,10 +333,10 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                         };
                         if let Err(e) = exec_result {
                             workflow_log.write(false)?;
-                            info!("Execution terminated at {} command with step {}", pn, step);
+                            info!("Execution terminated at {} command for step {}", pn, step);
                             return Err(e);
                         } else {
-                            info!("Successfully ran {} command with step {}", pn, step);
+                            info!("Successfully ran {} command for step {}", pn, step);
 
                             workflow_log.update(&cr.field_trajectory_vec[..]);
                         }
@@ -359,7 +359,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                                     workflow_log.update(&cr.field_trajectory_vec[..]);
                                 } else {
                                     let cmd_stderr = std::str::from_utf8(&cres.stderr[..])?;
-                                    let msg = format!("{} command with step {} failed to exit with code 0 under the shell.\n\
+                                    let msg = format!("{} command at step {} failed to exit with code 0 under the shell.\n\
                                                       The exit status was: {}.\n\
                                                       The stderr of the invocation was: {}.", pn, step, cres.status, cmd_stderr);
                                     warn!(msg);
@@ -368,7 +368,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                             }
                             Err(e) => {
                                 let msg = format!(
-                                    "{} command with step {} failed to execute under the shell.\n\
+                                    "{} command at step {} failed to execute under the shell.\n\
                                      The returned error was: {:?}.\n",
                                     pn, step, e
                                 );
@@ -377,7 +377,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                             } // TODO: use this in the log somewhere.
                         } // invoke external cmd
 
-                        info!("successfully ran {} command with step {}.", pn, step);
+                        info!("successfully ran {} command for step {}.", pn, step);
                     } // for cmd_queue
                 }
                 // write log
