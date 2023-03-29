@@ -42,7 +42,8 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: Commands) -> anyhow::Res
             // get af_home
             let v: Value = prog_utils::inspect_af_home(af_home_path)?;
             // Read the JSON contents of the file as an instance of `User`.
-            let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+            // TODO: use it somehwere?
+            let _rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
             // get protocol library path
             let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path)?;
@@ -125,7 +126,6 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: Commands) -> anyhow::Res
             let gwc_info_path = output_path.join("get_workflow_config.json");
             let gwc_info = json!({
                 "command" : "get-workflow-config",
-                "version_info" : rp,
                 "workflow dir": output_path,
 
                 "args" : {

@@ -307,6 +307,7 @@ pub enum Commands {
         pyroe: Option<PathBuf>,
     },
 
+    #[command(arg_required_else_help = true)]
     GetWorkflowConfig {
         /// path to output configuration file, the directory will be created if it doesn't exist
         #[arg(short, long)]
@@ -320,11 +321,7 @@ pub enum Commands {
         // essential_only: bool,
     },
 
-    #[command(group(
-        ArgGroup::new("workflow file")
-        .required(true)
-        .args(["config_path", "workflow_path"])
-        ))]
+    #[command(arg_required_else_help = true)]
     /// parse the input configuration/workflow files and execute the corresponding workflow(s).
     Workflow {
         /// path to a simpleaf workflow configuration file.
@@ -336,7 +333,12 @@ pub enum Commands {
         output: PathBuf,
 
         /// return after parsing the wofklow config file without executing the commands.
-        #[arg(short, long, display_order = 3, conflicts_with_all=["start_at", "resume"])]
+        #[arg(short,
+            long,
+            display_order = 3,
+            conflicts_with_all=["start_at", "resume", "skip_step"],
+            help_heading = "Control Flow"
+        )]
         no_execution: bool,
 
         /// Start the execution from a specific Step. All previous steps will be ignored.  
@@ -345,7 +347,8 @@ pub enum Commands {
             long,
             default_value_t = 1,
             display_order = 4,
-            help_heading = "Start Step"
+            conflicts_with_all=["resume"],
+            help_heading = "Control Flow"
         )]
         start_at: i64,
 
@@ -356,7 +359,8 @@ pub enum Commands {
             long,
             conflicts_with = "start_at",
             display_order = 5,
-            help_heading = "Start Step"
+            conflicts_with_all=["start_at"],
+            help_heading = "Control Flow",
         )]
         resume: bool,
 
@@ -375,7 +379,8 @@ pub enum Commands {
             long,
             conflicts_with = "workflow_path",
             display_order = 7,
-            value_delimiter = ','
+            value_delimiter = ',',
+            help_heading = "Control Flow"
         )]
         skip_step: Option<Vec<i64>>,
     },

@@ -16,18 +16,25 @@ use crate::{Cli, Commands};
 
 use super::prog_utils::shell;
 
-/// intialize simpleaf workflow realted structs,
-/// which includes SimpleafWorkflow and WorkfowLog
-
+/// This function updates the start_at variable
+/// if --resume is provided.\
+/// It finds the workflow_info.json exported by
+/// simpleaf workflow from the previous run and
+/// grab the "Succeed" and "Execution Terminated at"
+/// fields.\
+/// If the previous run was succeed, then we report an error
+/// saying nothing to resume
+/// If Execution Terminated at is a negative number, that
+/// means there was no previous execution:
 pub fn update_start_at(output: &Path) -> anyhow::Result<i64> {
     let exec_log_path = output.join("workflow_info.json");
     match exec_log_path.try_exists() {
         Ok(true) => {
-            // we have the simpleaf_index.json file, so parse it.
+            // we have the workflow_info.json file, so parse it.
             let exec_log_file = std::fs::File::open(&exec_log_path).with_context({
                 || {
                     format!(
-                        "Could not open fi`le {}; Cannot resume.",
+                        "Could not open file {}; Cannot resume.",
                         exec_log_path.display()
                     )
                 }
@@ -36,6 +43,7 @@ pub fn update_start_at(output: &Path) -> anyhow::Result<i64> {
             let exec_log_reader = BufReader::new(&exec_log_file);
             let v: Value = serde_json::from_reader(exec_log_reader)?;
 
+            // Check if the previous run was succeed. If yes, then no need to resume
             let succeed = v
                 .get("Succeed")
                 .with_context(|| {
@@ -44,24 +52,27 @@ pub fn update_start_at(output: &Path) -> anyhow::Result<i64> {
                 .as_bool()
                 .with_context(|| "cannot parse `Succeed` as bool; Cannot resume.")?;
 
-            let start_at_str = v
+            let start_at = v
                 .get("Execution Terminated at")
                 .with_context(|| {
                     "Could not get `Execution Terminated at` from the log file; Cannot resume."
                 })?
-                .as_str()
+                .as_i64()
                 .with_context(|| "cannot parse `Execution Terminated at` as str; Cannot resume.")?;
 
             if succeed {
                 bail!("The previous run succeed. Cannot resume.");
-            } else if start_at_str == "N/A" {
-                bail!("The `Execution Terminated at` in the log file is N/A; Cannot resume. Please use the `--start-at` argument instead.")
+            } else if !start_at.is_positive() {
+                bail!("The `Execution Terminated at` in the log file is invalid; Cannot resume. Please use the `--start-at` argument instead.")
             } else {
-                Ok(start_at_str.parse::<i64>()?)
+                Ok(start_at)
             }
         }
         Ok(false) => {
-            bail!("Could not find `workflow_execution_log.json` in the output directory {}; Cannot resume.", output.display())
+            bail!(
+                "Could not find `workflow_info.json` in the output directory {}; Cannot resume.",
+                output.display()
+            )
         }
         Err(e) => {
             bail!(e)
@@ -69,6 +80,8 @@ pub fn update_start_at(output: &Path) -> anyhow::Result<i64> {
     }
 }
 
+/// intialize simpleaf workflow realted structs:
+/// SimpleafWorkflow and WorkfowLog
 pub fn initialize_workflow(
     af_home_path: &Path,
     config_path: &Path,
@@ -164,17 +177,20 @@ impl SimpleafWorkflow {
                     // parse "Step"
                     let step = field
                         .get("Step")
-                        .expect("Cannot get Step")
+                        .with_context(|| "Cannot get Step")?
                         .as_i64()
-                        .expect("Cannot parse Step as an integer");
+                        .with_context(|| {
+                            format!(
+                                "Cannot parse Step {:?} as an integer",
+                                field.get("Step").unwrap()
+                            )
+                        })?;
 
                     // The field must contains an Program Name
                     if let Some(program_name) = field.get("Program Name") {
-                        pn = ProgramName::from_str(
-                            program_name
-                                .as_str()
-                                .expect("Cannot create ProgramName struct from a program name"),
-                        );
+                        pn = ProgramName::from_str(program_name.as_str().with_context(|| {
+                            "Cannot create ProgramName struct from a program name"
+                        })?);
                         // if not in skip steps, and not less than start at
                         if !workflow_log.skip_step.contains(&step) && step >= workflow_log.start_at
                         {
@@ -206,11 +222,11 @@ impl SimpleafWorkflow {
                                 });
                             }
                         } else {
-                            // we still need to change the step to a negative number as it is invalid
-                            let step_vlaue = workflow_log.get_step(&curr_field_trajectory_vec);
+                            // we still need to change the step to a negative number as it is skipped
+                            let step_vlaue = workflow_log.get_step(&curr_field_trajectory_vec)?;
                             let step = step_vlaue
                                 .as_i64()
-                                .expect("Cannot convert `Step` as an integer");
+                                .with_context(|| "Cannot convert `Step` as an integer")?;
                             if !step.is_negative() {
                                 *step_vlaue = json!(-step);
                             }
@@ -341,9 +357,10 @@ impl WorkflowLog {
 
         // will be NA if used --no-execution
         let execution_terminated_at = if let Some(command_runtime) = &self.command_runtime {
-            command_runtime.step.to_string()
+            command_runtime.step
         } else {
-            "N/A".to_string()
+            // If no record, then terminated at the beginning
+            1i64
         };
 
         let meta_info = json!({
@@ -361,7 +378,8 @@ impl WorkflowLog {
         // execution log
         std::fs::write(
             self.meta_info_path.as_path(),
-            serde_json::to_string_pretty(&meta_info).expect("Cannot convert json value to string."),
+            serde_json::to_string_pretty(&meta_info)
+                .with_context(|| ("Cannot convert json value to string."))?,
         )
         .with_context(|| {
             format!(
@@ -374,7 +392,7 @@ impl WorkflowLog {
         std::fs::write(
             self.exec_log_path.as_path(),
             serde_json::to_string_pretty(&self.value)
-                .expect("Cannot convert json value to string."),
+                .with_context(|| "Cannot convert json value to string.")?,
         )
         .with_context(|| {
             format!(
@@ -399,7 +417,7 @@ impl WorkflowLog {
     #[allow(dead_code)]
     /// This function is used for testing if the exection order of
     /// successfully invoked command can be updated to a negative value
-    pub fn get_step(&mut self, field_trajectory_vec: &[usize]) -> &mut Value {
+    pub fn get_step(&mut self, field_trajectory_vec: &[usize]) -> anyhow::Result<&mut Value> {
         // get iterator of field_trajectory vector
         let field_trajectory_vec_iter = field_trajectory_vec.iter();
 
@@ -417,20 +435,13 @@ impl WorkflowLog {
             // let curr_pos = field_trajectory_vec.first().expect("Cannot get the first element");
             curr_field = curr_field
                 .get_mut(curr_field_name)
-                .expect("Cannot get field from json value");
+                .with_context(|| "Cannot get field from json value")?;
         }
 
         // prepend a "-" to the `Step` field.
-        // curr_field =
         curr_field
             .get_mut("Step")
-            .expect("Cannot get the `Step` field of the command.")
-        //     ;
-
-        // curr_field
-        //     .as_str()
-        //     .expect("Cannot convert `Step` of a command as an integer")
-        //     .to_string()
+            .with_context(|| "Cannot get the `Step` field of the command.")
     }
 
     /// Update WorkflowLog:
@@ -938,11 +949,14 @@ mod tests {
 
         wl.update(&cmd.field_trajectory_vec);
 
-        wl.get_step(&cmd.field_trajectory_vec);
+        wl.get_step(&cmd.field_trajectory_vec).unwrap();
 
         // check meta_info
         // we skipped two
-        assert_eq!(wl.get_step(&cmd.field_trajectory_vec).as_i64(), Some(-4));
+        assert_eq!(
+            wl.get_step(&cmd.field_trajectory_vec).unwrap().as_i64(),
+            Some(-4)
+        );
 
         // check command #4
         assert_eq!(sw.cmd_queue.len(), 1);
