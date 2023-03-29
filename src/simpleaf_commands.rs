@@ -349,7 +349,7 @@ pub enum Commands {
         )]
         start_at: i64,
 
-        /// resume execution from the termination step of a previous run. 
+        /// resume execution from the termination step of a previous run.
         /// To use this flag, the output directory must contains the JSON file generated from a previous run.
         #[arg(
             short,

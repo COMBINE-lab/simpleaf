@@ -1,7 +1,6 @@
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::ReqProgs;
 use crate::utils::workflow_utils;
-use crate::utils::workflow_utils::{SimpleafWorkflow, WorkflowLog};
 
 use anyhow::{bail, Context};
 use cmd_lib::run_fun;
@@ -18,17 +17,17 @@ use super::Commands;
 ///
 /// ### Program Input
 /// A string representing the name of an existing workflow in the protocol-estuary
-/// A output path 
-/// 
+/// A output path
+///
 /// ### Program Output
 /// A folder that in the protocol estuary that is named by the querying workflow.
-/// 
+///
 /// ### Program Description
 /// This program is used for getting the source files of a pubished workflow
 /// from the protocol estuary GitHub repo https://github.com/COMBINE-lab/protocol-estuary
-/// 
-/// This program takes a string representing the name of a published workflow, and copy the 
-/// folder of that workflow in the protocol estuary to the provided output directory 
+///
+/// This program takes a string representing the name of a published workflow, and copy the
+/// folder of that workflow in the protocol estuary to the provided output directory
 /// as a sub-directory.
 
 // TODO: implement essential only
@@ -221,12 +220,11 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
             // once the command is run successfully.
             // The final workflow file name will be the same as the input config but
             // with json as the extention.
-            let workflow_json_value: Value =
-                serde_json::from_str(workflow_json_string.as_str())?;
+            let workflow_json_value: Value = serde_json::from_str(workflow_json_string.as_str())?;
 
             // initialize simpleaf workflow and log struct
             // TODO: print some log using meta_info fields
-            let (simpleaf_workflow, workflow_log) = workflow_utils::initialize_workflow(
+            let (simpleaf_workflow, mut workflow_log) = workflow_utils::initialize_workflow(
                 af_home_path,
                 config_path.as_path(),
                 output.as_path(),
@@ -234,7 +232,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                 final_start_at,
                 final_skip_step,
             )?;
-            
+
             if !no_execution {
                 for cr in simpleaf_workflow.cmd_queue {
                     let pn = cr.program_name;

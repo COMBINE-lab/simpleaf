@@ -208,8 +208,9 @@ impl SimpleafWorkflow {
                         } else {
                             // we still need to change the step to a negative number as it is invalid
                             let step_vlaue = workflow_log.get_step(&curr_field_trajectory_vec);
-                            let step =
-                            step_vlaue.as_i64().expect("Cannot convert `Step` as an integer");
+                            let step = step_vlaue
+                                .as_i64()
+                                .expect("Cannot convert `Step` as an integer");
                             if !step.is_negative() {
                                 *step_vlaue = json!(-step);
                             }
@@ -477,11 +478,9 @@ impl WorkflowLog {
         curr_field = curr_field
             .get_mut("Step")
             .expect("Cannot get the `Step` field of the command.");
-        *curr_field = json!(
-            -curr_field
-                .as_i64()
-                .expect("Cannot convert `Step` as an integer")
-        );
+        *curr_field = json!(-curr_field
+            .as_i64()
+            .expect("Cannot convert `Step` as an integer"));
     }
 }
 
@@ -576,11 +575,13 @@ impl ProgramName {
 
         // initialize argument vector
         let mut arg_vec = vec![self.to_string()];
-        arg_vec.reserve_exact(arg_value_vec.len()+1);
+        arg_vec.reserve_exact(arg_value_vec.len() + 1);
 
         // fill in the argument vector
         for arg_value in arg_value_vec {
-            let arg_str = arg_value.as_str().with_context(||format!("Could not convert {:?} as str; Cannot proceed", arg_value))?;
+            let arg_str = arg_value.as_str().with_context(|| {
+                format!("Could not convert {:?} as str; Cannot proceed", arg_value)
+            })?;
             arg_vec.push(arg_str.to_string());
         }
 
@@ -941,10 +942,7 @@ mod tests {
 
         // check meta_info
         // we skipped two
-        assert_eq!(
-            wl.get_step(&cmd.field_trajectory_vec).as_i64(),
-            Some(-4)
-        );
+        assert_eq!(wl.get_step(&cmd.field_trajectory_vec).as_i64(), Some(-4));
 
         // check command #4
         assert_eq!(sw.cmd_queue.len(), 1);

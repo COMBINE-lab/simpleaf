@@ -166,7 +166,6 @@ fn main() -> anyhow::Result<()> {
         // workflow file.
         Commands::Workflow {
             config_path,
-            workflow_path,
             output,
             no_execution,
             start_at,
@@ -177,7 +176,6 @@ fn main() -> anyhow::Result<()> {
             af_home_path.as_path(),
             Commands::Workflow {
                 config_path,
-                workflow_path,
                 output,
                 no_execution,
                 start_at,
