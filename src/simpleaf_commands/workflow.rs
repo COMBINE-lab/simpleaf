@@ -377,11 +377,10 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                     }
 
                     // If this is an external command, then initialize it and run
-                    if let Some(cmd) = cr.external_cmd {
+                    if let Some(mut ext_cmd) = cr.external_cmd {
                         // log
-                        let cmd_string = prog_utils::get_cmd_line_string(&cmd);
+                        let cmd_string = prog_utils::get_cmd_line_string(&ext_cmd);
                         info!("Invoking command : {}", cmd_string);
-                        let mut ext_cmd = prog_utils::shell(&cmd_string);
 
                         // initiate a stopwatch
                         workflow_log.timeit(cr.step);

@@ -14,6 +14,8 @@ use crate::utils::prog_utils;
 use crate::utils::prog_utils::CommandVerbosityLevel;
 use crate::{Cli, Commands};
 
+use super::prog_utils::shell;
+
 /// intialize simpleaf workflow realted structs,
 /// which includes SimpleafWorkflow and WorkfowLog
 
@@ -562,33 +564,30 @@ impl ProgramName {
     }
 
     /// This function instantiates a std::process::Command
-    /// for the external command according to
-    /// the arguments recoreded in the field.
+    /// for an external command record according to
+    /// the  "Arguments" field.
     pub fn create_external_cmd(&self, value: &Value) -> anyhow::Result<Command> {
-        let mut arg_vec: Vec<(usize, String)> = Vec::new();
-        // iterate the command object, record the arg into a vector
-        if let Value::Object(args) = value {
-            // the "Step" and "Program Name" fields will be ignore as it is not a valid simpleaf arg
-            for (p, v) in args {
-                if p.as_str() != "Step" && p.as_str() != "Program Name" {
-                    arg_vec.push((
-                                p.parse::<usize>().expect("Cannot convert the argument position in the external command to an integer"),
-                                v.as_str().expect("Cannot convert the argument value in external program call to a string.").to_string(),
-                    ));
-                }
-            }
-        }
+        // get the argument vector, which is named as "Argument"
+        let arg_value_vec = value
+            .get("Arguments")
+            .with_context(||"Cannot find the `Arguments` field in the external command record; Cannot proceed")?
+            .as_array()
+            .with_context(||"Cannot convert the `Arguments` field in the external command record as an array; Cannot proceed")?;
 
-        // sort the argument according to arg name, which are all integers.
-        // This is because json doesn't reserve order
-        arg_vec.sort_by(|first, second| first.0.cmp(&second.0));
+        // initialize argument vector
+        let mut arg_vec = vec![self.to_string()];
+        arg_vec.reserve_exact(arg_value_vec.len()+1);
+
+        // fill in the argument vector
+        for arg_value in arg_value_vec {
+            let arg_str = arg_value.as_str().with_context(||format!("Could not convert {:?} as str; Cannot proceed", arg_value))?;
+            arg_vec.push(arg_str.to_string());
+        }
 
         if !arg_vec.is_empty() {
             // make Command struct for the command
-            let mut external_cmd = std::process::Command::new(self.to_string());
-            for ea in arg_vec {
-                external_cmd.arg(ea.1);
-            }
+            let external_cmd = shell(arg_vec.join(" "));
+
             Ok(external_cmd)
         } else {
             bail!("Found an external command with empty arg list. Cannot Proceed.")
@@ -758,7 +757,7 @@ mod tests {
     // use crate::SimpleafCmdRecord;
     use crate::{
         utils::{
-            prog_utils::get_cmd_line_string,
+            prog_utils::{get_cmd_line_string, shell},
             workflow_utils::{initialize_workflow, WorkflowLog},
         },
         Commands,
@@ -844,18 +843,12 @@ mod tests {
                 "HTO ref gunzip": {
                     "Step": 3,
                     "Program Name": "gunzip",
-                    "1": "-c",
-                    "2": "hto_ref.csv.gz",
-                    "3": ">",
-                    "4": "hto_ref.csv"
+                    "Arguments": ["-c","hto_ref.csv.gz",">","hto_ref.csv"]
                 },
                 "ADT ref gunzip": {
                     "Step": 4,
                     "Program Name": "gunzip",
-                    "1": "-c",
-                    "2": "adt_ref.csv.gz",
-                    "3": ">",
-                    "4": "adt_ref.csv"
+                    "Arguments": ["-c","adt_ref.csv.gz",">","adt_ref.csv"]
                 }
             }
         }"#,
@@ -910,8 +903,8 @@ mod tests {
                 );
 
                 let mut new_value = value.to_owned();
-                new_value["rna"]["simpleaf_index"]["Step"] = json!("1");
-                new_value["External Commands"]["HTO ref gunzip"]["Step"] = json!("3");
+                new_value["rna"]["simpleaf_index"]["Step"] = json!(1);
+                new_value["External Commands"]["HTO ref gunzip"]["Step"] = json!(3);
 
                 assert_eq!(new_value, workflow_json_value);
 
@@ -949,8 +942,8 @@ mod tests {
         // check meta_info
         // we skipped two
         assert_eq!(
-            wl.get_step(&cmd.field_trajectory_vec).as_str(),
-            Some("-4")
+            wl.get_step(&cmd.field_trajectory_vec).as_i64(),
+            Some(-4)
         );
 
         // check command #4
@@ -979,9 +972,11 @@ mod tests {
                 .to_owned(),
             String::from("ADT ref gunzip")
         );
+        let gunzip_cmd = shell("gunzip -c adt_ref.csv.gz > adt_ref.csv");
+
         assert_eq!(
             get_cmd_line_string(&cmd.external_cmd.unwrap()),
-            String::from("gunzip -c adt_ref.csv.gz > adt_ref.csv")
+            get_cmd_line_string(&gunzip_cmd),
         );
 
         // check command #2: simpleaf quant
