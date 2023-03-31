@@ -307,14 +307,16 @@ pub enum Commands {
         pyroe: Option<PathBuf>,
     },
 
+    // TODO: find a way to keep the protocol estuary up-to-date
     #[command(arg_required_else_help = true)]
+    /// get the workflow configuration files of a published workflow from protocol estuary (https://github.com/COMBINE-lab/protocol-estuary).
     GetWorkflowConfig {
         /// path to output configuration file, the directory will be created if it doesn't exist
-        #[arg(short, long)]
+        #[arg(short, long, requires = "name", help_heading = "Get Config Files")]
         output: PathBuf,
 
         /// name of the queried workflow.
-        #[arg(short, long)]
+        #[arg(short, long, help_heading = "Get Config Files")]
         name: String,
         // only write the essential information without any instructions
         // #[arg(short, long)]
@@ -332,7 +334,7 @@ pub enum Commands {
         #[arg(short, long, display_order = 2)]
         output: PathBuf,
 
-        /// return after parsing the wofklow config file without executing the commands.
+        /// return after converting the config file to JSON foramt without executing the commands.
         #[arg(short,
             long,
             display_order = 3,

@@ -27,7 +27,7 @@ use super::prog_utils::shell;
 /// If Execution Terminated at is a negative number, that
 /// means there was no previous execution:
 pub fn update_start_at(output: &Path) -> anyhow::Result<i64> {
-    let exec_log_path = output.join("workflow_info.json");
+    let exec_log_path = output.join("simpleaf_workflow_log.json");
     match exec_log_path.try_exists() {
         Ok(true) => {
             // we have the workflow_info.json file, so parse it.
@@ -318,7 +318,7 @@ impl WorkflowLog {
         };
 
         Ok(WorkflowLog {
-            meta_info_path: output.join("workflow_info.json"),
+            meta_info_path: output.join("simpleaf_workflow_log.json"),
             exec_log_path: output.join("workflow_execution_log.json"),
             workflow_name,
             workflow_meta_info,
@@ -904,7 +904,7 @@ mod tests {
                 );
                 assert_eq!(
                     meta_info_path,
-                    &PathBuf::from("output_dir/workflow_info.json")
+                    &PathBuf::from("output_dir/simpleaf_workflow_log.json")
                 );
 
                 assert_eq!(workflow_name, &String::from("fake_config"));
