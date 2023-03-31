@@ -1,7 +1,6 @@
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::ReqProgs;
 use crate::utils::workflow_utils;
-use crate::utils::workflow_utils::{SimpleafWorkflow, WorkflowLog};
 
 use anyhow::{bail, Context};
 use cmd_lib::run_fun;
@@ -14,53 +13,44 @@ use tracing::{info, warn};
 use super::Commands;
 
 /// ### Program Name
-/// simpleaf generate-workflow
+/// simpleaf get-workflow-config
 ///
 /// ### Program Input
-/// A json file that records all top level variables needed by the template
-///                  and optionally, some extra variables
+/// A string representing the name of an existing workflow in the protocol-estuary
+/// A output path
+///
 /// ### Program Output
-/// A json file that contains the actual simpelaf workflow information, which can be
-///         consumed directly by the simpleaf run-workflow command. Additionally, if --execute is specified,
-///          the generated simpleaf workflow will be executed.
+/// A folder that in the protocol estuary that is named by the querying workflow.
+///
 /// ### Program Description
-/// This program is used for generating a simpleaf workflow JSON file
-/// that can be consumed directly by the `simpleaf workflow` program.\
-/// This program takes a template from the template library as the input
-/// and does the following:
-/// 1. It loads the required arguments of that template and
-///      find them in the user-provided JSON file.
-/// 2. It validates the files in the user-provided JSON file.
-///      This can be checking the existance and validate the first few records
-/// 3. It feeds the template the required inputs, and
-///      generates a simpleaf workflow JSON file.
-///      This JSON file contains the simpleaf programs need to be run and
-///      the required arguments.
+/// This program is used for getting the source files of a pubished workflow
+/// from the protocol estuary GitHub repo https://github.com/COMBINE-lab/protocol-estuary
+///
+/// This program takes a string representing the name of a published workflow, and copy the
+/// folder of that workflow in the protocol estuary to the provided output directory
+/// as a sub-directory.
 
-// TODO:
-// 1. figure out the layout of protocol estuary
-// 2. find workflow using name, if doesn't exist, find similar names and return error
-// 3. copy the config file from af_home protocol estuary dir to the output dir.
-// 4. allow name change?
+// TODO: implement essential only
 
 pub fn get_workflow_config(af_home_path: &Path, gw_cmd: Commands) -> anyhow::Result<()> {
     match gw_cmd {
         Commands::GetWorkflowConfig {
             output,
-            workflow,
+            name,
             // essential_only: _,
         } => {
             // get af_home
             let v: Value = prog_utils::inspect_af_home(af_home_path)?;
             // Read the JSON contents of the file as an instance of `User`.
-            let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+            // TODO: use it somehwere?
+            let _rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
             // get protocol library path
             let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path)?;
             // get the corresponding workflow directory path
-            let workflow_path = protocol_estuary.protocols_dir.join(workflow.as_str());
+            let workflow_path = protocol_estuary.protocols_dir.join(name.as_str());
             // make output dir
-            let mut output_dir_name = workflow.clone();
+            let mut output_dir_name = name.clone();
             output_dir_name.push_str("_config");
             let output_path = output.join(output_dir_name);
 
@@ -104,7 +94,7 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: Commands) -> anyhow::Res
                             .to_str()
                             .expect("Could not convert dir name to str.");
                         // if finds similar file names, push to the vec
-                        if curr_workflow_name.contains(workflow.as_str()) {
+                        if curr_workflow_name.contains(name.as_str()) {
                             similar_names.push(curr_workflow_name.to_string());
                         }
                     }
@@ -123,7 +113,7 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: Commands) -> anyhow::Res
                     // return with an error
                     bail!(
                         "Could not find a workflow with name: {}. {}",
-                        workflow,
+                        name,
                         similar_name_hints
                     );
                 }
@@ -136,12 +126,11 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: Commands) -> anyhow::Res
             let gwc_info_path = output_path.join("get_workflow_config.json");
             let gwc_info = json!({
                 "command" : "get-workflow-config",
-                "version_info" : rp,
                 "workflow dir": output_path,
 
                 "args" : {
                     "output" : output,
-                    "workflow" : workflow,
+                    "name" : name,
                     // "essential_only" : essential_only,
                 }
             });
@@ -153,8 +142,8 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: Commands) -> anyhow::Res
             .with_context(|| format!("could not write {}", gwc_info_path.display()))?;
 
             info!(
-                "Successfully export {} workflow to {}",
-                workflow,
+                "Successfully export {} workflow configuration files to {}",
+                name,
                 output_path.display()
             );
         }
@@ -188,7 +177,6 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
     match workflow_cmd {
         Commands::Workflow {
             config_path,
-            workflow_path,
             output,
             // TODO: write JSON only if no execution
             no_execution,
@@ -198,9 +186,6 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
             skip_step,
         } => {
             run_fun!(mkdir -p $output)?;
-
-            let simpleaf_workflow: SimpleafWorkflow;
-            let mut workflow_log: WorkflowLog;
 
             let final_start_at = if resume {
                 workflow_utils::update_start_at(output.as_path())?
@@ -214,69 +199,40 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                 Vec::new()
             };
 
-            // we will have either a config_path or a workflow_path
-            // if we see config files. process it
-            if let Some(cp) = config_path {
-                //  check the validity of the file
-                if !cp.exists() {
-                    bail!("the path of the given workflow configuratioin file doesn't exist; Cannot proceed.")
-                }
-
-                info!("Processing simpleaf workflow configuration file.");
-
-                // iterate json files and parse records to commands
-                // convert files into json string vector
-                let workflow_json_string = workflow_utils::parse_workflow_config(
-                    af_home_path,
-                    cp.as_path(),
-                    output.as_path(),
-                    &lib_paths,
-                )?;
-
-                // write complete workflow json to output folder
-                // the `Step` of each command in this json file will be changed to "-1"
-                // once the command is run successfully.
-                // The final workflow file name will be the same as the input config but
-                // with json as the extention.
-                let workflow_json_value: Value =
-                    serde_json::from_str(workflow_json_string.as_str())?;
-
-                // initialize simpleaf workflow and log struct
-                // TODO: print some log using meta_info fields
-                (simpleaf_workflow, workflow_log) = workflow_utils::initialize_workflow(
-                    af_home_path,
-                    cp.as_path(),
-                    output.as_path(),
-                    workflow_json_value,
-                    final_start_at,
-                    final_skip_step,
-                )?;
-            } else {
-                // This file has to exist
-                let wp = workflow_path.expect(
-                    "Neither configuration file nor workflow file is provided; Cannot proceed.",
-                );
-
-                // check the existence of the file
-                if !wp.exists() {
-                    bail!("the path of the given workflow configuratioin file doesn't exist; Cannot proceed.")
-                }
-                // load each file as a wrapper struct of a vector of simpleaf commands
-                let json_file = fs::File::open(wp.as_path())
-                    .with_context(|| format!("Could not open JSON file {}.", wp.display()))?;
-
-                // TODO: print some log using meta_info fields
-                let workflow_json_value: Value = serde_json::from_reader(json_file)?;
-
-                (simpleaf_workflow, workflow_log) = workflow_utils::initialize_workflow(
-                    af_home_path,
-                    wp.as_path(),
-                    output.as_path(),
-                    workflow_json_value,
-                    final_start_at,
-                    final_skip_step,
-                )?;
+            //  check the validity of the file
+            if !config_path.exists() {
+                bail!("the path of the given workflow configuratioin file doesn't exist; Cannot proceed.")
             }
+
+            info!("Processing simpleaf workflow configuration file.");
+
+            // iterate json files and parse records to commands
+            // convert files into json string vector
+            let workflow_json_string = workflow_utils::parse_workflow_config(
+                af_home_path,
+                config_path.as_path(),
+                output.as_path(),
+                &lib_paths,
+            )?;
+
+            // write complete workflow json to output folder
+            // the `Step` of each command in this json file will be changed to "-1"
+            // once the command is run successfully.
+            // The final workflow file name will be the same as the input config but
+            // with json as the extention.
+            let workflow_json_value: Value = serde_json::from_str(workflow_json_string.as_str())?;
+
+            // initialize simpleaf workflow and log struct
+            // TODO: print some log using meta_info fields
+            let (simpleaf_workflow, mut workflow_log) = workflow_utils::initialize_workflow(
+                af_home_path,
+                config_path.as_path(),
+                output.as_path(),
+                workflow_json_value,
+                final_start_at,
+                final_skip_step,
+            )?;
+
             if !no_execution {
                 for cr in simpleaf_workflow.cmd_queue {
                     let pn = cr.program_name;
@@ -284,7 +240,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                     // this if statement is no longer needed as commands with a negative exec order
                     // are ignore when constructing the the cmd queue
                     // say something
-                    info!("Running {} command with step {}.", pn, step,);
+                    info!("Running {} command for step {}.", pn, step,);
 
                     // initiliaze a stopwatch
                     workflow_log.timeit(step);
@@ -377,21 +333,20 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                         };
                         if let Err(e) = exec_result {
                             workflow_log.write(false)?;
-                            info!("Execution terminated at {} command with step {}", pn, step);
+                            info!("Execution terminated at {} command for step {}", pn, step);
                             return Err(e);
                         } else {
-                            info!("Successfully ran {} command with step {}", pn, step);
+                            info!("Successfully ran {} command for step {}", pn, step);
 
                             workflow_log.update(&cr.field_trajectory_vec[..]);
                         }
                     }
 
                     // If this is an external command, then initialize it and run
-                    if let Some(cmd) = cr.external_cmd {
+                    if let Some(mut ext_cmd) = cr.external_cmd {
                         // log
-                        let cmd_string = prog_utils::get_cmd_line_string(&cmd);
+                        let cmd_string = prog_utils::get_cmd_line_string(&ext_cmd);
                         info!("Invoking command : {}", cmd_string);
-                        let mut ext_cmd = prog_utils::shell(&cmd_string);
 
                         // initiate a stopwatch
                         workflow_log.timeit(cr.step);
@@ -404,7 +359,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                                     workflow_log.update(&cr.field_trajectory_vec[..]);
                                 } else {
                                     let cmd_stderr = std::str::from_utf8(&cres.stderr[..])?;
-                                    let msg = format!("{} command with step {} failed to exit with code 0 under the shell.\n\
+                                    let msg = format!("{} command at step {} failed to exit with code 0 under the shell.\n\
                                                       The exit status was: {}.\n\
                                                       The stderr of the invocation was: {}.", pn, step, cres.status, cmd_stderr);
                                     warn!(msg);
@@ -413,7 +368,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                             }
                             Err(e) => {
                                 let msg = format!(
-                                    "{} command with step {} failed to execute under the shell.\n\
+                                    "{} command at step {} failed to execute under the shell.\n\
                                      The returned error was: {:?}.\n",
                                     pn, step, e
                                 );
@@ -422,7 +377,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                             } // TODO: use this in the log somewhere.
                         } // invoke external cmd
 
-                        info!("successfully ran {} command with step {}.", pn, step);
+                        info!("successfully ran {} command for step {}.", pn, step);
                     } // for cmd_queue
                 }
                 // write log

@@ -4,7 +4,6 @@ use cmd_lib::run_cmd;
 use serde_json::{json, Map, Value};
 use std::fs;
 use std::io::BufReader;
-use std::isize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use time::Instant;
@@ -15,14 +14,23 @@ use crate::utils::prog_utils;
 use crate::utils::prog_utils::CommandVerbosityLevel;
 use crate::{Cli, Commands};
 
-/// intialize simpleaf workflow realted structs,
-/// which includes SimpleafWorkflow and WorkfowLog
+use super::prog_utils::shell;
 
-pub fn update_start_at(output: &Path) -> anyhow::Result<isize> {
-    let exec_log_path = output.join("workflow_info.json");
+/// This function updates the start_at variable
+/// if --resume is provided.\
+/// It finds the workflow_info.json exported by
+/// simpleaf workflow from the previous run and
+/// grab the "Succeed" and "Execution Terminated at"
+/// fields.\
+/// If the previous run was succeed, then we report an error
+/// saying nothing to resume
+/// If Execution Terminated at is a negative number, that
+/// means there was no previous execution:
+pub fn update_start_at(output: &Path) -> anyhow::Result<i64> {
+    let exec_log_path = output.join("simpleaf_workflow_log.json");
     match exec_log_path.try_exists() {
         Ok(true) => {
-            // we have the simpleaf_index.json file, so parse it.
+            // we have the workflow_info.json file, so parse it.
             let exec_log_file = std::fs::File::open(&exec_log_path).with_context({
                 || {
                     format!(
@@ -35,6 +43,7 @@ pub fn update_start_at(output: &Path) -> anyhow::Result<isize> {
             let exec_log_reader = BufReader::new(&exec_log_file);
             let v: Value = serde_json::from_reader(exec_log_reader)?;
 
+            // Check if the previous run was succeed. If yes, then no need to resume
             let succeed = v
                 .get("Succeed")
                 .with_context(|| {
@@ -43,24 +52,27 @@ pub fn update_start_at(output: &Path) -> anyhow::Result<isize> {
                 .as_bool()
                 .with_context(|| "cannot parse `Succeed` as bool; Cannot resume.")?;
 
-            let start_at_str = v
+            let start_at = v
                 .get("Execution Terminated at")
                 .with_context(|| {
                     "Could not get `Execution Terminated at` from the log file; Cannot resume."
                 })?
-                .as_str()
+                .as_i64()
                 .with_context(|| "cannot parse `Execution Terminated at` as str; Cannot resume.")?;
 
             if succeed {
                 bail!("The previous run succeed. Cannot resume.");
-            } else if start_at_str == "N/A" {
-                bail!("The `Execution Terminated at` in the log file is N/A; Cannot resume. Please use the `--start-at` argument instead.")
+            } else if !start_at.is_positive() {
+                bail!("The `Execution Terminated at` in the log file is invalid; Cannot resume. Please use the `--start-at` argument instead.")
             } else {
-                Ok(start_at_str.parse::<isize>()?)
+                Ok(start_at)
             }
         }
         Ok(false) => {
-            bail!("Could not find `workflow_execution_log.json` in the output directory {}; Cannot resume.", output.display())
+            bail!(
+                "Could not find `workflow_info.json` in the output directory {}; Cannot resume.",
+                output.display()
+            )
         }
         Err(e) => {
             bail!(e)
@@ -68,13 +80,15 @@ pub fn update_start_at(output: &Path) -> anyhow::Result<isize> {
     }
 }
 
+/// intialize simpleaf workflow realted structs:
+/// SimpleafWorkflow and WorkfowLog
 pub fn initialize_workflow(
     af_home_path: &Path,
     config_path: &Path,
     output: &Path,
     workflow_json_value: Value,
-    start_at: isize,
-    skip_step: Vec<isize>,
+    start_at: i64,
+    skip_step: Vec<i64>,
 ) -> anyhow::Result<(SimpleafWorkflow, WorkflowLog)> {
     // Instantiate a workflow log struct
     let mut wl = WorkflowLog::new(
@@ -163,19 +177,20 @@ impl SimpleafWorkflow {
                     // parse "Step"
                     let step = field
                         .get("Step")
-                        .expect("Cannot get Step")
-                        .as_str()
-                        .expect("cannot parse Step as str")
-                        .parse::<isize>()
-                        .expect("Cannot parse Step as an integer");
+                        .with_context(|| "Cannot get Step")?
+                        .as_i64()
+                        .with_context(|| {
+                            format!(
+                                "Cannot parse Step {:?} as an integer",
+                                field.get("Step").unwrap()
+                            )
+                        })?;
 
                     // The field must contains an Program Name
                     if let Some(program_name) = field.get("Program Name") {
-                        pn = ProgramName::from_str(
-                            program_name
-                                .as_str()
-                                .expect("Cannot create ProgramName struct from a program name"),
-                        );
+                        pn = ProgramName::from_str(program_name.as_str().with_context(|| {
+                            "Cannot create ProgramName struct from a program name"
+                        })?);
                         // if not in skip steps, and not less than start at
                         if !workflow_log.skip_step.contains(&step) && step >= workflow_log.start_at
                         {
@@ -207,12 +222,13 @@ impl SimpleafWorkflow {
                                 });
                             }
                         } else {
-                            // we still need to change the step to a negative number as it is invalid
-                            let step = workflow_log.get_execution_order(&curr_field_trajectory_vec);
-                            let step_str =
-                                step.as_str().expect("Cannot convert `Step` as an integer");
-                            if !step_str.starts_with('-') {
-                                *step = json!(format!("-{}", step_str));
+                            // we still need to change the step to a negative number as it is skipped
+                            let step_value = workflow_log.get_step(&curr_field_trajectory_vec)?;
+                            let step = step_value
+                                .as_i64()
+                                .with_context(|| "Cannot convert `Step` as an integer")?;
+                            if !step.is_negative() {
+                                *step_value = json!(-step);
                             }
                         }
                     }
@@ -234,7 +250,7 @@ impl SimpleafWorkflow {
 #[derive(Copy, Clone)]
 struct CommandRuntime {
     start_time: Instant,
-    step: isize,
+    step: i64,
 }
 
 /// This struct is used for writing the workflow log JSON file.
@@ -258,8 +274,8 @@ pub struct WorkflowLog {
     workflow_start_time: Instant,
     command_runtime: Option<CommandRuntime>,
     num_succ: usize,
-    start_at: isize,
-    skip_step: Vec<isize>,
+    start_at: i64,
+    skip_step: Vec<i64>,
     workflow_name: String, // doesn't matter, can convert to string
     workflow_meta_info: Option<Value>,
     // The value records the complete simpleaf workflow
@@ -282,8 +298,8 @@ impl WorkflowLog {
         output: &Path,
         config_path: &Path,
         workflow_json_value: &Value,
-        start_at: isize,
-        skip_step: Vec<isize>,
+        start_at: i64,
+        skip_step: Vec<i64>,
     ) -> anyhow::Result<WorkflowLog> {
         // get output json path
         let workflow_name = config_path
@@ -302,7 +318,7 @@ impl WorkflowLog {
         };
 
         Ok(WorkflowLog {
-            meta_info_path: output.join("workflow_info.json"),
+            meta_info_path: output.join("simpleaf_workflow_log.json"),
             exec_log_path: output.join("workflow_execution_log.json"),
             workflow_name,
             workflow_meta_info,
@@ -318,7 +334,7 @@ impl WorkflowLog {
         })
     }
 
-    pub fn timeit(&mut self, step: isize) {
+    pub fn timeit(&mut self, step: i64) {
         self.command_runtime = Some(CommandRuntime {
             start_time: Instant::now(),
             step,
@@ -341,9 +357,10 @@ impl WorkflowLog {
 
         // will be NA if used --no-execution
         let execution_terminated_at = if let Some(command_runtime) = &self.command_runtime {
-            command_runtime.step.to_string()
+            command_runtime.step
         } else {
-            "N/A".to_string()
+            // If no record, then terminated at the beginning
+            1i64
         };
 
         let meta_info = json!({
@@ -361,7 +378,8 @@ impl WorkflowLog {
         // execution log
         std::fs::write(
             self.meta_info_path.as_path(),
-            serde_json::to_string_pretty(&meta_info).expect("Cannot convert json value to string."),
+            serde_json::to_string_pretty(&meta_info)
+                .with_context(|| ("Cannot convert json value to string."))?,
         )
         .with_context(|| {
             format!(
@@ -374,7 +392,7 @@ impl WorkflowLog {
         std::fs::write(
             self.exec_log_path.as_path(),
             serde_json::to_string_pretty(&self.value)
-                .expect("Cannot convert json value to string."),
+                .with_context(|| "Cannot convert json value to string.")?,
         )
         .with_context(|| {
             format!(
@@ -399,7 +417,7 @@ impl WorkflowLog {
     #[allow(dead_code)]
     /// This function is used for testing if the exection order of
     /// successfully invoked command can be updated to a negative value
-    pub fn get_execution_order(&mut self, field_trajectory_vec: &[usize]) -> &mut Value {
+    pub fn get_step(&mut self, field_trajectory_vec: &[usize]) -> anyhow::Result<&mut Value> {
         // get iterator of field_trajectory vector
         let field_trajectory_vec_iter = field_trajectory_vec.iter();
 
@@ -417,20 +435,13 @@ impl WorkflowLog {
             // let curr_pos = field_trajectory_vec.first().expect("Cannot get the first element");
             curr_field = curr_field
                 .get_mut(curr_field_name)
-                .expect("Cannot get field from json value");
+                .with_context(|| "Cannot get field from json value")?;
         }
 
         // prepend a "-" to the `Step` field.
-        // curr_field =
         curr_field
             .get_mut("Step")
-            .expect("Cannot get the `Step` field of the command.")
-        //     ;
-
-        // curr_field
-        //     .as_str()
-        //     .expect("Cannot convert `Step` of a command as an integer")
-        //     .to_string()
+            .with_context(|| "Cannot get the `Step` field of the command.")
     }
 
     /// Update WorkflowLog:
@@ -478,19 +489,16 @@ impl WorkflowLog {
         curr_field = curr_field
             .get_mut("Step")
             .expect("Cannot get the `Step` field of the command.");
-        *curr_field = json!(format!(
-            "-{}",
-            curr_field
-                .as_str()
-                .expect("Cannot convert `Step` as an integer")
-        ));
+        *curr_field = json!(-curr_field
+            .as_i64()
+            .expect("Cannot convert `Step` as an integer"));
     }
 }
 
 /// This struct contains a command record and some supporting information.
 /// It can be either a simpleaf command or an external command.
 pub struct CommandRecord {
-    pub step: isize,
+    pub step: i64,
     pub program_name: ProgramName,
     pub simpleaf_cmd: Option<Commands>,
     pub external_cmd: Option<Command>,
@@ -566,33 +574,32 @@ impl ProgramName {
     }
 
     /// This function instantiates a std::process::Command
-    /// for the external command according to
-    /// the arguments recoreded in the field.
+    /// for an external command record according to
+    /// the  "Arguments" field.
     pub fn create_external_cmd(&self, value: &Value) -> anyhow::Result<Command> {
-        let mut arg_vec: Vec<(usize, String)> = Vec::new();
-        // iterate the command object, record the arg into a vector
-        if let Value::Object(args) = value {
-            // the "Step" and "Program Name" fields will be ignore as it is not a valid simpleaf arg
-            for (p, v) in args {
-                if p.as_str() != "Step" && p.as_str() != "Program Name" {
-                    arg_vec.push((
-                                p.parse::<usize>().expect("Cannot convert the argument position in the external command to an integer"),
-                                v.as_str().expect("Cannot convert the argument value in external program call to a string.").to_string(),
-                    ));
-                }
-            }
-        }
+        // get the argument vector, which is named as "Argument"
+        let arg_value_vec = value
+            .get("Arguments")
+            .with_context(||"Cannot find the `Arguments` field in the external command record; Cannot proceed")?
+            .as_array()
+            .with_context(||"Cannot convert the `Arguments` field in the external command record as an array; Cannot proceed")?;
 
-        // sort the argument according to arg name, which are all integers.
-        // This is because json doesn't reserve order
-        arg_vec.sort_by(|first, second| first.0.cmp(&second.0));
+        // initialize argument vector
+        let mut arg_vec = vec![self.to_string()];
+        arg_vec.reserve_exact(arg_value_vec.len() + 1);
+
+        // fill in the argument vector
+        for arg_value in arg_value_vec {
+            let arg_str = arg_value.as_str().with_context(|| {
+                format!("Could not convert {:?} as str; Cannot proceed", arg_value)
+            })?;
+            arg_vec.push(arg_str.to_string());
+        }
 
         if !arg_vec.is_empty() {
             // make Command struct for the command
-            let mut external_cmd = std::process::Command::new(self.to_string());
-            for ea in arg_vec {
-                external_cmd.arg(ea.1);
-            }
+            let external_cmd = shell(arg_vec.join(" "));
+
             Ok(external_cmd)
         } else {
             bail!("Found an external command with empty arg list. Cannot Proceed.")
@@ -762,7 +769,7 @@ mod tests {
     // use crate::SimpleafCmdRecord;
     use crate::{
         utils::{
-            prog_utils::get_cmd_line_string,
+            prog_utils::{get_cmd_line_string, shell},
             workflow_utils::{initialize_workflow, WorkflowLog},
         },
         Commands,
@@ -819,7 +826,7 @@ mod tests {
             },
             "rna": {
                 "simpleaf_index": {
-                    "Step": "1",
+                    "Step": 1,
                     "Program Name": "simpleaf index", 
                     "--ref-type": "spliced+unspliced",
                     "--fasta": "genome.fa",
@@ -829,7 +836,7 @@ mod tests {
                     "--overwrite": ""
                 },
                 "simpleaf_quant": {
-                    "Step": "2",
+                    "Step": 2,
                     "Program Name": "simpleaf quant",  
                     "--chemistry": "10xv3",
                     "--resolution": "cr-like",
@@ -846,20 +853,14 @@ mod tests {
             }, 
             "External Commands": {
                 "HTO ref gunzip": {
-                    "Step": "3",
+                    "Step": 3,
                     "Program Name": "gunzip",
-                    "1": "-c",
-                    "2": "hto_ref.csv.gz",
-                    "3": ">",
-                    "4": "hto_ref.csv"
+                    "Arguments": ["-c","hto_ref.csv.gz",">","hto_ref.csv"]
                 },
                 "ADT ref gunzip": {
-                    "Step": "4",
+                    "Step": 4,
                     "Program Name": "gunzip",
-                    "1": "-c",
-                    "2": "adt_ref.csv.gz",
-                    "3": ">",
-                    "4": "adt_ref.csv"
+                    "Arguments": ["-c","adt_ref.csv.gz",">","adt_ref.csv"]
                 }
             }
         }"#,
@@ -903,7 +904,7 @@ mod tests {
                 );
                 assert_eq!(
                     meta_info_path,
-                    &PathBuf::from("output_dir/workflow_info.json")
+                    &PathBuf::from("output_dir/simpleaf_workflow_log.json")
                 );
 
                 assert_eq!(workflow_name, &String::from("fake_config"));
@@ -914,14 +915,14 @@ mod tests {
                 );
 
                 let mut new_value = value.to_owned();
-                new_value["rna"]["simpleaf_index"]["Step"] = json!("1");
-                new_value["External Commands"]["HTO ref gunzip"]["Step"] = json!("3");
+                new_value["rna"]["simpleaf_index"]["Step"] = json!(1);
+                new_value["External Commands"]["HTO ref gunzip"]["Step"] = json!(3);
 
                 assert_eq!(new_value, workflow_json_value);
 
                 assert_eq!(cmd_runtime_records, &Map::new());
 
-                assert_eq!(start_at, &2isize);
+                assert_eq!(start_at, &2i64);
                 assert_eq!(skip_step, &vec![3]);
                 assert!(
                     field_id_to_name.contains(&"rna".to_string())
@@ -948,13 +949,13 @@ mod tests {
 
         wl.update(&cmd.field_trajectory_vec);
 
-        wl.get_execution_order(&cmd.field_trajectory_vec);
+        wl.get_step(&cmd.field_trajectory_vec).unwrap();
 
         // check meta_info
         // we skipped two
         assert_eq!(
-            wl.get_execution_order(&cmd.field_trajectory_vec).as_str(),
-            Some("-4")
+            wl.get_step(&cmd.field_trajectory_vec).unwrap().as_i64(),
+            Some(-4)
         );
 
         // check command #4
@@ -983,9 +984,11 @@ mod tests {
                 .to_owned(),
             String::from("ADT ref gunzip")
         );
+        let gunzip_cmd = shell("gunzip -c adt_ref.csv.gz > adt_ref.csv");
+
         assert_eq!(
             get_cmd_line_string(&cmd.external_cmd.unwrap()),
-            String::from("gunzip -c adt_ref.csv.gz > adt_ref.csv")
+            get_cmd_line_string(&gunzip_cmd),
         );
 
         // check command #2: simpleaf quant

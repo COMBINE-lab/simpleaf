@@ -75,7 +75,7 @@ pub fn parse_jsonnet(
         .expect("Could not convert the parent dir of the config file to str.");
     // external code
     let ext_output = format!(r#"output='{}'"#, output.display());
-    let ext_utils_file_path = r#"utils=import 'utils.libsonnet'"#;
+    let ext_utils_file_path = r#"utils=import 'simpleaf_workflow_utils.libsonnet'"#;
 
     // af_home_dir
     let jpath_pe_utils = protocol_estuary

@@ -307,59 +307,62 @@ pub enum Commands {
         pyroe: Option<PathBuf>,
     },
 
+    // TODO: find a way to keep the protocol estuary up-to-date
+    #[command(arg_required_else_help = true)]
+    /// get the workflow configuration files of a published workflow from protocol estuary (https://github.com/COMBINE-lab/protocol-estuary).
     GetWorkflowConfig {
         /// path to output configuration file, the directory will be created if it doesn't exist
-        #[arg(short, long)]
+        #[arg(short, long, requires = "name", help_heading = "Get Config Files")]
         output: PathBuf,
 
         /// name of the queried workflow.
-        #[arg(short, long)]
-        workflow: String,
+        #[arg(short, long, help_heading = "Get Config Files")]
+        name: String,
         // only write the essential information without any instructions
         // #[arg(short, long)]
         // essential_only: bool,
     },
 
-    #[command(group(
-        ArgGroup::new("workflow file")
-        .required(true)
-        .args(["config_path", "workflow_path"])
-        ))]
+    #[command(arg_required_else_help = true)]
     /// parse the input configuration/workflow files and execute the corresponding workflow(s).
     Workflow {
         /// path to a simpleaf workflow configuration file.
-        #[arg(short, long, display_order = 1, help_heading = "Workflow File")]
-        config_path: Option<PathBuf>,
-
-        /// path to a simpleaf complete workflow JSON file.
-        #[arg(short, long, display_order = 2, help_heading = "Workflow File")]
-        workflow_path: Option<PathBuf>,
+        #[arg(short, long, display_order = 1)]
+        config_path: PathBuf,
 
         /// output directory for log files and the workflow outputs that have no explicit output directory.
-        #[arg(short, long, display_order = 3)]
+        #[arg(short, long, display_order = 2)]
         output: PathBuf,
 
-        /// return after parsing the wofklow config or JSON file without executing the commands.
-        #[arg(short, long, display_order = 4, conflicts_with_all=["start_at", "resume"])]
+        /// return after converting the config file to JSON foramt without executing the commands.
+        #[arg(short,
+            long,
+            display_order = 3,
+            conflicts_with_all=["start_at", "resume", "skip_step"],
+            help_heading = "Control Flow"
+        )]
         no_execution: bool,
 
-        /// Start the execution from a specific step. All previous steps will be ignored.  
+        /// Start the execution from a specific Step. All previous steps will be ignored.  
         #[arg(
             short,
             long,
             default_value_t = 1,
-            display_order = 5,
-            help_heading = "Start Step"
+            display_order = 4,
+            conflicts_with_all=["resume"],
+            help_heading = "Control Flow"
         )]
-        start_at: isize,
-        // TODO: add a --resume arg which reads the log at starts at the step that failed in the previous run
-        /// resume execution from the termination step of a previous run. To use this flag, the output directory must contains the log file from a previous run.
+        start_at: i64,
+
+        /// resume execution from the termination step of a previous run.
+        /// To use this flag, the output directory must contains the JSON file generated from a previous run.
         #[arg(
             short,
             long,
             conflicts_with = "start_at",
-            display_order = 6,
-            help_heading = "Start Step"
+            display_order = 5,
+            conflicts_with_all=["start_at"],
+            help_heading = "Control Flow",
         )]
         resume: bool,
 
@@ -368,7 +371,7 @@ pub enum Commands {
             short,
             long,
             conflicts_with = "workflow_path",
-            display_order = 7,
+            display_order = 6,
             value_delimiter = ','
         )]
         lib_paths: Option<Vec<PathBuf>>,
@@ -378,8 +381,9 @@ pub enum Commands {
             long,
             conflicts_with = "workflow_path",
             display_order = 7,
-            value_delimiter = ','
+            value_delimiter = ',',
+            help_heading = "Control Flow"
         )]
-        skip_step: Option<Vec<isize>>,
+        skip_step: Option<Vec<i64>>,
     },
 }
