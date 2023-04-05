@@ -183,7 +183,7 @@ pub enum Commands {
     #[command(group(
             ArgGroup::new("filter")
             .required(true)
-            .args(["knee", "unfiltered_pl", "forced_cells", "expect_cells"])
+            .args(["expect_cells", "explicit_pl", "forced_cells", "knee", "unfiltered_pl"])
             ))]
     #[command(group(
             ArgGroup::new("input-type")
