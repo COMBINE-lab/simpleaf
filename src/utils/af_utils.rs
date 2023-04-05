@@ -239,7 +239,7 @@ pub fn add_or_transform_fragment_library(
         MapperType::Salmon => KNOWN_CHEM_MAP_SALMON.contains_key(fragment_geometry_str),
     };
 
-    let frag_geom_opt = if known_chem {
+    let frag_geom_opt = if !known_chem {
         Some(FragmentGeomDesc::try_from(fragment_geometry_str)?)
     } else {
         None
