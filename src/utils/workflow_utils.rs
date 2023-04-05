@@ -203,7 +203,6 @@ impl SimpleafWorkflow {
                             true
                         };
                         
-
                     // The field must contains an Program Name
                     if let Some(program_name) = field.get("Program Name") {
                         pn = ProgramName::from_str(program_name.as_str().with_context(|| {
