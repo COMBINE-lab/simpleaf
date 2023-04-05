@@ -16,6 +16,8 @@ use crate::{Cli, Commands};
 
 use super::prog_utils::shell;
 
+const SKIPARG: &[&str] = &["Step", "Program Name", "Active"];
+
 /// This function updates the start_at variable
 /// if --resume is provided.\
 /// It finds the workflow_info.json exported by
@@ -185,6 +187,22 @@ impl SimpleafWorkflow {
                                 field.get("Step").unwrap()
                             )
                         })?;
+                        
+
+                    // parse "Active" if there is one
+                    let active = if let Some(v) = field
+                        .get("Active") {
+                            v.as_bool()
+                            .with_context(|| {
+                                format!(
+                                    "Cannot parse Active {:?} as a boolean",
+                                    field.get("Active").unwrap()
+                                )
+                            })?
+                        } else {
+                            true
+                        };
+                        
 
                     // The field must contains an Program Name
                     if let Some(program_name) = field.get("Program Name") {
@@ -192,7 +210,9 @@ impl SimpleafWorkflow {
                             "Cannot create ProgramName struct from a program name"
                         })?);
                         // if not in skip steps, and not less than start at
-                        if !workflow_log.skip_step.contains(&step) && step >= workflow_log.start_at
+                        if active && 
+                            !workflow_log.skip_step.contains(&step) && 
+                            step >= workflow_log.start_at
                         {
                             // The `Step` will be used for sorting the cmd_queue vector.
                             // All commands must have an valid `Step`.
@@ -204,6 +224,7 @@ impl SimpleafWorkflow {
 
                                 cmd_queue.push(CommandRecord {
                                     step,
+                                    active,
                                     program_name: pn,
                                     simpleaf_cmd: None,
                                     external_cmd: Some(external_cmd),
@@ -215,6 +236,7 @@ impl SimpleafWorkflow {
 
                                 cmd_queue.push(CommandRecord {
                                     step,
+                                    active,
                                     program_name: pn,
                                     simpleaf_cmd: Some(simpleaf_cmd),
                                     external_cmd: None,
@@ -485,6 +507,9 @@ impl WorkflowLog {
                 .expect("Cannot get field from json value");
         }
 
+        // update Active
+        curr_field["Active"] = json!(false);
+
         // prepend a "-" to the `Step`
         curr_field = curr_field
             .get_mut("Step")
@@ -499,6 +524,7 @@ impl WorkflowLog {
 /// It can be either a simpleaf command or an external command.
 pub struct CommandRecord {
     pub step: i64,
+    pub active: bool,
     pub program_name: ProgramName,
     pub simpleaf_cmd: Option<Commands>,
     pub external_cmd: Option<Command>,
@@ -549,7 +575,7 @@ impl ProgramName {
 
         if let Value::Object(args) = value {
             for (k, v) in args {
-                if k.as_str() != "Step" && k.as_str() != "Program Name" {
+                if !SKIPARG.contains(&k.as_str()) {
                     arg_vec.push(k.to_string());
                     if let Some(sv) = v.as_str() {
                         if !sv.is_empty() {

@@ -183,7 +183,7 @@ pub enum Commands {
     #[command(group(
             ArgGroup::new("filter")
             .required(true)
-            .args(["knee", "unfiltered_pl", "forced_cells", "expect_cells"])
+            .args(["knee", "unfiltered_pl", "forced_cells", "expect_cells","explicit_pl"])
             ))]
     #[command(group(
             ArgGroup::new("input-type")
@@ -370,7 +370,6 @@ pub enum Commands {
         #[arg(
             short,
             long,
-            conflicts_with = "workflow_path",
             display_order = 6,
             value_delimiter = ','
         )]
@@ -379,7 +378,6 @@ pub enum Commands {
         /// comma separated integers indicating which steps (commands) will be skipped during the execution.
         #[arg(
             long,
-            conflicts_with = "workflow_path",
             display_order = 7,
             value_delimiter = ',',
             help_heading = "Control Flow"

@@ -59,10 +59,10 @@ The relevant options (which you can obtain by running ``simpleaf workflow -h``) 
                                 execution
 
 
-The procedure of parsing the configuration program
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+The procedure of parsing a configuration Jsonnet program
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-In ``simpleaf workflow``, we use the `Jrsonnet <https://github.com/CertainLach/jrsonnet>`_, a rust implementation of Jsonnet, to parse the workflow configuration Jsonnet program passed to ``--config-path`` (or ``-c``). Any valid `Jsonnet <https://jsonnet.org/>`_  program and JSON file is a valid input for ``simpleaf workflow`` (but might not be a valid simpleaf workflow.). When calling Jrsonnet, ``simpleaf workflow`` automatically passes the following arguments in addition to the provided configuration Jsonnet program. This also means that any custom configuration program can access the ``output`` and ``utils``variables in the Jsonnet program using ``std.extVar("output")`` and ``std.extVar("utils")``.
+In ``simpleaf workflow``, we use the `Jrsonnet <https://github.com/CertainLach/jrsonnet>`_, a rust implementation of Jsonnet, to parse the workflow configuration Jsonnet program passed to ``--config-path`` (or ``-c``). Any valid `Jsonnet <https://jsonnet.org/>`_  program and JSON file is a valid input for ``simpleaf workflow`` (but might not be a valid simpleaf workflow.). When calling Jrsonnet, ``simpleaf workflow`` automatically passes the following arguments in addition to the provided configuration Jsonnet program. This also means that any custom configuration program can access the ``output`` and ``utils`` variables in the Jsonnet program using ``std.extVar("output")`` and ``std.extVar("utils")``.
 
 1) The output directory passed to ``--output`` as the external variable ``output``.
 2) The workflow utility library from the protocol estuary as the external variable ``utils``.

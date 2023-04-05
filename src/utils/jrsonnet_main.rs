@@ -68,11 +68,11 @@ pub fn parse_jsonnet(
     let input_config_file_path = config_file_path
         .to_str()
         .expect("Could not convert workflow config file path to str");
-    let jpath_config_file_path = config_file_path
-        .parent()
-        .expect("Could not get the parent dir of the config file.")
-        .to_str()
-        .expect("Could not convert the parent dir of the config file to str.");
+    // let jpath_config_file_path = config_file_path
+    //     .parent()
+    //     .expect("Could not get the parent dir of the config file.")
+    //     .to_str()
+    //     .expect("Could not convert the parent dir of the config file to str.");
     // external code
     let ext_output = format!(r#"output='{}'"#, output.display());
     let ext_utils_file_path = r#"utils=import 'simpleaf_workflow_utils.libsonnet'"#;
@@ -93,8 +93,8 @@ pub fn parse_jsonnet(
         ext_utils_file_path,
         "--jpath",
         jpath_pe_utils,
-        "--jpath",
-        jpath_config_file_path,
+        // "--jpath",
+        // jpath_config_file_path,
     ];
 
     // if the user provides more lib search path, then assign it.
