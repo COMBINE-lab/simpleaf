@@ -1,4 +1,10 @@
+// TODO:
+// implement log for resume
+// Change modifying Step to modifying Active when updateing log
+// fix testing functions
+
 use anyhow::{anyhow, bail, Context};
+use chrono::{DateTime, Local};
 use clap::Parser;
 use cmd_lib::run_cmd;
 use serde_json::{json, Map, Value};
@@ -6,7 +12,6 @@ use std::fs;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use time::Instant;
 use tracing::warn;
 
 use crate::utils::jrsonnet_main::parse_jsonnet;
@@ -16,19 +21,61 @@ use crate::{Cli, Commands};
 
 use super::prog_utils::shell;
 
+// fields that are not representing any simpleaf flag
 const SKIPARG: &[&str] = &["Step", "Program Name", "Active"];
+
+pub fn duration_to_dhms(d: chrono::Duration) -> String {
+    let execution_elapsed_time = format!(
+        "{}d{}h{}m{}.{:03}s",
+        d.num_days(),
+        (d - chrono::Duration::days(d.num_days())).num_hours(),
+        (d - chrono::Duration::hours(d.num_hours())).num_minutes(),
+        (d - chrono::Duration::minutes(d.num_minutes())).num_seconds(),
+        (d - chrono::Duration::seconds(d.num_seconds())).num_milliseconds(),
+    );
+    execution_elapsed_time
+}
 
 /// This function updates the start_at variable
 /// if --resume is provided.\
 /// It finds the workflow_info.json exported by
 /// simpleaf workflow from the previous run and
-/// grab the "Succeed" and "Execution Terminated at"
+/// grab the "Succeed" and "Execution Terminated Step"
 /// fields.\
 /// If the previous run was succeed, then we report an error
 /// saying nothing to resume
-/// If Execution Terminated at is a negative number, that
+/// If Execution Terminated Step is a negative number, that
 /// means there was no previous execution:
-pub fn update_start_at(output: &Path) -> anyhow::Result<i64> {
+pub fn update_start_at(v: &Value) -> anyhow::Result<u64> {
+    let latest_run = v.get("Latest Run").with_context(|| {
+        "Could not get the `Latest Run` field from the `simpleaf_workflow_log.json`; Cannot proceed"
+    })?;
+    // Check if the previous run was succeed. If yes, then no need to resume
+    let succeed = v
+        .get("Succeed")
+        .with_context(|| {
+            "Could not get `Execution Terminated Step` from the log file; Cannot resume."
+        })?
+        .as_bool()
+        .with_context(|| "cannot parse `Succeed` as bool; Cannot resume.")?;
+
+    let start_at = latest_run
+        .get("Execution Terminated Step")
+        .with_context(|| {
+            "Could not get `Execution Terminated Step` from the log file; Cannot resume."
+        })?
+        .as_u64()
+        .with_context(|| "cannot parse `Execution Terminated Step` as str; Cannot resume.")?;
+
+    if succeed {
+        bail!("The previous run succeed. Cannot resume.");
+    } else {
+        Ok(start_at)
+    }
+}
+
+pub fn get_previous_log(output: &Path) -> anyhow::Result<Value> {
+    // the path to the expected log file
     let exec_log_path = output.join("simpleaf_workflow_log.json");
     match exec_log_path.try_exists() {
         Ok(true) => {
@@ -42,39 +89,16 @@ pub fn update_start_at(output: &Path) -> anyhow::Result<i64> {
                 }
             })?;
 
+            // We read the file and return the value in a Some()
             let exec_log_reader = BufReader::new(&exec_log_file);
             let v: Value = serde_json::from_reader(exec_log_reader)?;
-
-            // Check if the previous run was succeed. If yes, then no need to resume
-            let succeed = v
-                .get("Succeed")
-                .with_context(|| {
-                    "Could not get `Execution Terminated at` from the log file; Cannot resume."
-                })?
-                .as_bool()
-                .with_context(|| "cannot parse `Succeed` as bool; Cannot resume.")?;
-
-            let start_at = v
-                .get("Execution Terminated at")
-                .with_context(|| {
-                    "Could not get `Execution Terminated at` from the log file; Cannot resume."
-                })?
-                .as_i64()
-                .with_context(|| "cannot parse `Execution Terminated at` as str; Cannot resume.")?;
-
-            if succeed {
-                bail!("The previous run succeed. Cannot resume.");
-            } else if !start_at.is_positive() {
-                bail!("The `Execution Terminated at` in the log file is invalid; Cannot resume. Please use the `--start-at` argument instead.")
-            } else {
-                Ok(start_at)
-            }
+            Ok(v)
         }
         Ok(false) => {
             bail!(
-                "Could not find `workflow_info.json` in the output directory {}; Cannot resume.",
-                output.display()
-            )
+                    "Could not find `simpleaf_workflow_log.json` in the output directory {}; Cannot resume.",
+                    output.display()
+                )
         }
         Err(e) => {
             bail!(e)
@@ -89,8 +113,9 @@ pub fn initialize_workflow(
     config_path: &Path,
     output: &Path,
     workflow_json_value: Value,
-    start_at: i64,
-    skip_step: Vec<i64>,
+    start_at: u64,
+    skip_step: Vec<u64>,
+    resume: bool,
 ) -> anyhow::Result<(SimpleafWorkflow, WorkflowLog)> {
     // Instantiate a workflow log struct
     let mut wl = WorkflowLog::new(
@@ -99,6 +124,7 @@ pub fn initialize_workflow(
         &workflow_json_value,
         start_at,
         skip_step,
+        resume,
     )?;
 
     // instantiate a simpleaf workflow struct, and complete the workflow struct
@@ -180,20 +206,20 @@ impl SimpleafWorkflow {
                     let step = field
                         .get("Step")
                         .with_context(|| "Cannot get Step")?
-                        .as_i64()
+                        .as_u64()
                         .with_context(|| {
                             format!(
                                 "Cannot parse Step {:?} as an integer",
                                 field.get("Step").unwrap()
                             )
                         })?;
-                        
 
                     // parse "Active" if there is one
-                    let active = if let Some(v) = field
-                        .get("Active") {
-                            v.as_bool()
-                            .with_context(|| {
+                    let active =
+                        if workflow_log.skip_step.contains(&step) || step < workflow_log.start_at {
+                            false
+                        } else if let Some(v) = field.get("Active") {
+                            v.as_bool().with_context(|| {
                                 format!(
                                     "Cannot parse Active {:?} as a boolean",
                                     field.get("Active").unwrap()
@@ -202,17 +228,18 @@ impl SimpleafWorkflow {
                         } else {
                             true
                         };
-                        
+
+                    // update Active in the log
+                    let cmd_field = workflow_log.get_mut_cmd_field(&curr_field_trajectory_vec)?;
+                    cmd_field["Active"] = json!(active);
+
                     // The field must contains an Program Name
                     if let Some(program_name) = field.get("Program Name") {
                         pn = ProgramName::from_str(program_name.as_str().with_context(|| {
                             "Cannot create ProgramName struct from a program name"
                         })?);
-                        // if not in skip steps, and not less than start at
-                        if active && 
-                            !workflow_log.skip_step.contains(&step) && 
-                            step >= workflow_log.start_at
-                        {
+                        // if active, then push to execution queue
+                        if active {
                             // The `Step` will be used for sorting the cmd_queue vector.
                             // All commands must have an valid `Step`.
                             // Note that we store this as a string in json b/c all value in config
@@ -242,15 +269,6 @@ impl SimpleafWorkflow {
                                     field_trajectory_vec: curr_field_trajectory_vec,
                                 });
                             }
-                        } else {
-                            // we still need to change the step to a negative number as it is skipped
-                            let step_value = workflow_log.get_step(&curr_field_trajectory_vec)?;
-                            let step = step_value
-                                .as_i64()
-                                .with_context(|| "Cannot convert `Step` as an integer")?;
-                            if !step.is_negative() {
-                                *step_value = json!(-step);
-                            }
                         }
                     }
                 } else {
@@ -270,8 +288,8 @@ impl SimpleafWorkflow {
 
 #[derive(Copy, Clone)]
 struct CommandRuntime {
-    start_time: Instant,
-    step: i64,
+    start_time: DateTime<Local>,
+    step: u64,
 }
 
 /// This struct is used for writing the workflow log JSON file.
@@ -292,11 +310,11 @@ pub struct WorkflowLog {
     meta_info_path: PathBuf,
     // execution log
     exec_log_path: PathBuf,
-    workflow_start_time: Instant,
+    workflow_start_time: DateTime<Local>,
     command_runtime: Option<CommandRuntime>,
     num_succ: usize,
-    start_at: i64,
-    skip_step: Vec<i64>,
+    start_at: u64,
+    skip_step: Vec<u64>,
     workflow_name: String, // doesn't matter, can convert to string
     workflow_meta_info: Option<Value>,
     // The value records the complete simpleaf workflow
@@ -310,6 +328,10 @@ pub struct WorkflowLog {
     // move here as a long vector, and in each CommandRecord
     // we just need to record the start pos and the length of its trajectory.
     // cmds_field_id_trajectory: Vec<usize>,
+
+    // this is used for updating the log file <simpleaf_workflow_log.json>
+    // this field will be updated after the
+    previous_log: Option<Value>,
 }
 
 impl WorkflowLog {
@@ -319,9 +341,28 @@ impl WorkflowLog {
         output: &Path,
         config_path: &Path,
         workflow_json_value: &Value,
-        start_at: i64,
-        skip_step: Vec<i64>,
+        // start_at will be updated if setting --resume
+        mut start_at: u64,
+        skip_step: Vec<u64>,
+        resume: bool,
     ) -> anyhow::Result<WorkflowLog> {
+        // We want to update the log file instead of overwrite it if --resume,
+        // So we need to know if we have previous log
+        // This will be none if --resume is not set
+        let previous_log = if resume {
+            let v = get_previous_log(output)?;
+            Some(v)
+        // if not --resume, then just give it a None
+        } else {
+            None
+        };
+
+        // If previous log is Some(), i.e., --resume is set and we can find the file
+        // then update start at using the Terminated At field
+        if let Some(v) = &previous_log {
+            start_at = update_start_at(v)?;
+        }
+
         // get output json path
         let workflow_name = config_path
             .file_stem()
@@ -335,7 +376,6 @@ impl WorkflowLog {
         // if we don't see an meta info section, report a warning
         if workflow_meta_info.is_none() {
             warn!("Found config file without meta_info field.");
-            // warning and create a empty string
         };
 
         Ok(WorkflowLog {
@@ -343,7 +383,7 @@ impl WorkflowLog {
             exec_log_path: output.join("workflow_execution_log.json"),
             workflow_name,
             workflow_meta_info,
-            workflow_start_time: Instant::now(),
+            workflow_start_time: Local::now(),
             command_runtime: None,
             num_succ: 0,
             start_at,
@@ -352,12 +392,13 @@ impl WorkflowLog {
             cmd_runtime_records: Map::new(),
             field_id_to_name: Vec::new(),
             // cmds_field_id_trajectory: Vec::new()
+            previous_log,
         })
     }
 
-    pub fn timeit(&mut self, step: i64) {
+    pub fn timeit(&mut self, step: u64) {
         self.command_runtime = Some(CommandRuntime {
-            start_time: Instant::now(),
+            start_time: Local::now(),
             step,
         });
     }
@@ -381,19 +422,54 @@ impl WorkflowLog {
             command_runtime.step
         } else {
             // If no record, then terminated at the beginning
-            1i64
+            1u64
         };
 
-        let meta_info = json!({
-            "Succeed": succeed,
-            "Workflow Name": self.workflow_name,
-            "Workflow Meta Info":  workflow_meta_info,
-            "Execution Elapsed Time": self.workflow_start_time.elapsed().to_string(),
-            "Execution Started at": self.start_at,
-            "Skipped Steps": self.skip_step,
-            "Execution Terminated at":  execution_terminated_at,
-            "Number of Succeed Commands": self.num_succ,
-            "Command Runtime by Step": Value::from(self.cmd_runtime_records.clone()),
+        // if this is a --resume, we need to load the log from last run
+        // Otherwise, we create an empty Value
+        let previous_runs = if let Some(v) = &self.previous_log {
+            // get the latest run from the log
+            let latest_run = v.get("Latest Run").with_context(|| "Could not get the `Latest Run` field from the `simpleaf_workflow_log.json`; Cannot proceed")?;
+
+            // get the time stamp. This will be used as the field name
+            let latest_run_time_stamp = latest_run
+                .get("Execution Start Local Time")
+                .with_context(|| "Could not get the `Execution Start Local Time` information from the `simpleaf_workflow_log.json`; Cannot proceed")?
+                .as_str()
+                .with_context(|| "Could not convert the `Execution Start Local Time` from the `simpleaf_workflow_log.json` to str; Cannot proceed")?;
+
+            // get previous runs
+            let mut pr = v
+                .get("Previous Runs")
+                .with_context(|| "Could not get the `Previous Runs` field from the `simpleaf_workflow_log.json`; Cannot proceed")?
+                .to_owned();
+
+            // push the latest run in the log into previous run, as we will update it
+            pr[latest_run_time_stamp] = latest_run.to_owned();
+            pr
+        } else {
+            json!({})
+        };
+
+        // This might be the most straightforward elapsed time log in the history ;P
+        let d = Local::now().signed_duration_since(self.workflow_start_time);
+        let execution_elapsed_time = duration_to_dhms(d);
+
+        let meta_info = json!(
+            {
+                "Workflow Name": self.workflow_name,
+                "Workflow Meta Info":  workflow_meta_info,
+                "Succeed": succeed,
+                "Latest Run": {
+                    "Execution Start Local Time": self.workflow_start_time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                    "Execution Elapsed Time": execution_elapsed_time,
+                    "Execution Start Step": self.start_at,
+                    "Skip Step": self.skip_step,
+                    "Execution Terminated Step":  execution_terminated_at,
+                    "Number of Succeed Commands": self.num_succ,
+                    "Command Runtime by Step": Value::from(self.cmd_runtime_records.clone()),
+                },
+                "Previous Runs": previous_runs
         });
 
         // execution log
@@ -413,7 +489,7 @@ impl WorkflowLog {
         std::fs::write(
             self.exec_log_path.as_path(),
             serde_json::to_string_pretty(&self.value)
-                .with_context(|| "Cannot convert json value to string.")?,
+                .with_context(|| "Could not convert json value to string.")?,
         )
         .with_context(|| {
             format!(
@@ -435,10 +511,12 @@ impl WorkflowLog {
         }
     }
 
-    #[allow(dead_code)]
     /// This function is used for testing if the exection order of
     /// successfully invoked command can be updated to a negative value
-    pub fn get_step(&mut self, field_trajectory_vec: &[usize]) -> anyhow::Result<&mut Value> {
+    pub fn get_mut_cmd_field(
+        &mut self,
+        field_trajectory_vec: &[usize],
+    ) -> anyhow::Result<&mut Value> {
         // get iterator of field_trajectory vector
         let field_trajectory_vec_iter = field_trajectory_vec.iter();
 
@@ -459,70 +537,53 @@ impl WorkflowLog {
                 .with_context(|| "Cannot get field from json value")?;
         }
 
-        // prepend a "-" to the `Step` field.
-        curr_field
-            .get_mut("Step")
-            .with_context(|| "Cannot get the `Step` field of the command.")
+        Ok(curr_field)
+    }
+
+    pub fn get_elapsed_time(&self) -> anyhow::Result<String> {
+        // update cmd run time
+        if let Some(command_runtime) = &self.command_runtime {
+            let d = Local::now().signed_duration_since(command_runtime.start_time);
+            let cmd_duration = duration_to_dhms(d);
+            Ok(cmd_duration)
+        } else {
+            bail!(
+                "Execution Start Local Time is not set. Could not get elapsed time; Cannot proceed"
+            );
+        }
     }
 
     /// Update WorkflowLog:
-    /// 1. the `Step` the a command in the of execution log
+    /// 1. the `Active` field of the executed commands in execution log
     /// 2. cmd runtime
     /// 3. number of succeed commands.
 
-    pub fn update(&mut self, field_trajectory_vec: &[usize]) {
+    pub fn update(&mut self, field_trajectory_vec: &[usize]) -> anyhow::Result<()> {
         // update cmd run time
         if let Some(command_runtime) = &self.command_runtime {
-            let cmd_duration = command_runtime.start_time.elapsed();
-            self.cmd_runtime_records.insert(
-                command_runtime.step.to_string(),
-                Value::from(cmd_duration.to_string()),
-            );
+            let cmd_duration = self.get_elapsed_time()?;
+            self.cmd_runtime_records
+                .insert(command_runtime.step.to_string(), Value::from(cmd_duration));
         } else {
-            warn!("Execution start time is not set.");
+            warn!("Execution Start Local Time is not set.");
         }
 
         //update num_succ
         self.num_succ += 1;
 
-        // update `Step`
-        // get iterator of field_trajectory vector
-        let field_trajectory_vec_iter = field_trajectory_vec.iter();
+        // update `Active`
+        let curr_field = self.get_mut_cmd_field(field_trajectory_vec)?;
 
-        // convert id to name
-        let mut curr_field_name: &String;
-
-        // get mutable reference of current field
-        let mut curr_field = &mut self.value;
-
-        for curr_field_id in field_trajectory_vec_iter {
-            curr_field_name = self
-                .field_id_to_name
-                .get(*curr_field_id)
-                .expect("Cannot map field ID to name.");
-            // let curr_pos = field_trajectory_vec.first().expect("Cannot get the first element");
-            curr_field = curr_field
-                .get_mut(curr_field_name)
-                .expect("Cannot get field from json value");
-        }
-
-        // update Active
         curr_field["Active"] = json!(false);
 
-        // prepend a "-" to the `Step`
-        curr_field = curr_field
-            .get_mut("Step")
-            .expect("Cannot get the `Step` field of the command.");
-        *curr_field = json!(-curr_field
-            .as_i64()
-            .expect("Cannot convert `Step` as an integer"));
+        Ok(())
     }
 }
 
 /// This struct contains a command record and some supporting information.
 /// It can be either a simpleaf command or an external command.
 pub struct CommandRecord {
-    pub step: i64,
+    pub step: u64,
     pub active: bool,
     pub program_name: ProgramName,
     pub simpleaf_cmd: Option<Commands>,
@@ -853,6 +914,7 @@ mod tests {
                 "simpleaf_index": {
                     "Step": 1,
                     "Program Name": "simpleaf index", 
+                    "Active": true,
                     "--ref-type": "spliced+unspliced",
                     "--fasta": "genome.fa",
                     "--gtf": "genes.gtf",
@@ -863,6 +925,7 @@ mod tests {
                 "simpleaf_quant": {
                     "Step": 2,
                     "Program Name": "simpleaf quant",  
+                    "Active": true,
                     "--chemistry": "10xv3",
                     "--resolution": "cr-like",
                     "--expected-ori": "fw",
@@ -880,11 +943,13 @@ mod tests {
                 "HTO ref gunzip": {
                     "Step": 3,
                     "Program Name": "gunzip",
+                    "Active": true,
                     "Arguments": ["-c","hto_ref.csv.gz",">","hto_ref.csv"]
                 },
                 "ADT ref gunzip": {
                     "Step": 4,
                     "Program Name": "gunzip",
+                    "Active": true,
                     "Arguments": ["-c","adt_ref.csv.gz",">","adt_ref.csv"]
                 }
             }
@@ -902,10 +967,10 @@ mod tests {
             workflow_json_value.clone(),
             2,
             vec![3],
+            false,
         )
         .unwrap();
 
-        // println!("\n\n\n{:?}\n\n\n", wl.field_id_to_name);
         match &wl {
             WorkflowLog {
                 meta_info_path,
@@ -920,6 +985,7 @@ mod tests {
                 cmd_runtime_records,
                 field_id_to_name,
                 skip_step,
+                previous_log: _,
             } => {
                 // test wl
                 // check JSON log output json
@@ -940,14 +1006,14 @@ mod tests {
                 );
 
                 let mut new_value = value.to_owned();
-                new_value["rna"]["simpleaf_index"]["Step"] = json!(1);
-                new_value["External Commands"]["HTO ref gunzip"]["Step"] = json!(3);
+                new_value["rna"]["simpleaf_index"]["Active"] = json!(true);
+                new_value["External Commands"]["HTO ref gunzip"]["Active"] = json!(true);
 
                 assert_eq!(new_value, workflow_json_value);
 
                 assert_eq!(cmd_runtime_records, &Map::new());
 
-                assert_eq!(start_at, &2i64);
+                assert_eq!(start_at, &2u64);
                 assert_eq!(skip_step, &vec![3]);
                 assert!(
                     field_id_to_name.contains(&"rna".to_string())
@@ -972,15 +1038,15 @@ mod tests {
         let cmd = sw.cmd_queue.pop().unwrap();
         wl.timeit(cmd.step);
 
-        wl.update(&cmd.field_trajectory_vec);
+        wl.update(&cmd.field_trajectory_vec).unwrap();
 
-        wl.get_step(&cmd.field_trajectory_vec).unwrap();
+        wl.get_mut_cmd_field(&cmd.field_trajectory_vec).unwrap();
 
         // check meta_info
         // we skipped two
         assert_eq!(
-            wl.get_step(&cmd.field_trajectory_vec).unwrap().as_i64(),
-            Some(-4)
+            wl.get_mut_cmd_field(&cmd.field_trajectory_vec).unwrap()["Step"].as_u64(),
+            Some(4)
         );
 
         // check command #4

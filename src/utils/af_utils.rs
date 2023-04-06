@@ -245,7 +245,6 @@ pub fn add_or_transform_fragment_library(
         None
     };
 
-
     // We have a "complex" geometry, so transform the reads through a fifo
     match frag_geom_opt {
         Some(frag_geom) if frag_geom.is_complex_geometry() => {
