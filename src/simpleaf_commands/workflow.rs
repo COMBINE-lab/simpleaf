@@ -187,12 +187,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
         } => {
             run_fun!(mkdir -p $output)?;
 
-            let final_start_at = if resume {
-                workflow_utils::update_start_at(output.as_path())?
-            } else {
-                start_at
-            };
-
+            // we need to convert the optional to a vector
             let final_skip_step = if let Some(ss) = skip_step {
                 ss
             } else {
@@ -229,8 +224,9 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                 config_path.as_path(),
                 output.as_path(),
                 workflow_json_value,
-                final_start_at,
+                start_at,
                 final_skip_step,
+                resume,
             )?;
 
             if !no_execution {
@@ -338,7 +334,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                         } else {
                             info!("Successfully ran {} command for step {}", pn, step);
 
-                            workflow_log.update(&cr.field_trajectory_vec[..]);
+                            workflow_log.update(&cr.field_trajectory_vec[..])?;
                         }
                     }
 
@@ -356,7 +352,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<(
                                 // check the return status of external command
                                 if cres.status.success() {
                                     // succeed. update log
-                                    workflow_log.update(&cr.field_trajectory_vec[..]);
+                                    workflow_log.update(&cr.field_trajectory_vec[..])?;
                                 } else {
                                     let cmd_stderr = std::str::from_utf8(&cres.stderr[..])?;
                                     let msg = format!("{} command at step {} failed to exit with code 0 under the shell.\n\

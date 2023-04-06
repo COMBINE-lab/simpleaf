@@ -352,7 +352,7 @@ pub enum Commands {
             conflicts_with_all=["resume"],
             help_heading = "Control Flow"
         )]
-        start_at: i64,
+        start_at: u64,
 
         /// resume execution from the termination step of a previous run.
         /// To use this flag, the output directory must contains the JSON file generated from a previous run.
@@ -367,23 +367,16 @@ pub enum Commands {
         resume: bool,
 
         /// comma separated library search paths when processing the (custom) workflow configuration file. (right-most wins)
-        #[arg(
-            short,
-            long,
-            conflicts_with = "workflow_path",
-            display_order = 6,
-            value_delimiter = ','
-        )]
+        #[arg(short, long, display_order = 6, value_delimiter = ',')]
         lib_paths: Option<Vec<PathBuf>>,
 
         /// comma separated integers indicating which steps (commands) will be skipped during the execution.
         #[arg(
             long,
-            conflicts_with = "workflow_path",
             display_order = 7,
             value_delimiter = ',',
             help_heading = "Control Flow"
         )]
-        skip_step: Option<Vec<i64>>,
+        skip_step: Option<Vec<u64>>,
     },
 }
