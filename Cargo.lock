@@ -1161,8 +1161,8 @@ checksum = "bebd363326d05ec3e2f532ab7660680f3b02130d780c299bca73469d521bc0ed"
 
 [[package]]
 name = "seq_geom_parser"
-version = "0.2.1"
-source = "git+https://github.com/COMBINE-lab/seq_geom_parser?branch=dev#6a8ed5c4b09f755ea56a269a698f5d5b98ebdea9"
+version = "0.3.0"
+source = "git+https://github.com/COMBINE-lab/seq_geom_parser?branch=dev#f5f3f9f7e367f8ca695f9cb6f05ec08908d83f12"
 dependencies = [
  "anyhow",
  "pest",
@@ -1171,8 +1171,8 @@ dependencies = [
 
 [[package]]
 name = "seq_geom_xform"
-version = "0.3.0"
-source = "git+https://github.com/COMBINE-lab/seq_geom_xform?branch=dev#6ab62f2247bc7a187bd5d7042417c6d9499ae7b3"
+version = "0.4.0"
+source = "git+https://github.com/COMBINE-lab/seq_geom_xform?branch=dev#445dab7154708e8d6dd36d6bb3b3fd953b7d5767"
 dependencies = [
  "anyhow",
  "clap",
