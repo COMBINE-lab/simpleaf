@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.11.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.10.0...v0.11.0) (2023-04-07)
+
+
+### Features
+
+* add --skip-steps, --start-at, --resume for simpleaf workflow, and add get-workflow-config program ([be205b1](https://github.com/COMBINE-lab/simpleaf/commit/be205b1da3871651c8a13082077ace006736aa8e))
+* Add Active field to workflow ([22e0096](https://github.com/COMBINE-lab/simpleaf/commit/22e009680da3de0de2a315ea56a53b904e34df3a))
+* add more arguments and improve external command execution ([475aabf](https://github.com/COMBINE-lab/simpleaf/commit/475aabf102b1aee5433c282b3cb2603f669482e3))
+* allow streaming transformation of complex geometry ([11e177b](https://github.com/COMBINE-lab/simpleaf/commit/11e177bbc92f448fc7df769555dab51de56c1347))
+* bump seq_geom version and print xform stats ([4055cb5](https://github.com/COMBINE-lab/simpleaf/commit/4055cb5c7966542ff026969ac3c9e528ddefafad))
+* improve workflow doc ([dd8f3c5](https://github.com/COMBINE-lab/simpleaf/commit/dd8f3c591da03b8762b52b6b507d64e8c49f989e))
+* improve workflow logging ([07f811a](https://github.com/COMBINE-lab/simpleaf/commit/07f811a4c5ab2fcdcf1fa06057a89b8dcd2f77d9))
+* simpleaf RunWorkflow ([21dd9d8](https://github.com/COMBINE-lab/simpleaf/commit/21dd9d84658061931ad449cf5947121035d0426e))
+
+
+### Bug Fixes
+
+* add explicit_pl to allowed filter arguments ([30f86e9](https://github.com/COMBINE-lab/simpleaf/commit/30f86e92eeb1e5775a70e2573eb22e4f6c45651a))
+* fix incorrect collate cmd log recorded in the simpleaf_quant_log.json ([8f9a59f](https://github.com/COMBINE-lab/simpleaf/commit/8f9a59faaeb23727857b93f875792e9e1a4497f9))
+* toy reference dir in testing dataset ([6a9ed0e](https://github.com/COMBINE-lab/simpleaf/commit/6a9ed0e5a849dbb4489f72a2789bdaa842cea979))
+* toy reference dir in testing dataset ([095efcb](https://github.com/COMBINE-lab/simpleaf/commit/095efcb82692fab7a6b25a63af0b839b6492b888))
+* Update af_utils.rs ([fff3b5e](https://github.com/COMBINE-lab/simpleaf/commit/fff3b5e8287c8fc9ad361747b5e6e6b028bfd212))
+* update library call to get simplified description string ([4d87286](https://github.com/COMBINE-lab/simpleaf/commit/4d87286ce304a87a382553c21db77771ef245168))
+
 ## [0.10.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.9.0...v0.10.0) (2023-02-12)
 
 
