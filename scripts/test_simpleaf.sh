@@ -53,7 +53,7 @@ else
 fi
 
 echo "  - Testing simpleaf index"
-REF_DIR="${WORK_DIR}/toy_human_ref"
+REF_DIR="${WORK_DIR}/toy_ref_read/toy_human_ref"
 index_cmd="ALEVIN_FRY_HOME=$ALEVIN_FRY_HOME \
 ${SIMPLEAF} index --ref-type spliced+intronic -f ${REF_DIR}/fasta/genome.fa \
 -g ${REF_DIR}/genes/genes.gtf \
@@ -69,7 +69,7 @@ else
 fi
 
 echo "  - Testing simpleaf quant"
-FASTQ_DIR="${WORK_DIR}/toy_read_fastq"
+FASTQ_DIR="${WORK_DIR}/toy_ref_read/toy_read_fastq"
 quant_cmd="ALEVIN_FRY_HOME=$ALEVIN_FRY_HOME \
 ${SIMPLEAF} quant \
 -1 ${FASTQ_DIR}/selected_R1_reads.fastq \
