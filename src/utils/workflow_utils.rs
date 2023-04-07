@@ -246,8 +246,7 @@ impl SimpleafWorkflow {
                             // file are strings.
                             if pn.is_external() {
                                 // creating an external command records using the args recorded in the field
-                                let external_cmd = 
-                                match pn.create_external_cmd(field) {
+                                let external_cmd = match pn.create_external_cmd(field) {
                                     Ok(v) => v,
                                     Err(e) => {
                                         bail!("Could not parse external command {} for Step {}. The error message was: {}", pn, step, e);
@@ -264,14 +263,12 @@ impl SimpleafWorkflow {
                                 });
                             } else {
                                 // create a simpleaf command record using the args recorded in the field
-                                let simpleaf_cmd = 
-                                match pn.create_simpleaf_cmd(field) {
+                                let simpleaf_cmd = match pn.create_simpleaf_cmd(field) {
                                     Ok(v) => v,
                                     Err(e) => {
                                         bail!("Could not parse simpleaf command {} for Step {}. The error message was: {}", pn, step, e);
                                     }
                                 };
-                                
 
                                 cmd_queue.push(CommandRecord {
                                     step,
