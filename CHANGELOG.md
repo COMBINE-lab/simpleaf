@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/COMBINE-lab/simpleaf/compare/v0.11.0...v0.11.1) (2023-04-07)
+
+
+### Bug Fixes
+
+* add submodule to cargo.toml ([6475ced](https://github.com/COMBINE-lab/simpleaf/commit/6475cedd1009852de4b195bba88a1b2e8208d82c))
+
 ## [0.11.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.10.0...v0.11.0) (2023-04-07)
 
 
