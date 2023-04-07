@@ -12,9 +12,9 @@ When writing the configuration files to the output directroy, ``get-workflow-con
 
 .. code-block:: shell
 
-    simpleaf get-workflow-config --name cite-seq_10xv2 -o output_dir
+    simpleaf get-workflow-config --name cite-seq-ADT+HTO_10xv2 -o output_dir
     
-The the workflow configuration Jsonnet program will be exported to ``output_dir/cite-seq_10xv2_config/cite-seq_10xv2.jsonnet``.
+The the workflow configuration Jsonnet program will be exported to ``output_dir/cite-seq-ADT+HTO_10xv2_config/cite-seq-ADT+HTO_10xv2.jsonnet``.
 
 
 Providing information in workflow configuration file
@@ -29,16 +29,17 @@ Usually, a published workflow contains four sections:
 
 For most users, the ``Recommended Simpleaf Configuration`` is the only section needed to be completed to allow the Jsonnet program to generate a valid workflow description JSON. To fill the missing information, one just needs to replace the ``null`` with a meaningful value. **Notice that** to ease the later parsing process, the values of all command arguments must be provided as strings, i.e., wrapped by quotes (``"value"``), even for integers like the number of threads (for example, ``{“--threads”: "16"}`` for simpleaf commands).
 
-For example, the complete ``meta_info`` section in the configuration Jsonnet program of the ``cite-seq_10xv2`` workflow should looks like the following (with all comments removed).
+For example, the complete ``meta_info`` section in the configuration Jsonnet program of the ``cite-seq-ADT+HTO_10xv2`` workflow should looks like the following (with all comments removed).
 
 .. code-block:: console
 
     "meta_info": {
-        "template_name":  "CITE-seq (10x Chromium 3' v2)",
+        "template_name":  "CITE-seq ADT+HTO with 10x Chromium 3' v2 (TotalSeq-A chemistry)",
         "template_id": "citeseq_10xv2",
         "template_version": "0.0.1",
         "threads": "16",
         "output": "/path/to/output",
+        "use-piscem": false,
     }
 
 The relevant options (which you can obtain by running ``simpleaf get-workflow-config -h``) are:
