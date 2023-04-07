@@ -1,11 +1,52 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use cmd_lib::run_fun;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::env;
-use std::path::PathBuf;
+use std::ffi::{OsStr, OsString};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::Once;
 use tracing::{error, info};
 use which::which;
+
+// The below functions are taken from the [`execute`](https://crates.io/crates/execute)
+// crate.
+
+/// Create a `Command` instance which can be executed by the current command language interpreter (shell).
+#[cfg(unix)]
+#[inline]
+pub fn shell<S: AsRef<OsStr>>(cmd: S) -> Command {
+    static START: Once = Once::new();
+    static mut SHELL: Option<OsString> = None;
+
+    let shell = unsafe {
+        START.call_once(|| {
+            SHELL = Some(env::var_os("SHELL").unwrap_or_else(|| OsString::from(String::from("sh"))))
+        });
+
+        SHELL.as_ref().unwrap()
+    };
+
+    let mut command = Command::new(shell);
+
+    command.arg("-c");
+    command.arg(cmd);
+
+    command
+}
+
+/// Create a `Command` instance which can be executed by the current command language interpreter (shell).
+#[cfg(windows)]
+#[inline]
+pub fn shell<S: AsRef<OsStr>>(cmd: S) -> Command {
+    let mut command = Command::new("cmd.exe");
+
+    command.arg("/c");
+    command.arg(cmd);
+
+    command
+}
 
 pub fn get_cmd_line_string(prog: &std::process::Command) -> String {
     let mut prog_vec = vec![prog.get_program().to_string_lossy().to_string()];
@@ -116,6 +157,12 @@ pub fn check_version_constraints<S1: AsRef<str>>(
     }
 }
 
+/// Checks that the version returned from a given program's `--version`
+/// flag is compatible with the provided `req_string`.  The interpretation
+/// of compatible is according to the standard meaning of Semantic versioning.
+/// This returns either `Ok(Version)` of the parsed, compatible, version or
+/// an `anyhow::Error` describing the incompatibility of the version is not
+/// compatible.
 pub fn check_version_constraints_from_output<S1: AsRef<str>>(
     prog_name: &str,
     req_string: S1,
@@ -227,7 +274,10 @@ pub fn get_required_progs_from_paths(
 
     // We should only get to this point if we have at least one of piscem and salmon, sanity
     // check this.
-    assert!(opt_salmon.is_some() || opt_piscem.is_some());
+    assert!(
+        opt_salmon.is_some() || opt_piscem.is_some(),
+        "At least one of piscem and salmon must be available."
+    );
 
     let alevin_fry = match alevin_fry_exe {
         Some(p) => p,
@@ -327,4 +377,28 @@ pub fn check_files_exist(file_vec: &[PathBuf]) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+pub fn read_json(json_path: &Path) -> anyhow::Result<serde_json::Value> {
+    let json_file = std::fs::File::open(json_path)
+        .with_context(|| format!("Could not open JSON file {}.", json_path.display()))?;
+    let v: serde_json::Value = serde_json::from_reader(json_file)?;
+    Ok(v)
+}
+
+pub fn inspect_af_home(af_home_path: &Path) -> anyhow::Result<serde_json::Value> {
+    // Open the file in read-only mode with buffer.
+    let af_info_p = af_home_path.join("simpleaf_info.json");
+
+    // try read af info
+    let v = read_json(af_info_p.as_path());
+
+    // handle the error
+    match v {
+        Ok(okv) => Ok(okv),
+        Err(e) => Err(anyhow!(
+            "{} Please run the `simpleaf set-paths` command before using `index` or `quant`.",
+            e
+        )),
+    }
 }

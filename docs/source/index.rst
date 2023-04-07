@@ -38,11 +38,14 @@ That's it for initial notes.  Use the menu below to learn more about the `simple
    :maxdepth: 2
    :caption: Contents:
 
+   installation.rst
    set-paths.rst
    add-chemistry-command.rst
    inspect-command.rst
    index-command.rst
    quant-command.rst
+   get-workflow-config-command.rst
+   workflow-command.rst
    LICENSE.rst
 
 Indices and tables
