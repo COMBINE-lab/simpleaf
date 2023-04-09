@@ -6,6 +6,7 @@
 use anyhow::{anyhow, bail, Context};
 use chrono::{DateTime, Local};
 use clap::Parser;
+use cmd_lib::log::info;
 use cmd_lib::run_cmd;
 use serde_json::{json, Map, Value};
 use std::fs;
@@ -240,6 +241,7 @@ impl SimpleafWorkflow {
                         })?);
                         // if active, then push to execution queue
                         if active {
+                            info!("Parsing {} command for Step {}", pn, step);
                             // The `Step` will be used for sorting the cmd_queue vector.
                             // All commands must have an valid `Step`.
                             // Note that we store this as a string in json b/c all value in config
@@ -279,8 +281,10 @@ impl SimpleafWorkflow {
                                     field_trajectory_vec: curr_field_trajectory_vec,
                                 });
                             }
-                        }
-                    }
+                        } else {
+                            info!("Skipping {} command for Step {}", pn, step);
+                        } // if active
+                    } // if have ProgramName
                 } else {
                     // If this is not a command record, we move to the next level
                     SimpleafWorkflow::fill_cmd_queue(
