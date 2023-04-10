@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.12.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.11.1...v0.12.0) (2023-04-10)
+
+
+### Features
+
+* improve autodetection of index type ([ed70433](https://github.com/COMBINE-lab/simpleaf/commit/ed704336051ccb07deff706e22d5ad6604618037))
+* improve logging when parsing commands from workflow description ([083e714](https://github.com/COMBINE-lab/simpleaf/commit/083e714c53bf21f7d987943b2a20283aa41c88c5))
+* improve logging when parsing commands from workflow description ([0d91772](https://github.com/COMBINE-lab/simpleaf/commit/0d91772236f7c94789f0fcedb079508156329201))
+
 ## [0.11.1](https://github.com/COMBINE-lab/simpleaf/compare/v0.11.0...v0.11.1) (2023-04-07)
 
 
