@@ -99,8 +99,8 @@ pub fn map_and_quant(af_home_path: &Path, quant_cmd: Commands) -> anyhow::Result
                                 index_type = IndexType::Salmon(index.clone());
                             }
                             "piscem" => {
-                                // here, either the user has provided us with just 
-                                // the directory containing the piscem index, or 
+                                // here, either the user has provided us with just
+                                // the directory containing the piscem index, or
                                 // we have "popped" off the "piscem_idx" suffix, so
                                 // add it (back).
                                 index_type = IndexType::Piscem(index.join("piscem_idx"));
