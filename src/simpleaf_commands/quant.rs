@@ -47,11 +47,36 @@ pub fn map_and_quant(af_home_path: &Path, quant_cmd: Commands) -> anyhow::Result
             let v: Value = prog_utils::inspect_af_home(af_home_path)?;
             let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
-            // info!("prog info = {:?}", rp);
+            // figure out what type of index we expect
+            let index_type;
 
-            let mut had_simpleaf_index_json = false;
-            let mut index_type_str = String::new();
-            if let Some(index) = index.clone() {
+            if let Some(mut index) = index.clone() {
+                // If the user built the index using simpleaf, and they are using
+                // piscem, then they are not required to pass the --use-piscem flag
+                // to the quant step (though they *can* pass it if they wish).
+                // Thus, if they built the piscem index using simpleaf, there are
+                // 2 possibilities here:
+                //  1. They are passing in the directory containing the index
+                //  2. They are passing in the prefix stem of the index files
+                // The code below is to check, in both cases, if we can automatically
+                // detect if the index was constructed with simpleaf, so that we can
+                // then automatically infer other files, like the t2g files.
+
+                // If we are in case 1., the passed in path is a directory and
+                // we can check for the simpleaf_index.json file directly,
+                // Otherwise if the path is not a directory, we check if it
+                // ends in piscem_idx (the suffix that simpleaf uses when
+                // making a piscem index). Then we test the directory we
+                // get after stripping off this suffix.
+                let removed_piscem_idx_suffix = if !index.is_dir() && index.ends_with("piscem_idx")
+                {
+                    // remove the piscem_idx part
+                    index.pop();
+                    true
+                } else {
+                    false
+                };
+
                 let index_json_path = index.join("simpleaf_index.json");
                 match index_json_path.try_exists() {
                     Ok(true) => {
@@ -63,8 +88,30 @@ pub fn map_and_quant(af_home_path: &Path, quant_cmd: Commands) -> anyhow::Result
 
                         let index_json_reader = BufReader::new(&index_json_file);
                         let v: Value = serde_json::from_reader(index_json_reader)?;
-                        had_simpleaf_index_json = true;
-                        index_type_str = serde_json::from_value(v["index_type"].clone())?;
+
+                        let index_type_str: String =
+                            serde_json::from_value(v["index_type"].clone())?;
+
+                        // here, set the index type based on what we found as the
+                        // value for the `index_type` key.
+                        match index_type_str.as_ref() {
+                            "salmon" => {
+                                index_type = IndexType::Salmon(index.clone());
+                            }
+                            "piscem" => {
+                                // here, either the user has provided us with just 
+                                // the directory containing the piscem index, or 
+                                // we have "popped" off the "piscem_idx" suffix, so
+                                // add it (back).
+                                index_type = IndexType::Piscem(index.join("piscem_idx"));
+                            }
+                            _ => {
+                                bail!(
+                                    "unknown index type {} present in simpleaf_index.json",
+                                    index_type_str,
+                                );
+                            }
+                        }
                         // if the user didn't pass in a t2g_map, try and populate it
                         // automatically here
                         if t2g_map.is_none() {
@@ -78,50 +125,36 @@ pub fn map_and_quant(af_home_path: &Path, quant_cmd: Commands) -> anyhow::Result
                         }
                     }
                     Ok(false) => {
-                        had_simpleaf_index_json = false;
+                        // at this point, we have inferred that simpleaf wasn't
+                        // used to construct the index, so fall back to what the user
+                        // requested directly.
+                        // if we have previously removed the piscem_idx suffix, add it back
+                        if removed_piscem_idx_suffix {
+                            index.push("piscem_idx");
+                        }
+                        if use_piscem {
+                            // the user passed the use-piscem flag, so treat the provided
+                            // path as the *prefix stem* to the piscem index
+                            index_type = IndexType::Piscem(index);
+                        } else {
+                            // if the user didn't pass use-piscem and there
+                            // is no simpleaf index json file to check, then
+                            // it's assumed they are using a salmon index.
+                            index_type = IndexType::Salmon(index);
+                        }
                     }
                     Err(e) => {
                         bail!(e);
                     }
                 }
+            } else {
+                index_type = IndexType::NoIndex;
             }
 
             // at this point make sure we have a t2g value
             let t2g_map_file = t2g_map.context("A transcript-to-gene map (t2g) file was not provided via `--t2g-map`|`-m` and could \
                     not be inferred from the index. Please provide a t2g map explicitly to the quant command.")?;
             prog_utils::check_files_exist(&[t2g_map_file.clone()])?;
-
-            // figure out what type of index we expect
-            let index_type;
-            // only bother with this if we are mapping reads and not if we are
-            // starting from a RAD file
-            if let Some(index) = index.clone() {
-                // if the user said piscem explicitly, believe them
-                if !use_piscem {
-                    if had_simpleaf_index_json {
-                        match index_type_str.as_ref() {
-                            "salmon" => {
-                                index_type = IndexType::Salmon(index);
-                            }
-                            "piscem" => {
-                                index_type = IndexType::Piscem(index.join("piscem_idx"));
-                            }
-                            _ => {
-                                bail!(
-                                    "unknown index type {} present in simpleaf_index.json",
-                                    index_type_str,
-                                );
-                            }
-                        }
-                    } else {
-                        index_type = IndexType::Salmon(index);
-                    }
-                } else {
-                    index_type = IndexType::Piscem(index);
-                }
-            } else {
-                index_type = IndexType::NoIndex;
-            }
 
             // make sure we have an program matching the
             // appropriate index type

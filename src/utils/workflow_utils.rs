@@ -6,6 +6,7 @@
 use anyhow::{anyhow, bail, Context};
 use chrono::{DateTime, Local};
 use clap::Parser;
+use cmd_lib::log::info;
 use cmd_lib::run_cmd;
 use serde_json::{json, Map, Value};
 use std::fs;
@@ -240,13 +241,19 @@ impl SimpleafWorkflow {
                         })?);
                         // if active, then push to execution queue
                         if active {
+                            info!("Parsing {} command for Step {}", pn, step);
                             // The `Step` will be used for sorting the cmd_queue vector.
                             // All commands must have an valid `Step`.
                             // Note that we store this as a string in json b/c all value in config
                             // file are strings.
                             if pn.is_external() {
                                 // creating an external command records using the args recorded in the field
-                                let external_cmd = pn.create_external_cmd(field)?;
+                                let external_cmd = match pn.create_external_cmd(field) {
+                                    Ok(v) => v,
+                                    Err(e) => {
+                                        bail!("Could not parse external command {} for Step {}. The error message was: {}", pn, step, e);
+                                    }
+                                };
 
                                 cmd_queue.push(CommandRecord {
                                     step,
@@ -258,7 +265,12 @@ impl SimpleafWorkflow {
                                 });
                             } else {
                                 // create a simpleaf command record using the args recorded in the field
-                                let simpleaf_cmd = pn.create_simpleaf_cmd(field)?;
+                                let simpleaf_cmd = match pn.create_simpleaf_cmd(field) {
+                                    Ok(v) => v,
+                                    Err(e) => {
+                                        bail!("Could not parse simpleaf command {} for Step {}. The error message was: {}", pn, step, e);
+                                    }
+                                };
 
                                 cmd_queue.push(CommandRecord {
                                     step,
@@ -269,8 +281,10 @@ impl SimpleafWorkflow {
                                     field_trajectory_vec: curr_field_trajectory_vec,
                                 });
                             }
-                        }
-                    }
+                        } else {
+                            info!("Skipping {} command for Step {}", pn, step);
+                        } // if active
+                    } // if have ProgramName
                 } else {
                     // If this is not a command record, we move to the next level
                     SimpleafWorkflow::fill_cmd_queue(
