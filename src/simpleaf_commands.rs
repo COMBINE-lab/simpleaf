@@ -14,7 +14,7 @@ pub mod quant;
 pub use self::quant::map_and_quant;
 
 pub mod workflow;
-pub use self::workflow::{get_workflow_config, workflow};
+pub use self::workflow::{get_workflow_config, list_workflows, workflow};
 
 use clap::{builder::ArgPredicate, ArgGroup, Subcommand};
 use std::path::PathBuf;
@@ -305,6 +305,11 @@ pub enum Commands {
         /// path to pyroe to use
         #[arg(short = 'r', long)]
         pyroe: Option<PathBuf>,
+    },
+
+    // TODO: find a way to keep the protocol estuary up-to-date
+    /// get the workflow configuration files of a published workflow from protocol estuary (https://github.com/COMBINE-lab/protocol-estuary).
+    ListWorkflows {
     },
 
     // TODO: find a way to keep the protocol estuary up-to-date

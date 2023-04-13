@@ -199,6 +199,9 @@ fn main() -> anyhow::Result<()> {
                 // essential_only,
             },
         ),
+
+        Commands::ListWorkflows {
+        } => list_workflows(af_home_path.as_path()),
     }
     // success, yay!
     // we should not need an explicit value here as the

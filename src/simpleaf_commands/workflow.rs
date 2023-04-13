@@ -9,8 +9,36 @@ use serde_json::Value;
 use std::fs;
 use std::path::Path;
 use tracing::{info, warn};
+use tabled::{Table, Tabled};
 
 use super::Commands;
+
+#[derive(Tabled)]
+struct WorkflowTemplate {
+    name: String,
+}
+
+pub fn list_workflows(af_home_path: &Path) -> anyhow::Result<()> {
+    // get af_home
+    let v: Value = prog_utils::inspect_af_home(af_home_path)?;
+    // Read the JSON contents of the file as an instance of `User`.
+    // TODO: use it somehwere?
+    let _rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+
+    // get protocol library path
+    let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path)?;
+    // get the corresponding workflow directory path
+    let workflow_path = protocol_estuary.protocols_dir;
+    let workflows = fs::read_dir(workflow_path)?;
+    let mut workflow_entries = vec![];
+    for prot in workflows {
+        let n = format!("{:?}", prot);
+        workflow_entries.push(WorkflowTemplate{name: n})
+    }
+    println!("{}", Table::new(workflow_entries).to_string());
+    Ok(())
+}
+
 
 /// ### Program Name
 /// simpleaf get-workflow-config
