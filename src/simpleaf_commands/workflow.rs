@@ -8,10 +8,11 @@ use serde_json::json;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
+use tabled::{settings::Style, Table, Tabled};
 use tracing::{info, warn};
-use tabled::{Table, Tabled};
 
 use super::Commands;
+use super::WorkflowCommands;
 
 #[derive(Tabled)]
 struct WorkflowTemplate {
@@ -33,13 +34,22 @@ pub fn list_workflows(af_home_path: &Path) -> anyhow::Result<()> {
     let workflows = fs::read_dir(workflow_path)?;
     let mut workflow_entries = vec![];
     for prot in workflows {
-        let n = format!("{:?}", prot);
-        workflow_entries.push(WorkflowTemplate{registry: String::from("COMBINE-lab/protocol-estuary"), name: n})
+        if let Ok(prot) = prot {
+            let n = format!("{:?}", prot.file_name());
+            workflow_entries.push(WorkflowTemplate {
+                registry: String::from("COMBINE-lab/protocol-estuary"),
+                name: n,
+            })
+        }
     }
-    println!("{}", Table::new(workflow_entries).to_string());
+    println!(
+        "{}",
+        Table::new(workflow_entries)
+            .with(Style::rounded())
+            .to_string()
+    );
     Ok(())
 }
-
 
 /// ### Program Name
 /// simpleaf get-workflow-config
@@ -61,9 +71,9 @@ pub fn list_workflows(af_home_path: &Path) -> anyhow::Result<()> {
 
 // TODO: implement essential only
 
-pub fn get_workflow_config(af_home_path: &Path, gw_cmd: Commands) -> anyhow::Result<()> {
+pub fn get_workflow_config(af_home_path: &Path, gw_cmd: WorkflowCommands) -> anyhow::Result<()> {
     match gw_cmd {
-        Commands::GetWorkflowConfig {
+        WorkflowCommands::GetConfig {
             output,
             name,
             // essential_only: _,
@@ -202,9 +212,9 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: Commands) -> anyhow::Res
 /// 4. quant: (Optional): this field records all simpleaf quant commands that need to be run.
 
 // TODO: add a `skip` argument for skipping steps
-pub fn workflow(af_home_path: &Path, workflow_cmd: Commands) -> anyhow::Result<()> {
+pub fn workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyhow::Result<()> {
     match workflow_cmd {
-        Commands::Workflow {
+        WorkflowCommands::Run {
             config_path,
             output,
             // TODO: write JSON only if no execution

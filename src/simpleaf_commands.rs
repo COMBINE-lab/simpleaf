@@ -16,7 +16,7 @@ pub use self::quant::map_and_quant;
 pub mod workflow;
 pub use self::workflow::{get_workflow_config, list_workflows, workflow};
 
-use clap::{builder::ArgPredicate, ArgGroup, Subcommand};
+use clap::{builder::ArgPredicate, ArgGroup, Args, Subcommand};
 use std::path::PathBuf;
 
 /// The type of references we might create
@@ -307,15 +307,26 @@ pub enum Commands {
         pyroe: Option<PathBuf>,
     },
 
+    Workflow(WorkflowArgs),
+}
+
+#[derive(Debug, Args)]
+#[command(args_conflicts_with_subcommands = true)]
+pub struct WorkflowArgs {
+    #[command(subcommand)]
+    pub command: WorkflowCommands,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum WorkflowCommands {
     // TODO: find a way to keep the protocol estuary up-to-date
-    /// get the workflow configuration files of a published workflow from protocol estuary (https://github.com/COMBINE-lab/protocol-estuary).
-    ListWorkflows {
-    },
+    /// Print a summary of the currently available workflows.
+    List {},
 
     // TODO: find a way to keep the protocol estuary up-to-date
     #[command(arg_required_else_help = true)]
-    /// get the workflow configuration files of a published workflow from protocol estuary (https://github.com/COMBINE-lab/protocol-estuary).
-    GetWorkflowConfig {
+    /// Get the workflow configuration files of a published workflow from protocol estuary (https://github.com/COMBINE-lab/protocol-estuary).
+    GetConfig {
         /// path to output configuration file, the directory will be created if it doesn't exist
         #[arg(short, long, requires = "name", help_heading = "Get Config Files")]
         output: PathBuf,
@@ -329,8 +340,8 @@ pub enum Commands {
     },
 
     #[command(arg_required_else_help = true)]
-    /// parse the input configuration/workflow files and execute the corresponding workflow(s).
-    Workflow {
+    /// Parse the input configuration/workflow files and execute the corresponding workflow(s).
+    Run {
         /// path to a simpleaf workflow configuration file.
         #[arg(short, long, display_order = 1)]
         config_path: PathBuf,

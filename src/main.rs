@@ -162,46 +162,50 @@ fn main() -> anyhow::Result<()> {
             },
         ),
 
-        // if we are running or parsing a
-        // workflow file.
-        Commands::Workflow {
-            config_path,
-            output,
-            no_execution,
-            start_at,
-            resume,
-            lib_paths,
-            skip_step,
-        } => workflow(
-            af_home_path.as_path(),
-            Commands::Workflow {
-                config_path,
-                output,
-                no_execution,
-                start_at,
-                resume,
-                lib_paths,
-                skip_step,
-            },
-        ),
+        Commands::Workflow(workflow_args) => {
+            let workflow_cmd = workflow_args.command;
+            match workflow_cmd {
+                // if we are running or parsing a
+                // workflow file.
+                WorkflowCommands::Run {
+                    config_path,
+                    output,
+                    no_execution,
+                    start_at,
+                    resume,
+                    lib_paths,
+                    skip_step,
+                } => workflow(
+                    af_home_path.as_path(),
+                    WorkflowCommands::Run {
+                        config_path,
+                        output,
+                        no_execution,
+                        start_at,
+                        resume,
+                        lib_paths,
+                        skip_step,
+                    },
+                ),
 
-        // if we are generating a workflow
-        // configuration from a workflow template.
-        Commands::GetWorkflowConfig {
-            output,
-            name,
-            // essential_only,
-        } => get_workflow_config(
-            af_home_path.as_path(),
-            Commands::GetWorkflowConfig {
-                output,
-                name,
-                // essential_only,
-            },
-        ),
+                // if we are generating a workflow
+                // configuration from a workflow template.
+                WorkflowCommands::GetConfig {
+                    output,
+                    name,
+                    // essential_only,
+                } => get_workflow_config(
+                    af_home_path.as_path(),
+                    WorkflowCommands::GetConfig {
+                        output,
+                        name,
+                        // essential_only,
+                    },
+                ),
 
-        Commands::ListWorkflows {
-        } => list_workflows(af_home_path.as_path()),
+                WorkflowCommands::List {} => list_workflows(af_home_path.as_path()),
+            }
+        }
     }
     // success, yay!
     // we should not need an explicit value here as the
