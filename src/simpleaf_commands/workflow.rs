@@ -15,6 +15,7 @@ use super::Commands;
 
 #[derive(Tabled)]
 struct WorkflowTemplate {
+    registry: String,
     name: String,
 }
 
@@ -33,7 +34,7 @@ pub fn list_workflows(af_home_path: &Path) -> anyhow::Result<()> {
     let mut workflow_entries = vec![];
     for prot in workflows {
         let n = format!("{:?}", prot);
-        workflow_entries.push(WorkflowTemplate{name: n})
+        workflow_entries.push(WorkflowTemplate{registry: String::from("COMBINE-lab/protocol-estuary"), name: n})
     }
     println!("{}", Table::new(workflow_entries).to_string());
     Ok(())
