@@ -306,7 +306,7 @@ pub enum Commands {
         #[arg(short = 'r', long)]
         pyroe: Option<PathBuf>,
     },
-
+    /// simpleaf workflow related command set
     Workflow(WorkflowArgs),
 }
 
@@ -322,18 +322,18 @@ pub enum WorkflowCommands {
     /// Print a summary of the currently available workflows.
     List {},
 
-    /// Pull the latest protocol esturary from GitHub.
+    /// Update the local copy of protocol esturary to the latest version.
     Refresh {},
 
     #[command(arg_required_else_help = true)]
-    /// Get the related files of a registered workflow.
+    /// Get the workflow template and related files of a registered workflow.
     Get {
         /// path to dump the folder containing the workflow related files.
-        #[arg(short, long, requires = "name", help_heading = "Get Config Files")]
+        #[arg(short, long, requires = "name")]
         output: PathBuf,
 
         /// name of the queried workflow.
-        #[arg(short, long, help_heading = "Get Config Files")]
+        #[arg(short, long)]
         name: String,
         // only write the essential information without any instructions
         // #[arg(short, long)]
@@ -341,7 +341,7 @@ pub enum WorkflowCommands {
     },
 
     #[command(arg_required_else_help = true)]
-    /// Parse an instantiated workflow template and execute the corresponding commands.
+    /// Parse an instantiated workflow template and invoke the workflow commands.
     Run {
         /// path to an instantiated simpleaf workflow template.
         #[arg(short, long, display_order = 1)]
@@ -384,7 +384,13 @@ pub enum WorkflowCommands {
         resume: bool,
 
         /// comma separated library search paths when processing the (custom) workflow configuration file. (right-most wins)
-        #[arg(short, long, display_order = 6, value_delimiter = ',')]
+        #[arg(
+            short,
+            long,
+            display_order = 6,
+            value_delimiter = ',',
+            help_heading = "Jsonnet"
+        )]
         lib_paths: Option<Vec<PathBuf>>,
 
         /// comma separated integers indicating which steps (commands) will be skipped during the execution.

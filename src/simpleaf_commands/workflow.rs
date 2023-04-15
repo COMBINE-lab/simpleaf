@@ -52,11 +52,7 @@ pub fn list_workflows(af_home_path: &Path) -> anyhow::Result<()> {
             warn!("Cannot traverse directory {:?}", workflow_path)
         }
     }
-    println!(
-        "{}",
-        Table::new(workflow_entries)
-            .with(Style::rounded())
-    );
+    println!("{}", Table::new(workflow_entries).with(Style::rounded()));
     Ok(())
 }
 
@@ -99,7 +95,7 @@ pub fn get_wokflow(af_home_path: &Path, gw_cmd: WorkflowCommands) -> anyhow::Res
             let workflow_path = protocol_estuary.protocols_dir.join(name.as_str());
             // make output dir
             let mut output_dir_name = name.clone();
-            output_dir_name.push_str("_config");
+            output_dir_name.push_str("_template");
             let output_path = output.join(output_dir_name);
 
             // check if workflow path exists
