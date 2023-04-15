@@ -1,6 +1,4 @@
 // TODO:
-// put workflow modules into sub sub commands
-// find a way to refresh protocol estuary
 // allow multiple registry, just like conda envs
 // find a way to pull files from github directly instead of using local copy of protocol estuary
 
