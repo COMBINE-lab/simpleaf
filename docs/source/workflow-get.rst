@@ -37,17 +37,15 @@ The relevant options (which you can obtain by running ``simpleaf workflow get -h
 
 .. code-block:: console
 
-    Get the related files of a registered workflow
+    Get the workflow template and related files of a registered workflow
 
     Usage: simpleaf workflow get --name <NAME> --output <OUTPUT>
 
     Options:
-    -h, --help     Print help
-    -V, --version  Print version
-
-    Get Config Files:
-    -o, --output <OUTPUT>  path to dump the folder containing the workflow related files
-    -n, --name <NAME>      name of the queried workflow
+      -o, --output <OUTPUT>  path to dump the folder containing the workflow related files
+      -n, --name <NAME>      name of the queried workflow
+      -h, --help             Print help
+      -V, --version          Print version
 
 
 
