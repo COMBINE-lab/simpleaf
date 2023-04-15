@@ -42,12 +42,17 @@ pub fn get_template_version(template_dir: PathBuf, utils_dir: &Path) -> anyhow::
     };
 
     // Then we call Jrsonnet to get JSON string
-    let workflow_json_string = parse_jsonnet(
+    let workflow_json_string = match parse_jsonnet(
         &template_path,
         PathBuf::from(".").as_path(),
         utils_dir,
         &None,
-    )?;
+        &None,
+        false,
+    ) {
+        Ok(v) => v,
+        Err(_) => return Ok(String::from("N/A*")),
+    };
 
     let workflow_json_value: Value = serde_json::from_str(workflow_json_string.as_str())?;
 
@@ -56,13 +61,13 @@ pub fn get_template_version(template_dir: PathBuf, utils_dir: &Path) -> anyhow::
             if let Some(v) = version_value.as_str() {
                 v.to_string()
             } else {
-                String::from("")
+                String::from("missing")
             }
         } else {
-            String::from("")
+            String::from("missing")
         }
     } else {
-        String::from("")
+        String::from("missing")
     };
 
     Ok(v)
@@ -780,7 +785,8 @@ pub fn parse_workflow_config(
     af_home_path: &Path,
     config_file_path: &Path,
     output: &Path,
-    lib_paths: &Option<Vec<PathBuf>>,
+    jpaths: &Option<Vec<PathBuf>>,
+    ext_codes: &Option<Vec<String>>,
 ) -> anyhow::Result<String> {
     // get protocol_estuary path
     let protocol_estuary = get_protocol_estuary(af_home_path, false)?;
@@ -791,7 +797,9 @@ pub fn parse_workflow_config(
         config_file_path,
         output,
         &protocol_estuary.utils_dir,
-        lib_paths,
+        jpaths,
+        ext_codes,
+        true,
     ) {
         Ok(js) => Ok(js),
         Err(e) => Err(anyhow!(

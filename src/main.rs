@@ -173,8 +173,9 @@ fn main() -> anyhow::Result<()> {
                     no_execution,
                     start_at,
                     resume,
-                    lib_paths,
+                    jpaths,
                     skip_step,
+                    ext_codes,
                 } => run_workflow(
                     af_home_path.as_path(),
                     WorkflowCommands::Run {
@@ -183,8 +184,9 @@ fn main() -> anyhow::Result<()> {
                         no_execution,
                         start_at,
                         resume,
-                        lib_paths,
+                        jpaths,
                         skip_step,
+                        ext_codes,
                     },
                 ),
 

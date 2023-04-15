@@ -383,7 +383,7 @@ pub enum WorkflowCommands {
         )]
         resume: bool,
 
-        /// comma separated library search paths when processing the (custom) workflow configuration file. (right-most wins)
+        /// comma separated library search paths passing to internal Jsonnet engine as --jpath flags.
         #[arg(
             short,
             long,
@@ -391,7 +391,17 @@ pub enum WorkflowCommands {
             value_delimiter = ',',
             help_heading = "Jsonnet"
         )]
-        lib_paths: Option<Vec<PathBuf>>,
+        jpaths: Option<Vec<PathBuf>>,
+
+        /// comma separated string passing to internal Jsonnet engine as --ext-code flags.
+        #[arg(
+            short,
+            long,
+            display_order = 6,
+            value_delimiter = ',',
+            help_heading = "Jsonnet"
+        )]
+        ext_codes: Option<Vec<String>>,
 
         /// comma separated integers indicating which steps (commands) will be skipped during the execution.
         #[arg(

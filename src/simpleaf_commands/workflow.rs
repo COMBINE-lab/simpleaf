@@ -38,21 +38,30 @@ pub fn list_workflows(af_home_path: &Path) -> anyhow::Result<()> {
     // get the corresponding workflow directory path
     let workflow_path = protocol_estuary.protocols_dir.as_path();
     let workflows = fs::read_dir(workflow_path)?;
+    let mut print_na_cap = false;
+    let na_string = String::from("N/A*");
     let mut workflow_entries = vec![];
     for prot in workflows {
         if let Ok(prot) = prot {
-            let v = workflow_utils::get_template_version(prot.path(), &protocol_estuary.utils_dir)?;
+            let version =
+                workflow_utils::get_template_version(prot.path(), &protocol_estuary.utils_dir)?;
+            if version == na_string {
+                print_na_cap = true;
+            }
             let n = format!("{:?}", prot.file_name());
             workflow_entries.push(WorkflowTemplate {
                 registry: String::from("COMBINE-lab/protocol-estuary"),
                 name: n,
-                version: v,
+                version,
             })
         } else {
             warn!("Cannot traverse directory {:?}", workflow_path)
         }
     }
     println!("{}", Table::new(workflow_entries).with(Style::rounded()));
+    if print_na_cap {
+        println!("* : could not parse uninstantiated template to attempt extracting the version, please see [url about parsing uninstantiated templates in our tutorial] for further details");
+    }
     Ok(())
 }
 
@@ -226,8 +235,9 @@ pub fn run_workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyh
             no_execution,
             start_at,
             resume,
-            lib_paths,
+            jpaths,
             skip_step,
+            ext_codes,
         } => {
             run_fun!(mkdir -p $output)?;
 
@@ -251,7 +261,8 @@ pub fn run_workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyh
                 af_home_path,
                 template.as_path(),
                 output.as_path(),
-                &lib_paths,
+                &jpaths,
+                &ext_codes,
             )?;
 
             // write complete workflow json to output folder

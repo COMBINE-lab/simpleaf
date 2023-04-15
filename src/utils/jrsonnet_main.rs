@@ -1,7 +1,7 @@
 // This crate is a modified version of jrsonnet cli.
 // https://github.com/CertainLach/jrsonnet/blob/master/cmds/jrsonnet/src/main.rs
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use clap::Parser;
 use jrsonnet_cli::{ConfigureState, GeneralOpts, ManifestOpts, OutputOpts, TraceOpts};
 use jrsonnet_evaluator::{
@@ -59,7 +59,9 @@ pub fn parse_jsonnet(
     config_file_path: &Path,
     output: &Path,
     utils_dir: &Path,
-    lib_paths: &Option<Vec<PathBuf>>,
+    jpaths: &Option<Vec<PathBuf>>,
+    ext_codes: &Option<Vec<String>>,
+    instantiated: bool,
 ) -> anyhow::Result<String> {
     // define jrsonnet argumetns
     // config file
@@ -72,8 +74,9 @@ pub fn parse_jsonnet(
     //     .to_str()
     //     .expect("Could not convert the parent dir of the config file to str.");
     // external code
-    let ext_output = format!(r#"output='{}'"#, output.display());
-    let ext_utils_file_path = r#"utils=import 'simpleaf_workflow_utils.libsonnet'"#;
+    let ext_output = format!(r#"__output='{}'"#, output.display());
+    let ext_utils_file_path = r#"__utils=import 'simpleaf_workflow_utils.libsonnet'"#;
+    let ext_instantiated = format!(r#"__instantiated='{}'"#, instantiated);
 
     // af_home_dir
     let jpath_pe_utils = utils_dir
@@ -88,6 +91,8 @@ pub fn parse_jsonnet(
         &ext_output,
         "--ext-code",
         ext_utils_file_path,
+        "--ext-code",
+        &ext_instantiated,
         "--jpath",
         jpath_pe_utils,
         // "--jpath",
@@ -95,10 +100,20 @@ pub fn parse_jsonnet(
     ];
 
     // if the user provides more lib search path, then assign it.
-    if let Some(lib_paths) = lib_paths {
-        for lib_path in lib_paths {
+    if let Some(jpaths) = jpaths {
+        for lib_path in jpaths {
             jrsonnet_cmd_vec.push("--jpath");
-            jrsonnet_cmd_vec.push(lib_path.to_str().expect("Could not convert path to "));
+            jrsonnet_cmd_vec.push(lib_path.to_str().with_context(|| {
+                format!("Could not convert the following path to str {:?}", lib_path)
+            })?);
+        }
+    }
+
+    // if the user provides ext-code, then assign it.
+    if let Some(ext_codes) = ext_codes {
+        for ext_code in ext_codes {
+            jrsonnet_cmd_vec.push("--ext-code");
+            jrsonnet_cmd_vec.push(ext_code.as_str());
         }
     }
 
@@ -160,9 +175,7 @@ fn main_real(s: &State, opts: Opts) -> Result<String, Error> {
     let manifest_format = opts.manifest.configure(s)?;
 
     let input = opts.input.input.ok_or(Error::MissingInputArgument)?;
-    let val = s
-        .import(input)
-        .expect("Cannot import workflow config file.");
+    let val = s.import(input)?;
 
     let val = apply_tla(s.clone(), &tla, val)?;
 
