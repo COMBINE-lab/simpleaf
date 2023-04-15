@@ -18,6 +18,12 @@ use super::WorkflowCommands;
 struct WorkflowTemplate {
     registry: String,
     name: String,
+    version: String,
+}
+
+pub fn refresh_protocol_estuary(af_home_path: &Path) -> anyhow::Result<()> {
+    workflow_utils::get_protocol_estuary(af_home_path, true)?;
+    Ok(())
 }
 
 pub fn list_workflows(af_home_path: &Path) -> anyhow::Result<()> {
@@ -28,25 +34,28 @@ pub fn list_workflows(af_home_path: &Path) -> anyhow::Result<()> {
     let _rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
     // get protocol library path
-    let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path)?;
+    let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path, false)?;
     // get the corresponding workflow directory path
-    let workflow_path = protocol_estuary.protocols_dir;
+    let workflow_path = protocol_estuary.protocols_dir.as_path();
     let workflows = fs::read_dir(workflow_path)?;
     let mut workflow_entries = vec![];
     for prot in workflows {
         if let Ok(prot) = prot {
+            let v = workflow_utils::get_template_version(prot.path(), &protocol_estuary.utils_dir)?;
             let n = format!("{:?}", prot.file_name());
             workflow_entries.push(WorkflowTemplate {
                 registry: String::from("COMBINE-lab/protocol-estuary"),
                 name: n,
+                version: v,
             })
+        } else {
+            warn!("Cannot traverse directory {:?}", workflow_path)
         }
     }
     println!(
         "{}",
         Table::new(workflow_entries)
             .with(Style::rounded())
-            .to_string()
     );
     Ok(())
 }
@@ -71,9 +80,9 @@ pub fn list_workflows(af_home_path: &Path) -> anyhow::Result<()> {
 
 // TODO: implement essential only
 
-pub fn get_workflow_config(af_home_path: &Path, gw_cmd: WorkflowCommands) -> anyhow::Result<()> {
+pub fn get_wokflow(af_home_path: &Path, gw_cmd: WorkflowCommands) -> anyhow::Result<()> {
     match gw_cmd {
-        WorkflowCommands::GetConfig {
+        WorkflowCommands::Get {
             output,
             name,
             // essential_only: _,
@@ -85,7 +94,7 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: WorkflowCommands) -> any
             let _rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
             // get protocol library path
-            let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path)?;
+            let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path, false)?;
             // get the corresponding workflow directory path
             let workflow_path = protocol_estuary.protocols_dir.join(name.as_str());
             // make output dir
@@ -162,7 +171,7 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: WorkflowCommands) -> any
             }
 
             // write log
-            let gwc_info_path = output_path.join("get_workflow_config.json");
+            let gwc_info_path = output_path.join("get_wokflow.json");
             let gwc_info = json!({
                 "command" : "get-workflow-config",
                 "workflow dir": output_path,
@@ -212,10 +221,10 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: WorkflowCommands) -> any
 /// 4. quant: (Optional): this field records all simpleaf quant commands that need to be run.
 
 // TODO: add a `skip` argument for skipping steps
-pub fn workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyhow::Result<()> {
+pub fn run_workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyhow::Result<()> {
     match workflow_cmd {
         WorkflowCommands::Run {
-            config_path,
+            template,
             output,
             // TODO: write JSON only if no execution
             no_execution,
@@ -234,7 +243,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyhow::
             };
 
             //  check the validity of the file
-            if !config_path.exists() {
+            if !template.exists() {
                 bail!("the path of the given workflow configuratioin file doesn't exist; Cannot proceed.")
             }
 
@@ -244,7 +253,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyhow::
             // convert files into json string vector
             let workflow_json_string = workflow_utils::parse_workflow_config(
                 af_home_path,
-                config_path.as_path(),
+                template.as_path(),
                 output.as_path(),
                 &lib_paths,
             )?;
@@ -260,7 +269,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyhow::
             // TODO: print some log using meta_info fields
             let (simpleaf_workflow, mut workflow_log) = workflow_utils::initialize_workflow(
                 af_home_path,
-                config_path.as_path(),
+                template.as_path(),
                 output.as_path(),
                 workflow_json_value,
                 start_at,

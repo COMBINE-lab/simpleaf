@@ -11,8 +11,6 @@ use jrsonnet_evaluator::{
 };
 use std::path::{Path, PathBuf};
 
-use super::workflow_utils::ProtocolEstuary;
-
 #[derive(Parser)]
 #[command(next_help_heading = "DEBUG")]
 struct DebugOpts {
@@ -60,7 +58,7 @@ struct Opts {
 pub fn parse_jsonnet(
     config_file_path: &Path,
     output: &Path,
-    protocol_estuary: ProtocolEstuary,
+    utils_dir: &Path,
     lib_paths: &Option<Vec<PathBuf>>,
 ) -> anyhow::Result<String> {
     // define jrsonnet argumetns
@@ -78,8 +76,7 @@ pub fn parse_jsonnet(
     let ext_utils_file_path = r#"utils=import 'simpleaf_workflow_utils.libsonnet'"#;
 
     // af_home_dir
-    let jpath_pe_utils = protocol_estuary
-        .utils_dir
+    let jpath_pe_utils = utils_dir
         .to_str()
         .expect("Could not convert Protocol Estuarys path to str");
 

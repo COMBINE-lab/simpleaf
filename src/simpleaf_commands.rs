@@ -14,7 +14,7 @@ pub mod quant;
 pub use self::quant::map_and_quant;
 
 pub mod workflow;
-pub use self::workflow::{get_workflow_config, list_workflows, workflow};
+pub use self::workflow::{get_wokflow, list_workflows, refresh_protocol_estuary, run_workflow};
 
 use clap::{builder::ArgPredicate, ArgGroup, Args, Subcommand};
 use std::path::PathBuf;
@@ -319,15 +319,16 @@ pub struct WorkflowArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum WorkflowCommands {
-    // TODO: find a way to keep the protocol estuary up-to-date
     /// Print a summary of the currently available workflows.
     List {},
 
-    // TODO: find a way to keep the protocol estuary up-to-date
+    /// Pull the latest protocol esturary from GitHub.
+    Refresh {},
+
     #[command(arg_required_else_help = true)]
-    /// Get the workflow configuration files of a published workflow from protocol estuary (https://github.com/COMBINE-lab/protocol-estuary).
-    GetConfig {
-        /// path to output configuration file, the directory will be created if it doesn't exist
+    /// Get the related files of a registered workflow.
+    Get {
+        /// path to dump the folder containing the workflow related files.
         #[arg(short, long, requires = "name", help_heading = "Get Config Files")]
         output: PathBuf,
 
@@ -340,11 +341,11 @@ pub enum WorkflowCommands {
     },
 
     #[command(arg_required_else_help = true)]
-    /// Parse the input configuration/workflow files and execute the corresponding workflow(s).
+    /// Parse an instantiated workflow template and execute the corresponding commands.
     Run {
-        /// path to a simpleaf workflow configuration file.
+        /// path to an instantiated simpleaf workflow template.
         #[arg(short, long, display_order = 1)]
-        config_path: PathBuf,
+        template: PathBuf,
 
         /// output directory for log files and the workflow outputs that have no explicit output directory.
         #[arg(short, long, display_order = 2)]

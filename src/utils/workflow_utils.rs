@@ -1,7 +1,8 @@
 // TODO:
-// implement log for resume
-// Change modifying Step to modifying Active when updateing log
-// fix testing functions
+// put workflow modules into sub sub commands
+// find a way to refresh protocol estuary
+// allow multiple registry, just like conda envs
+// find a way to pull files from github directly instead of using local copy of protocol estuary
 
 use anyhow::{anyhow, bail, Context};
 use chrono::{DateTime, Local};
@@ -24,6 +25,48 @@ use super::prog_utils::shell;
 
 // fields that are not representing any simpleaf flag
 const SKIPARG: &[&str] = &["Step", "Program Name", "Active"];
+
+// This function gets the version string from the workflwo template file in the provided folder
+pub fn get_template_version(template_dir: PathBuf, utils_dir: &Path) -> anyhow::Result<String> {
+    // we first get the workflow name
+    let workflow_name = template_dir
+        .file_name()
+        .with_context(|| format!("Cannot get folder name from {:?}", template_dir))?;
+    // Then we get the expected template file path
+    let mut template_path = template_dir.join(workflow_name);
+    if !template_path.set_extension("jsonnet") {
+        bail!(
+            "Cannot set extention for workflow template file in {:?}",
+            template_dir
+        )
+    };
+
+    // Then we call Jrsonnet to get JSON string
+    let workflow_json_string = parse_jsonnet(
+        &template_path,
+        PathBuf::from(".").as_path(),
+        utils_dir,
+        &None,
+    )?;
+
+    let workflow_json_value: Value = serde_json::from_str(workflow_json_string.as_str())?;
+
+    let v = if let Some(meta_info) = workflow_json_value.get("meta_info") {
+        if let Some(version_value) = meta_info.get("template_version") {
+            if let Some(v) = version_value.as_str() {
+                v.to_string()
+            } else {
+                String::from("")
+            }
+        } else {
+            String::from("")
+        }
+    } else {
+        String::from("")
+    };
+
+    Ok(v)
+}
 
 pub fn duration_to_dhms(d: chrono::Duration) -> String {
     let execution_elapsed_time = format!(
@@ -111,7 +154,7 @@ pub fn get_previous_log(output: &Path) -> anyhow::Result<Value> {
 /// SimpleafWorkflow and WorkfowLog
 pub fn initialize_workflow(
     af_home_path: &Path,
-    config_path: &Path,
+    template: &Path,
     output: &Path,
     workflow_json_value: Value,
     start_at: u64,
@@ -121,7 +164,7 @@ pub fn initialize_workflow(
     // Instantiate a workflow log struct
     let mut wl = WorkflowLog::new(
         output,
-        config_path,
+        template,
         &workflow_json_value,
         start_at,
         skip_step,
@@ -353,7 +396,7 @@ impl WorkflowLog {
     /// with a valid output path and complete workflow as a `serde_json::Value` object
     pub fn new(
         output: &Path,
-        config_path: &Path,
+        template: &Path,
         workflow_json_value: &Value,
         // start_at will be updated if setting --resume
         mut start_at: u64,
@@ -378,9 +421,9 @@ impl WorkflowLog {
         }
 
         // get output json path
-        let workflow_name = config_path
+        let workflow_name = template
             .file_stem()
-            .unwrap_or_else(|| panic!("Cannot parse file name of file {}", config_path.display()))
+            .unwrap_or_else(|| panic!("Cannot parse file name of file {}", template.display()))
             .to_string_lossy()
             .into_owned();
 
@@ -740,14 +783,14 @@ pub fn parse_workflow_config(
     lib_paths: &Option<Vec<PathBuf>>,
 ) -> anyhow::Result<String> {
     // get protocol_estuary path
-    let protocol_estuary = get_protocol_estuary(af_home_path)?;
+    let protocol_estuary = get_protocol_estuary(af_home_path, false)?;
 
     // the parse_jsonnet function calls the main function of jrsonnet.
     match parse_jsonnet(
         // af_home_path,
         config_file_path,
         output,
-        protocol_estuary,
+        &protocol_estuary.utils_dir,
         lib_paths,
     ) {
         Ok(js) => Ok(js),
@@ -759,7 +802,7 @@ pub fn parse_workflow_config(
     }
 }
 
-pub fn get_protocol_estuary(af_home_path: &Path) -> anyhow::Result<ProtocolEstuary> {
+pub fn get_protocol_estuary(af_home_path: &Path, force: bool) -> anyhow::Result<ProtocolEstuary> {
     let dl_url = "https://github.com/COMBINE-lab/protocol-estuary/archive/refs/heads/main.zip";
 
     // define expected dirs and files
@@ -775,11 +818,13 @@ pub fn get_protocol_estuary(af_home_path: &Path) -> anyhow::Result<ProtocolEstua
     };
 
     // if output dir exists, then return
-    if protocol_estuary.exists() {
+    if protocol_estuary.exists() && !force {
         Ok(protocol_estuary)
     } else {
         // make pe
-        run_cmd!(mkdir -p $pe_dir)?;
+        if !pe_dir.exists() {
+            run_cmd!(mkdir -p $pe_dir)?;
+        }
 
         // download github repo as a zip file
         let mut dl_cmd = std::process::Command::new("wget");
@@ -802,6 +847,7 @@ pub fn get_protocol_estuary(af_home_path: &Path) -> anyhow::Result<ProtocolEstua
         // unzip
         let mut unzip_cmd = std::process::Command::new("unzip");
         unzip_cmd
+            .arg("-o")
             .arg(pe_zip_file.to_string_lossy().to_string())
             .arg("-d")
             .arg(pe_dir.to_string_lossy().to_string());
@@ -916,7 +962,7 @@ mod tests {
     #[test]
     fn test_simpleaf_workflow_skip_start_at() {
         let af_home_path = PathBuf::from("af_home");
-        let config_path = PathBuf::from("data_dir/fake_config.config");
+        let template = PathBuf::from("data_dir/fake_config.config");
         let output = PathBuf::from("output_dir");
 
         let workflow_json_string = String::from(
@@ -976,7 +1022,7 @@ mod tests {
         // initialize simpleaf workflow and log struct
         let (mut sw, mut wl) = initialize_workflow(
             af_home_path.as_path(),
-            config_path.as_path(),
+            template.as_path(),
             output.as_path(),
             workflow_json_value.clone(),
             2,

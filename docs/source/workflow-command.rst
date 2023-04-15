@@ -39,10 +39,10 @@ The relevant options (which you can obtain by running ``simpleaf workflow -h``) 
 
     parse the input configuration/workflow files and execute the corresponding workflow(s)
 
-    Usage: simpleaf workflow [OPTIONS] --config-path <CONFIG_PATH> --output <OUTPUT>
+    Usage: simpleaf workflow [OPTIONS] --config-path <template> --output <OUTPUT>
 
     Options:
-    -c, --config-path <CONFIG_PATH>  path to a simpleaf workflow configuration file
+    -c, --config-path <template>  path to a simpleaf workflow configuration file
     -o, --output <OUTPUT>            output directory for log files and the workflow outputs that have no explicit output
                                     directory
     -l, --lib-paths <LIB_PATHS> comma-separated library search paths when processing the (custom) workflow configuration
