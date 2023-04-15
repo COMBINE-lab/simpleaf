@@ -60,7 +60,7 @@ pub fn list_workflows(af_home_path: &Path) -> anyhow::Result<()> {
     }
     println!("{}", Table::new(workflow_entries).with(Style::rounded()));
     if print_na_cap {
-        println!("* : could not parse uninstantiated template to attempt extracting the version, please see [url about parsing uninstantiated templates in our tutorial] for further details");
+        println!("* : could not parse uninstantiated template to attempt extracting the version, please see [shorturl.at/gouB1] for further details");
     }
     Ok(())
 }

@@ -54,7 +54,6 @@ The relevant options (which you can obtain by running ``simpleaf workflow run -h
         --skip-step <SKIP_STEP>  comma separated integers indicating which steps (commands) will be skipped during the execution
 
     Jsonnet:
-    -e, --ext-codes <EXT_CODES>  comma separated string passing to internal Jsonnet engine as --ext-code flags
     -j, --jpaths <JPATHS>        comma separated library search paths passing to internal Jsonnet engine as --jpath flags
 
 
