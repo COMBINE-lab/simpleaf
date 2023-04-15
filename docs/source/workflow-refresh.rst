@@ -10,7 +10,7 @@ The relevant options (which you can obtain by running ``simpleaf workflow refres
 
 .. code-block:: console
 
-    Pull the latest protocol esturary from GitHub
+    Update the local copy of protocol esturary to the latest version
 
     Usage: simpleaf workflow refresh
 
