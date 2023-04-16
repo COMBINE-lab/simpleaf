@@ -787,7 +787,7 @@ pub fn parse_workflow_config<T: AsRef<Path>>(
     ext_codes: &Option<Vec<String>>,
 ) -> anyhow::Result<String> {
     // get protocol_estuary path
-    let protocol_estuary = get_protocol_estuary(af_home_path.as_ref(), false)?;
+    let protocol_estuary = get_protocol_estuary(af_home_path.as_ref(), RegistrySourceStrategy::PreferLocal)?;
 
     // the parse_jsonnet function calls the main function of jrsonnet.
     match parse_jsonnet(
@@ -808,7 +808,21 @@ pub fn parse_workflow_config<T: AsRef<Path>>(
     }
 }
 
-pub fn get_protocol_estuary<T: AsRef<Path>>(af_home_path: T, force: bool) -> anyhow::Result<ProtocolEstuary> {
+pub enum RegistrySourceStrategy {
+    PreferLocal,
+    ForceRefresh,
+} 
+
+impl RegistrySourceStrategy {
+    pub fn is_force_refresh(&self) -> bool {
+        match &self {
+            RegistrySourceStrategy::PreferLocal => true,
+            _ => false,
+        }
+    }
+}
+
+pub fn get_protocol_estuary<T: AsRef<Path>>(af_home_path: T, rss: RegistrySourceStrategy) -> anyhow::Result<ProtocolEstuary> {
     let dl_url = "https://github.com/COMBINE-lab/protocol-estuary/archive/refs/heads/main.zip";
 
     // define expected dirs and files
@@ -824,7 +838,7 @@ pub fn get_protocol_estuary<T: AsRef<Path>>(af_home_path: T, force: bool) -> any
     };
 
     // if output dir exists, then return
-    if protocol_estuary.exists() && !force {
+    if protocol_estuary.exists() && rss.is_force_refresh() {
         Ok(protocol_estuary)
     } else {
         // make pe

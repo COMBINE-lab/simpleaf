@@ -22,7 +22,7 @@ struct WorkflowTemplate {
 }
 
 pub fn refresh_protocol_estuary<T: AsRef<Path>>(af_home_path: T) -> anyhow::Result<()> {
-    workflow_utils::get_protocol_estuary(af_home_path.as_ref(), true)?;
+    workflow_utils::get_protocol_estuary(af_home_path.as_ref(), workflow_utils::RegistrySourceStrategy::ForceRefresh)?;
     Ok(())
 }
 
@@ -34,7 +34,7 @@ pub fn list_workflows<T: AsRef<Path>>(af_home_path: T) -> anyhow::Result<()> {
     let _rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
     // get protocol library path
-    let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path.as_ref(), false)?;
+    let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path.as_ref(), workflow_utils::RegistrySourceStrategy::PreferLocal)?;
     // get the corresponding workflow directory path
     let workflow_path = protocol_estuary.protocols_dir.as_path();
     let workflows = fs::read_dir(workflow_path)?;
@@ -99,7 +99,7 @@ pub fn get_wokflow<T: AsRef<Path>>(af_home_path: T, gw_cmd: WorkflowCommands) ->
             let _rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
             // get protocol library path
-            let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path.as_ref(), false)?;
+            let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path.as_ref(), workflow_utils::RegistrySourceStrategy::PreferLocal)?;
             // get the corresponding workflow directory path
             let workflow_path = protocol_estuary.protocols_dir.join(name.as_str());
             // make output dir
