@@ -18,36 +18,50 @@ use super::WorkflowCommands;
 struct WorkflowTemplate {
     registry: String,
     name: String,
+    version: String,
 }
 
-pub fn list_workflows(af_home_path: &Path) -> anyhow::Result<()> {
+pub fn refresh_protocol_estuary<T: AsRef<Path>>(af_home_path: T) -> anyhow::Result<()> {
+    workflow_utils::get_protocol_estuary(af_home_path.as_ref(), workflow_utils::RegistrySourceStrategy::ForceRefresh)?;
+    Ok(())
+}
+
+pub fn list_workflows<T: AsRef<Path>>(af_home_path: T) -> anyhow::Result<()> {
     // get af_home
-    let v: Value = prog_utils::inspect_af_home(af_home_path)?;
+    let v: Value = prog_utils::inspect_af_home(af_home_path.as_ref())?;
     // Read the JSON contents of the file as an instance of `User`.
     // TODO: use it somehwere?
     let _rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
     // get protocol library path
-    let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path)?;
+    let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path.as_ref(), workflow_utils::RegistrySourceStrategy::PreferLocal)?;
     // get the corresponding workflow directory path
-    let workflow_path = protocol_estuary.protocols_dir;
+    let workflow_path = protocol_estuary.protocols_dir.as_path();
     let workflows = fs::read_dir(workflow_path)?;
+    let mut print_na_cap = false;
+    let na_string = String::from("N/A*");
     let mut workflow_entries = vec![];
     for prot in workflows {
         if let Ok(prot) = prot {
+            let version =
+                workflow_utils::get_template_version(prot.path(), &protocol_estuary.utils_dir)?;
+            if version == na_string {
+                print_na_cap = true;
+            }
             let n = format!("{:?}", prot.file_name());
             workflow_entries.push(WorkflowTemplate {
                 registry: String::from("COMBINE-lab/protocol-estuary"),
                 name: n,
+                version,
             })
+        } else {
+            warn!("Cannot traverse directory {:?}", workflow_path)
         }
     }
-    println!(
-        "{}",
-        Table::new(workflow_entries)
-            .with(Style::rounded())
-            .to_string()
-    );
+    println!("{}", Table::new(workflow_entries).with(Style::rounded()));
+    if print_na_cap {
+        println!("* : could not parse uninstantiated template to attempt extracting the version, please see [shorturl.at/gouB1] for further details");
+    }
     Ok(())
 }
 
@@ -71,26 +85,26 @@ pub fn list_workflows(af_home_path: &Path) -> anyhow::Result<()> {
 
 // TODO: implement essential only
 
-pub fn get_workflow_config(af_home_path: &Path, gw_cmd: WorkflowCommands) -> anyhow::Result<()> {
+pub fn get_wokflow<T: AsRef<Path>>(af_home_path: T, gw_cmd: WorkflowCommands) -> anyhow::Result<()> {
     match gw_cmd {
-        WorkflowCommands::GetConfig {
+        WorkflowCommands::Get {
             output,
             name,
             // essential_only: _,
         } => {
             // get af_home
-            let v: Value = prog_utils::inspect_af_home(af_home_path)?;
+            let v: Value = prog_utils::inspect_af_home(af_home_path.as_ref())?;
             // Read the JSON contents of the file as an instance of `User`.
             // TODO: use it somehwere?
             let _rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
             // get protocol library path
-            let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path)?;
+            let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path.as_ref(), workflow_utils::RegistrySourceStrategy::PreferLocal)?;
             // get the corresponding workflow directory path
             let workflow_path = protocol_estuary.protocols_dir.join(name.as_str());
             // make output dir
             let mut output_dir_name = name.clone();
-            output_dir_name.push_str("_config");
+            output_dir_name.push_str("_template");
             let output_path = output.join(output_dir_name);
 
             // check if workflow path exists
@@ -162,7 +176,7 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: WorkflowCommands) -> any
             }
 
             // write log
-            let gwc_info_path = output_path.join("get_workflow_config.json");
+            let gwc_info_path = output_path.join("get_wokflow.json");
             let gwc_info = json!({
                 "command" : "get-workflow-config",
                 "workflow dir": output_path,
@@ -212,17 +226,18 @@ pub fn get_workflow_config(af_home_path: &Path, gw_cmd: WorkflowCommands) -> any
 /// 4. quant: (Optional): this field records all simpleaf quant commands that need to be run.
 
 // TODO: add a `skip` argument for skipping steps
-pub fn workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyhow::Result<()> {
+pub fn run_workflow<T: AsRef<Path>>(af_home_path: T, workflow_cmd: WorkflowCommands) -> anyhow::Result<()> {
     match workflow_cmd {
         WorkflowCommands::Run {
-            config_path,
+            template,
             output,
             // TODO: write JSON only if no execution
             no_execution,
             start_at,
             resume,
-            lib_paths,
+            jpaths,
             skip_step,
+            ext_codes,
         } => {
             run_fun!(mkdir -p $output)?;
 
@@ -234,7 +249,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyhow::
             };
 
             //  check the validity of the file
-            if !config_path.exists() {
+            if !template.exists() {
                 bail!("the path of the given workflow configuratioin file doesn't exist; Cannot proceed.")
             }
 
@@ -243,10 +258,11 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyhow::
             // iterate json files and parse records to commands
             // convert files into json string vector
             let workflow_json_string = workflow_utils::parse_workflow_config(
-                af_home_path,
-                config_path.as_path(),
+                af_home_path.as_ref(),
+                template.as_path(),
                 output.as_path(),
-                &lib_paths,
+                &jpaths,
+                &ext_codes,
             )?;
 
             // write complete workflow json to output folder
@@ -259,8 +275,8 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyhow::
             // initialize simpleaf workflow and log struct
             // TODO: print some log using meta_info fields
             let (simpleaf_workflow, mut workflow_log) = workflow_utils::initialize_workflow(
-                af_home_path,
-                config_path.as_path(),
+                af_home_path.as_ref(),
+                template.as_path(),
                 output.as_path(),
                 workflow_json_value,
                 start_at,
@@ -300,7 +316,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyhow::
                                 sparse,
                                 threads,
                             } => super::indexing::build_ref_and_index(
-                                af_home_path,
+                                af_home_path.as_ref(),
                                 Commands::Index {
                                     ref_type,
                                     fasta,
@@ -342,7 +358,7 @@ pub fn workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyhow::
                                 chemistry,
                                 output,
                             } => super::quant::map_and_quant(
-                                af_home_path,
+                                af_home_path.as_ref(),
                                 Commands::Quant {
                                     index,
                                     use_piscem,

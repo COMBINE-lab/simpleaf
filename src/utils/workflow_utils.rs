@@ -1,7 +1,6 @@
 // TODO:
-// implement log for resume
-// Change modifying Step to modifying Active when updateing log
-// fix testing functions
+// allow multiple registry, just like conda envs
+// find a way to pull files from github directly instead of using local copy of protocol estuary
 
 use anyhow::{anyhow, bail, Context};
 use chrono::{DateTime, Local};
@@ -24,6 +23,53 @@ use super::prog_utils::shell;
 
 // fields that are not representing any simpleaf flag
 const SKIPARG: &[&str] = &["Step", "Program Name", "Active"];
+
+// This function gets the version string from the workflwo template file in the provided folder
+pub fn get_template_version<T: AsRef<Path>>(template_dir: PathBuf, utils_dir: T) -> anyhow::Result<String> {
+    // we first get the workflow name
+    let workflow_name = template_dir
+        .file_name()
+        .with_context(|| format!("Cannot get folder name from {:?}", template_dir))?;
+    // Then we get the expected template file path
+    let mut template_path = template_dir.join(workflow_name);
+    if !template_path.set_extension("jsonnet") {
+        bail!(
+            "Cannot set extention for workflow template file in {:?}",
+            template_dir
+        )
+    };
+
+    // Then we call Jrsonnet to get JSON string
+    let workflow_json_string = match parse_jsonnet(
+        &template_path,
+        PathBuf::from(".").as_path(),
+        utils_dir.as_ref(),
+        &None,
+        &None,
+        false,
+    ) {
+        Ok(v) => v,
+        Err(_) => return Ok(String::from("N/A*")),
+    };
+
+    let workflow_json_value: Value = serde_json::from_str(workflow_json_string.as_str())?;
+
+    let v = if let Some(meta_info) = workflow_json_value.get("meta_info") {
+        if let Some(version_value) = meta_info.get("template_version") {
+            if let Some(v) = version_value.as_str() {
+                v.to_string()
+            } else {
+                String::from("missing")
+            }
+        } else {
+            String::from("missing")
+        }
+    } else {
+        String::from("missing")
+    };
+
+    Ok(v)
+}
 
 pub fn duration_to_dhms(d: chrono::Duration) -> String {
     let execution_elapsed_time = format!(
@@ -75,9 +121,9 @@ pub fn update_start_at(v: &Value) -> anyhow::Result<u64> {
     }
 }
 
-pub fn get_previous_log(output: &Path) -> anyhow::Result<Value> {
+pub fn get_previous_log<T: AsRef<Path>>(output: T) -> anyhow::Result<Value> {
     // the path to the expected log file
-    let exec_log_path = output.join("simpleaf_workflow_log.json");
+    let exec_log_path = output.as_ref().join("simpleaf_workflow_log.json");
     match exec_log_path.try_exists() {
         Ok(true) => {
             // we have the workflow_info.json file, so parse it.
@@ -97,8 +143,8 @@ pub fn get_previous_log(output: &Path) -> anyhow::Result<Value> {
         }
         Ok(false) => {
             bail!(
-                    "Could not find `simpleaf_workflow_log.json` in the output directory {}; Cannot resume.",
-                    output.display()
+                    "Could not find `simpleaf_workflow_log.json` in the output directory {:?}; Cannot resume.",
+                    output.as_ref()
                 )
         }
         Err(e) => {
@@ -109,10 +155,10 @@ pub fn get_previous_log(output: &Path) -> anyhow::Result<Value> {
 
 /// intialize simpleaf workflow realted structs:
 /// SimpleafWorkflow and WorkfowLog
-pub fn initialize_workflow(
-    af_home_path: &Path,
-    config_path: &Path,
-    output: &Path,
+pub fn initialize_workflow <T: AsRef<Path>> (
+    af_home_path: T,
+    template: T,
+    output: T,
     workflow_json_value: Value,
     start_at: u64,
     skip_step: Vec<u64>,
@@ -120,8 +166,8 @@ pub fn initialize_workflow(
 ) -> anyhow::Result<(SimpleafWorkflow, WorkflowLog)> {
     // Instantiate a workflow log struct
     let mut wl = WorkflowLog::new(
-        output,
-        config_path,
+        output.as_ref(),
+        template.as_ref(),
         &workflow_json_value,
         start_at,
         skip_step,
@@ -129,7 +175,7 @@ pub fn initialize_workflow(
     )?;
 
     // instantiate a simpleaf workflow struct, and complete the workflow struct
-    let sw = SimpleafWorkflow::new(af_home_path, &workflow_json_value, &mut wl)?;
+    let sw = SimpleafWorkflow::new(af_home_path.as_ref(), &workflow_json_value, &mut wl)?;
 
     Ok((sw, wl))
 }
@@ -146,8 +192,8 @@ pub struct SimpleafWorkflow {
 impl SimpleafWorkflow {
     /// Initialize a SimpleafWorkflow object.
     /// It needs an empty and mutable `WorkflowLog` as a complementary part.
-    pub fn new(
-        af_home_path: &Path,
+    pub fn new<T: AsRef<Path>>(
+        af_home_path: T,
         workflow_json_value: &Value,
         workflow_log: &mut WorkflowLog,
     ) -> anyhow::Result<SimpleafWorkflow> {
@@ -170,7 +216,7 @@ impl SimpleafWorkflow {
         cmd_queue.sort_by(|cmd1, cmd2| cmd1.step.cmp(&cmd2.step));
 
         Ok(SimpleafWorkflow {
-            af_home_path: af_home_path.to_owned(),
+            af_home_path: af_home_path.as_ref().to_owned(),
             cmd_queue,
         })
     }
@@ -351,9 +397,9 @@ pub struct WorkflowLog {
 impl WorkflowLog {
     /// This function instantiate a workflow log
     /// with a valid output path and complete workflow as a `serde_json::Value` object
-    pub fn new(
-        output: &Path,
-        config_path: &Path,
+    pub fn new<T: AsRef<Path>>(
+        output: T,
+        template: T,
         workflow_json_value: &Value,
         // start_at will be updated if setting --resume
         mut start_at: u64,
@@ -364,7 +410,7 @@ impl WorkflowLog {
         // So we need to know if we have previous log
         // This will be none if --resume is not set
         let previous_log = if resume {
-            let v = get_previous_log(output)?;
+            let v = get_previous_log(output.as_ref())?;
             Some(v)
         // if not --resume, then just give it a None
         } else {
@@ -378,9 +424,9 @@ impl WorkflowLog {
         }
 
         // get output json path
-        let workflow_name = config_path
+        let workflow_name = template.as_ref()
             .file_stem()
-            .unwrap_or_else(|| panic!("Cannot parse file name of file {}", config_path.display()))
+            .unwrap_or_else(|| panic!("Cannot parse file name of file {}", template.as_ref().display()))
             .to_string_lossy()
             .into_owned();
 
@@ -393,8 +439,8 @@ impl WorkflowLog {
         };
 
         Ok(WorkflowLog {
-            meta_info_path: output.join("simpleaf_workflow_log.json"),
-            exec_log_path: output.join("workflow_execution_log.json"),
+            meta_info_path: output.as_ref().join("simpleaf_workflow_log.json"),
+            exec_log_path: output.as_ref().join("workflow_execution_log.json"),
             workflow_name,
             workflow_meta_info,
             workflow_start_time: Local::now(),
@@ -733,37 +779,54 @@ impl ProtocolEstuary {
 }
 
 /// parse the input file (either a workflow configuration file or a complete workflow JSON file) to obtain a JSON string.
-pub fn parse_workflow_config(
-    af_home_path: &Path,
-    config_file_path: &Path,
-    output: &Path,
-    lib_paths: &Option<Vec<PathBuf>>,
+pub fn parse_workflow_config<T: AsRef<Path>>(
+    af_home_path: T,
+    config_file_path: T,
+    output: T,
+    jpaths: &Option<Vec<PathBuf>>,
+    ext_codes: &Option<Vec<String>>,
 ) -> anyhow::Result<String> {
     // get protocol_estuary path
-    let protocol_estuary = get_protocol_estuary(af_home_path)?;
+    let protocol_estuary = get_protocol_estuary(af_home_path.as_ref(), RegistrySourceStrategy::PreferLocal)?;
 
     // the parse_jsonnet function calls the main function of jrsonnet.
     match parse_jsonnet(
         // af_home_path,
-        config_file_path,
-        output,
-        protocol_estuary,
-        lib_paths,
+        config_file_path.as_ref(),
+        output.as_ref(),
+        &protocol_estuary.utils_dir,
+        jpaths,
+        ext_codes,
+        true,
     ) {
         Ok(js) => Ok(js),
         Err(e) => Err(anyhow!(
             "Error occurred when processing the input config file {}. The error message was {}",
-            config_file_path.display(),
+            config_file_path.as_ref().display(),
             e
         )),
     }
 }
 
-pub fn get_protocol_estuary(af_home_path: &Path) -> anyhow::Result<ProtocolEstuary> {
+pub enum RegistrySourceStrategy {
+    PreferLocal,
+    ForceRefresh,
+} 
+
+impl RegistrySourceStrategy {
+    pub fn is_force_refresh(&self) -> bool {
+        match &self {
+            RegistrySourceStrategy::PreferLocal => true,
+            _ => false,
+        }
+    }
+}
+
+pub fn get_protocol_estuary<T: AsRef<Path>>(af_home_path: T, rss: RegistrySourceStrategy) -> anyhow::Result<ProtocolEstuary> {
     let dl_url = "https://github.com/COMBINE-lab/protocol-estuary/archive/refs/heads/main.zip";
 
     // define expected dirs and files
-    let pe_dir = af_home_path.join("protocol-estuary");
+    let pe_dir = af_home_path.as_ref().join("protocol-estuary");
     let pe_main_dir = pe_dir.join("protocol-estuary-main");
     let protocols_dir = pe_main_dir.join("protocols");
     let utils_dir = pe_main_dir.join("utils");
@@ -775,11 +838,13 @@ pub fn get_protocol_estuary(af_home_path: &Path) -> anyhow::Result<ProtocolEstua
     };
 
     // if output dir exists, then return
-    if protocol_estuary.exists() {
+    if protocol_estuary.exists() && rss.is_force_refresh() {
         Ok(protocol_estuary)
     } else {
         // make pe
-        run_cmd!(mkdir -p $pe_dir)?;
+        if !pe_dir.exists() {
+            run_cmd!(mkdir -p $pe_dir)?;
+        }
 
         // download github repo as a zip file
         let mut dl_cmd = std::process::Command::new("wget");
@@ -802,6 +867,7 @@ pub fn get_protocol_estuary(af_home_path: &Path) -> anyhow::Result<ProtocolEstua
         // unzip
         let mut unzip_cmd = std::process::Command::new("unzip");
         unzip_cmd
+            .arg("-o")
             .arg(pe_zip_file.to_string_lossy().to_string())
             .arg("-d")
             .arg(pe_dir.to_string_lossy().to_string());
@@ -916,7 +982,7 @@ mod tests {
     #[test]
     fn test_simpleaf_workflow_skip_start_at() {
         let af_home_path = PathBuf::from("af_home");
-        let config_path = PathBuf::from("data_dir/fake_config.config");
+        let template = PathBuf::from("data_dir/fake_config.config");
         let output = PathBuf::from("output_dir");
 
         let workflow_json_string = String::from(
@@ -976,7 +1042,7 @@ mod tests {
         // initialize simpleaf workflow and log struct
         let (mut sw, mut wl) = initialize_workflow(
             af_home_path.as_path(),
-            config_path.as_path(),
+            template.as_path(),
             output.as_path(),
             workflow_json_value.clone(),
             2,

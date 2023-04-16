@@ -168,35 +168,37 @@ fn main() -> anyhow::Result<()> {
                 // if we are running or parsing a
                 // workflow file.
                 WorkflowCommands::Run {
-                    config_path,
+                    template,
                     output,
                     no_execution,
                     start_at,
                     resume,
-                    lib_paths,
+                    jpaths,
                     skip_step,
-                } => workflow(
+                    ext_codes,
+                } => run_workflow(
                     af_home_path.as_path(),
                     WorkflowCommands::Run {
-                        config_path,
+                        template,
                         output,
                         no_execution,
                         start_at,
                         resume,
-                        lib_paths,
+                        jpaths,
                         skip_step,
+                        ext_codes,
                     },
                 ),
 
                 // if we are generating a workflow
                 // configuration from a workflow template.
-                WorkflowCommands::GetConfig {
+                WorkflowCommands::Get {
                     output,
                     name,
                     // essential_only,
-                } => get_workflow_config(
+                } => get_wokflow(
                     af_home_path.as_path(),
-                    WorkflowCommands::GetConfig {
+                    WorkflowCommands::Get {
                         output,
                         name,
                         // essential_only,
@@ -204,6 +206,7 @@ fn main() -> anyhow::Result<()> {
                 ),
 
                 WorkflowCommands::List {} => list_workflows(af_home_path.as_path()),
+                WorkflowCommands::Refresh {} => refresh_protocol_estuary(af_home_path.as_path()),
             }
         }
     }
