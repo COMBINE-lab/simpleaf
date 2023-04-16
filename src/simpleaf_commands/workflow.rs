@@ -21,20 +21,20 @@ struct WorkflowTemplate {
     version: String,
 }
 
-pub fn refresh_protocol_estuary(af_home_path: &Path) -> anyhow::Result<()> {
-    workflow_utils::get_protocol_estuary(af_home_path, true)?;
+pub fn refresh_protocol_estuary<T: AsRef<Path>>(af_home_path: T) -> anyhow::Result<()> {
+    workflow_utils::get_protocol_estuary(af_home_path.as_ref(), true)?;
     Ok(())
 }
 
-pub fn list_workflows(af_home_path: &Path) -> anyhow::Result<()> {
+pub fn list_workflows<T: AsRef<Path>>(af_home_path: T) -> anyhow::Result<()> {
     // get af_home
-    let v: Value = prog_utils::inspect_af_home(af_home_path)?;
+    let v: Value = prog_utils::inspect_af_home(af_home_path.as_ref())?;
     // Read the JSON contents of the file as an instance of `User`.
     // TODO: use it somehwere?
     let _rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
     // get protocol library path
-    let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path, false)?;
+    let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path.as_ref(), false)?;
     // get the corresponding workflow directory path
     let workflow_path = protocol_estuary.protocols_dir.as_path();
     let workflows = fs::read_dir(workflow_path)?;
@@ -85,7 +85,7 @@ pub fn list_workflows(af_home_path: &Path) -> anyhow::Result<()> {
 
 // TODO: implement essential only
 
-pub fn get_wokflow(af_home_path: &Path, gw_cmd: WorkflowCommands) -> anyhow::Result<()> {
+pub fn get_wokflow<T: AsRef<Path>>(af_home_path: T, gw_cmd: WorkflowCommands) -> anyhow::Result<()> {
     match gw_cmd {
         WorkflowCommands::Get {
             output,
@@ -93,13 +93,13 @@ pub fn get_wokflow(af_home_path: &Path, gw_cmd: WorkflowCommands) -> anyhow::Res
             // essential_only: _,
         } => {
             // get af_home
-            let v: Value = prog_utils::inspect_af_home(af_home_path)?;
+            let v: Value = prog_utils::inspect_af_home(af_home_path.as_ref())?;
             // Read the JSON contents of the file as an instance of `User`.
             // TODO: use it somehwere?
             let _rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
             // get protocol library path
-            let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path, false)?;
+            let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path.as_ref(), false)?;
             // get the corresponding workflow directory path
             let workflow_path = protocol_estuary.protocols_dir.join(name.as_str());
             // make output dir
@@ -226,7 +226,7 @@ pub fn get_wokflow(af_home_path: &Path, gw_cmd: WorkflowCommands) -> anyhow::Res
 /// 4. quant: (Optional): this field records all simpleaf quant commands that need to be run.
 
 // TODO: add a `skip` argument for skipping steps
-pub fn run_workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyhow::Result<()> {
+pub fn run_workflow<T: AsRef<Path>>(af_home_path: T, workflow_cmd: WorkflowCommands) -> anyhow::Result<()> {
     match workflow_cmd {
         WorkflowCommands::Run {
             template,
@@ -258,7 +258,7 @@ pub fn run_workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyh
             // iterate json files and parse records to commands
             // convert files into json string vector
             let workflow_json_string = workflow_utils::parse_workflow_config(
-                af_home_path,
+                af_home_path.as_ref(),
                 template.as_path(),
                 output.as_path(),
                 &jpaths,
@@ -275,7 +275,7 @@ pub fn run_workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyh
             // initialize simpleaf workflow and log struct
             // TODO: print some log using meta_info fields
             let (simpleaf_workflow, mut workflow_log) = workflow_utils::initialize_workflow(
-                af_home_path,
+                af_home_path.as_ref(),
                 template.as_path(),
                 output.as_path(),
                 workflow_json_value,
@@ -316,7 +316,7 @@ pub fn run_workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyh
                                 sparse,
                                 threads,
                             } => super::indexing::build_ref_and_index(
-                                af_home_path,
+                                af_home_path.as_ref(),
                                 Commands::Index {
                                     ref_type,
                                     fasta,
@@ -358,7 +358,7 @@ pub fn run_workflow(af_home_path: &Path, workflow_cmd: WorkflowCommands) -> anyh
                                 chemistry,
                                 output,
                             } => super::quant::map_and_quant(
-                                af_home_path,
+                                af_home_path.as_ref(),
                                 Commands::Quant {
                                     index,
                                     use_piscem,

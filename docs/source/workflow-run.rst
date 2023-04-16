@@ -1,7 +1,7 @@
 simpleaf workflow run
 =====================
 
-The ``simpleaf workflowr run`` command is designed to run potentially complex single-cell data processing workflows using an instantiated simpleaf workflow template. Please check our tutorial on `running an workflow from an published template <https://combine-lab.github.io/alevin-fry-tutorials/2023/running-simpleaf-workflow/>`_ and `developing custom template from scratch <https://combine-lab.github.io/alevin-fry-tutorials/2023/build-simpleaf-workflow/>`_
+The ``simpleaf workflow run`` command is designed to run potentially complex single-cell data processing workflows using an instantiated simpleaf workflow template. Please check our tutorial on `running an workflow from an published template <https://combine-lab.github.io/alevin-fry-tutorials/2023/running-simpleaf-workflow/>`_ and `developing custom template from scratch <https://combine-lab.github.io/alevin-fry-tutorials/2023/build-simpleaf-workflow/>`_
 
 ``simpleaf workflow run`` exposes two required flags: 
 
