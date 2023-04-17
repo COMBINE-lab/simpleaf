@@ -19,6 +19,7 @@ use crate::utils::prog_utils;
 use crate::utils::prog_utils::CommandVerbosityLevel;
 use crate::{Cli, Commands};
 
+use super::jrsonnet_main::TemplateState;
 use super::prog_utils::shell;
 
 // fields that are not representing any simpleaf flag
@@ -46,7 +47,7 @@ pub fn get_template_version<T: AsRef<Path>>(template_dir: PathBuf, utils_dir: T)
         utils_dir.as_ref(),
         &None,
         &None,
-        false,
+        TemplateState::Uninstantiated,
     ) {
         Ok(v) => v,
         Err(_) => return Ok(String::from("N/A*")),
@@ -797,7 +798,7 @@ pub fn parse_workflow_config<T: AsRef<Path>>(
         &protocol_estuary.utils_dir,
         jpaths,
         ext_codes,
-        true,
+        TemplateState::Instantiated,
     ) {
         Ok(js) => Ok(js),
         Err(e) => Err(anyhow!(
@@ -815,10 +816,7 @@ pub enum RegistrySourceStrategy {
 
 impl RegistrySourceStrategy {
     pub fn is_force_refresh(&self) -> bool {
-        match &self {
-            RegistrySourceStrategy::PreferLocal => true,
-            _ => false,
-        }
+        matches!(self, RegistrySourceStrategy::PreferLocal)
     }
 }
 

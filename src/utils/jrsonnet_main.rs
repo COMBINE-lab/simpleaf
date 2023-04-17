@@ -55,16 +55,32 @@ struct Opts {
     debug: DebugOpts,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum TemplateState {
+    Uninstantiated,
+    Instantiated,
+}
+
+impl TemplateState {
+    pub fn is_instantiated(&self) -> bool {
+        match &self {
+            TemplateState::Uninstantiated => false,
+            TemplateState::Instantiated => true
+        }
+    }
+} 
+
 pub fn parse_jsonnet(
     config_file_path: &Path,
     output: &Path,
     utils_dir: &Path,
     jpaths: &Option<Vec<PathBuf>>,
     ext_codes: &Option<Vec<String>>,
-    instantiated: bool,
+    template_state: TemplateState,
 ) -> anyhow::Result<String> {
-    // define jrsonnet argumetns
+    // define jrsonnet arguments
     // config file
+    let instantiated = template_state.is_instantiated();
     let input_config_file_path = config_file_path
         .to_str()
         .expect("Could not convert workflow config file path to str");
