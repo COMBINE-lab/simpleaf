@@ -26,7 +26,10 @@ use super::prog_utils::shell;
 const SKIPARG: &[&str] = &["Step", "Program Name", "Active"];
 
 // This function gets the version string from the workflwo template file in the provided folder
-pub fn get_template_version<T: AsRef<Path>>(template_dir: PathBuf, utils_dir: T) -> anyhow::Result<String> {
+pub fn get_template_version<T: AsRef<Path>>(
+    template_dir: PathBuf,
+    utils_dir: T,
+) -> anyhow::Result<String> {
     // we first get the workflow name
     let workflow_name = template_dir
         .file_name()
@@ -156,7 +159,7 @@ pub fn get_previous_log<T: AsRef<Path>>(output: T) -> anyhow::Result<Value> {
 
 /// intialize simpleaf workflow realted structs:
 /// SimpleafWorkflow and WorkfowLog
-pub fn initialize_workflow <T: AsRef<Path>> (
+pub fn initialize_workflow<T: AsRef<Path>>(
     af_home_path: T,
     template: T,
     output: T,
@@ -425,9 +428,15 @@ impl WorkflowLog {
         }
 
         // get output json path
-        let workflow_name = template.as_ref()
+        let workflow_name = template
+            .as_ref()
             .file_stem()
-            .unwrap_or_else(|| panic!("Cannot parse file name of file {}", template.as_ref().display()))
+            .unwrap_or_else(|| {
+                panic!(
+                    "Cannot parse file name of file {}",
+                    template.as_ref().display()
+                )
+            })
             .to_string_lossy()
             .into_owned();
 
@@ -788,7 +797,8 @@ pub fn parse_workflow_config<T: AsRef<Path>>(
     ext_codes: &Option<Vec<String>>,
 ) -> anyhow::Result<String> {
     // get protocol_estuary path
-    let protocol_estuary = get_protocol_estuary(af_home_path.as_ref(), RegistrySourceStrategy::PreferLocal)?;
+    let protocol_estuary =
+        get_protocol_estuary(af_home_path.as_ref(), RegistrySourceStrategy::PreferLocal)?;
 
     // the parse_jsonnet function calls the main function of jrsonnet.
     match parse_jsonnet(
@@ -812,15 +822,18 @@ pub fn parse_workflow_config<T: AsRef<Path>>(
 pub enum RegistrySourceStrategy {
     PreferLocal,
     ForceRefresh,
-} 
+}
 
 impl RegistrySourceStrategy {
     pub fn is_force_refresh(&self) -> bool {
-        matches!(self, RegistrySourceStrategy::PreferLocal)
+        matches!(self, RegistrySourceStrategy::ForceRefresh)
     }
 }
 
-pub fn get_protocol_estuary<T: AsRef<Path>>(af_home_path: T, rss: RegistrySourceStrategy) -> anyhow::Result<ProtocolEstuary> {
+pub fn get_protocol_estuary<T: AsRef<Path>>(
+    af_home_path: T,
+    rss: RegistrySourceStrategy,
+) -> anyhow::Result<ProtocolEstuary> {
     let dl_url = "https://github.com/COMBINE-lab/protocol-estuary/archive/refs/heads/main.zip";
 
     // define expected dirs and files
@@ -835,8 +848,10 @@ pub fn get_protocol_estuary<T: AsRef<Path>>(af_home_path: T, rss: RegistrySource
         utils_dir,
     };
 
-    // if output dir exists, then return
-    if protocol_estuary.exists() && rss.is_force_refresh() {
+    // if output dir exists, and the user is not
+    // requesting a force refresh of the protocol
+    // estuary, then return
+    if protocol_estuary.exists() && !rss.is_force_refresh() {
         Ok(protocol_estuary)
     } else {
         // make pe

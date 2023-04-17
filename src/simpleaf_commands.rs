@@ -400,7 +400,7 @@ pub enum WorkflowCommands {
             display_order = 6,
             value_delimiter = ',',
             help_heading = "Jsonnet",
-            hide=true,
+            hide = true
         )]
         ext_codes: Option<Vec<String>>,
 

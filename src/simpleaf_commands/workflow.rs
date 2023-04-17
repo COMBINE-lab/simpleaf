@@ -22,7 +22,10 @@ struct WorkflowTemplate {
 }
 
 pub fn refresh_protocol_estuary<T: AsRef<Path>>(af_home_path: T) -> anyhow::Result<()> {
-    workflow_utils::get_protocol_estuary(af_home_path.as_ref(), workflow_utils::RegistrySourceStrategy::ForceRefresh)?;
+    workflow_utils::get_protocol_estuary(
+        af_home_path.as_ref(),
+        workflow_utils::RegistrySourceStrategy::ForceRefresh,
+    )?;
     Ok(())
 }
 
@@ -34,7 +37,10 @@ pub fn list_workflows<T: AsRef<Path>>(af_home_path: T) -> anyhow::Result<()> {
     let _rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
     // get protocol library path
-    let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path.as_ref(), workflow_utils::RegistrySourceStrategy::PreferLocal)?;
+    let protocol_estuary = workflow_utils::get_protocol_estuary(
+        af_home_path.as_ref(),
+        workflow_utils::RegistrySourceStrategy::PreferLocal,
+    )?;
     // get the corresponding workflow directory path
     let workflow_path = protocol_estuary.protocols_dir.as_path();
     let workflows = fs::read_dir(workflow_path)?;
@@ -85,7 +91,10 @@ pub fn list_workflows<T: AsRef<Path>>(af_home_path: T) -> anyhow::Result<()> {
 
 // TODO: implement essential only
 
-pub fn get_wokflow<T: AsRef<Path>>(af_home_path: T, gw_cmd: WorkflowCommands) -> anyhow::Result<()> {
+pub fn get_wokflow<T: AsRef<Path>>(
+    af_home_path: T,
+    gw_cmd: WorkflowCommands,
+) -> anyhow::Result<()> {
     match gw_cmd {
         WorkflowCommands::Get {
             output,
@@ -99,7 +108,10 @@ pub fn get_wokflow<T: AsRef<Path>>(af_home_path: T, gw_cmd: WorkflowCommands) ->
             let _rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
             // get protocol library path
-            let protocol_estuary = workflow_utils::get_protocol_estuary(af_home_path.as_ref(), workflow_utils::RegistrySourceStrategy::PreferLocal)?;
+            let protocol_estuary = workflow_utils::get_protocol_estuary(
+                af_home_path.as_ref(),
+                workflow_utils::RegistrySourceStrategy::PreferLocal,
+            )?;
             // get the corresponding workflow directory path
             let workflow_path = protocol_estuary.protocols_dir.join(name.as_str());
             // make output dir
@@ -226,7 +238,10 @@ pub fn get_wokflow<T: AsRef<Path>>(af_home_path: T, gw_cmd: WorkflowCommands) ->
 /// 4. quant: (Optional): this field records all simpleaf quant commands that need to be run.
 
 // TODO: add a `skip` argument for skipping steps
-pub fn run_workflow<T: AsRef<Path>>(af_home_path: T, workflow_cmd: WorkflowCommands) -> anyhow::Result<()> {
+pub fn run_workflow<T: AsRef<Path>>(
+    af_home_path: T,
+    workflow_cmd: WorkflowCommands,
+) -> anyhow::Result<()> {
     match workflow_cmd {
         WorkflowCommands::Run {
             template,

@@ -65,10 +65,10 @@ impl TemplateState {
     pub fn is_instantiated(&self) -> bool {
         match &self {
             TemplateState::Uninstantiated => false,
-            TemplateState::Instantiated => true
+            TemplateState::Instantiated => true,
         }
     }
-} 
+}
 
 pub fn parse_jsonnet(
     config_file_path: &Path,
