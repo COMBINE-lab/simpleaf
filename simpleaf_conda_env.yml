@@ -6,7 +6,7 @@ channels:
   - bioconda
 
 dependencies:
-  - python>=3.10
+  # - python>=3.10
   - bioconda::salmon>=1.10.0
   - bioconda::alevin-fry>=0.8.1
   - bioconda::pyroe>=0.9.1
