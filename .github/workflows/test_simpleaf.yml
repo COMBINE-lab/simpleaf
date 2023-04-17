@@ -38,7 +38,7 @@ jobs:
         with:
           python-version: 3.10
           # mamba-version: "*"
-          channels: default,bioconda,conda-forge
+          channels: default,conda-forge,bioconda
           channel-priority: true
           activate-environment: anaconda-client-env
           environment-file: simpleaf_conda_env.yml

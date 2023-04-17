@@ -12,3 +12,4 @@ dependencies:
   - bioconda::pyroe>=0.9.1
   - bioconda::bedtools>=2.30.0
   - bioconda::gffread>=0.12.7
+  - python>=3.10
