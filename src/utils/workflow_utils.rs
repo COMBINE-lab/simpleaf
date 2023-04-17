@@ -852,6 +852,7 @@ pub fn get_protocol_estuary<T: AsRef<Path>>(
     // requesting a force refresh of the protocol
     // estuary, then return
     if protocol_estuary.exists() && !rss.is_force_refresh() {
+        info!("protocol estuary already exists, and no forced refresh was requested.");
         Ok(protocol_estuary)
     } else {
         // make pe
@@ -909,6 +910,7 @@ pub fn get_protocol_estuary<T: AsRef<Path>>(
 
         // final check
         if protocol_estuary.exists() {
+            info!("The protocol estuary was succesfully refreshed.");
             Ok(protocol_estuary)
         } else {
             bail!(
