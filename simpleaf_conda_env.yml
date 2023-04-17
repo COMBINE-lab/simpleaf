@@ -2,13 +2,14 @@ name: simpleaf
 
 channels:
   - defaults
-  - bioconda
   - conda-forge
+  - bioconda
 
 dependencies:
-  # - python>=3.9
-  - bioconda::salmon>=1.9.0
+  # - python>=3.10
+  - bioconda::salmon>=1.10.0
   - bioconda::alevin-fry>=0.8.1
-  - bioconda::pyroe>=0.8.1
+  - bioconda::pyroe>=0.9.1
   - bioconda::bedtools>=2.30.0
   - bioconda::gffread>=0.12.7
+

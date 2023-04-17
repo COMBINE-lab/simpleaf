@@ -14,9 +14,9 @@ pub mod quant;
 pub use self::quant::map_and_quant;
 
 pub mod workflow;
-pub use self::workflow::{get_workflow_config, workflow};
+pub use self::workflow::{get_wokflow, list_workflows, refresh_protocol_estuary, run_workflow};
 
-use clap::{builder::ArgPredicate, ArgGroup, Subcommand};
+use clap::{builder::ArgPredicate, ArgGroup, Args, Subcommand};
 use std::path::PathBuf;
 
 /// The type of references we might create
@@ -306,17 +306,34 @@ pub enum Commands {
         #[arg(short = 'r', long)]
         pyroe: Option<PathBuf>,
     },
+    /// simpleaf workflow related command set
+    Workflow(WorkflowArgs),
+}
 
-    // TODO: find a way to keep the protocol estuary up-to-date
+#[derive(Debug, Args)]
+#[command(args_conflicts_with_subcommands = true)]
+pub struct WorkflowArgs {
+    #[command(subcommand)]
+    pub command: WorkflowCommands,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum WorkflowCommands {
+    /// Print a summary of the currently available workflows.
+    List {},
+
+    /// Update the local copy of protocol esturary to the latest version.
+    Refresh {},
+
     #[command(arg_required_else_help = true)]
-    /// get the workflow configuration files of a published workflow from protocol estuary (https://github.com/COMBINE-lab/protocol-estuary).
-    GetWorkflowConfig {
-        /// path to output configuration file, the directory will be created if it doesn't exist
-        #[arg(short, long, requires = "name", help_heading = "Get Config Files")]
+    /// Get the workflow template and related files of a registered workflow.
+    Get {
+        /// path to dump the folder containing the workflow related files.
+        #[arg(short, long, requires = "name")]
         output: PathBuf,
 
         /// name of the queried workflow.
-        #[arg(short, long, help_heading = "Get Config Files")]
+        #[arg(short, long)]
         name: String,
         // only write the essential information without any instructions
         // #[arg(short, long)]
@@ -324,11 +341,11 @@ pub enum Commands {
     },
 
     #[command(arg_required_else_help = true)]
-    /// parse the input configuration/workflow files and execute the corresponding workflow(s).
-    Workflow {
-        /// path to a simpleaf workflow configuration file.
+    /// Parse an instantiated workflow template and invoke the workflow commands.
+    Run {
+        /// path to an instantiated simpleaf workflow template.
         #[arg(short, long, display_order = 1)]
-        config_path: PathBuf,
+        template: PathBuf,
 
         /// output directory for log files and the workflow outputs that have no explicit output directory.
         #[arg(short, long, display_order = 2)]
@@ -366,9 +383,26 @@ pub enum Commands {
         )]
         resume: bool,
 
-        /// comma separated library search paths when processing the (custom) workflow configuration file. (right-most wins)
-        #[arg(short, long, display_order = 6, value_delimiter = ',')]
-        lib_paths: Option<Vec<PathBuf>>,
+        /// comma separated library search paths passing to internal Jsonnet engine as --jpath flags.
+        #[arg(
+            short,
+            long,
+            display_order = 6,
+            value_delimiter = ',',
+            help_heading = "Jsonnet"
+        )]
+        jpaths: Option<Vec<PathBuf>>,
+
+        /// comma separated string passing to internal Jsonnet engine as --ext-code flags.
+        #[arg(
+            short,
+            long,
+            display_order = 6,
+            value_delimiter = ',',
+            help_heading = "Jsonnet",
+            hide = true
+        )]
+        ext_codes: Option<Vec<String>>,
 
         /// comma separated integers indicating which steps (commands) will be skipped during the execution.
         #[arg(
