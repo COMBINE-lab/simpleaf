@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.13.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.12.0...v0.13.0) (2023-04-17)
+
+
+### Features
+
+* simpleaf workflow refresh + display version in simpleaf workflow list ([c07bf99](https://github.com/COMBINE-lab/simpleaf/commit/c07bf993881d7977fcfa4ecab36c85e0dead6994))
+
+
+### Bug Fixes
+
+* change force update protocols estuary to an enum ([b2a7e8f](https://github.com/COMBINE-lab/simpleaf/commit/b2a7e8fd2afae7dbb44f34ad43e00b7a32f0d735))
+* improve workflow list and add --ext-codes flag to workflow run ([a389e7f](https://github.com/COMBINE-lab/simpleaf/commit/a389e7f386995731b8321a1511c6ed2cadbbc1ac))
+
 ## [0.12.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.11.1...v0.12.0) (2023-04-10)
 
 
