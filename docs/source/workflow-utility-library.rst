@@ -29,7 +29,7 @@ This function combines two `recommended main sections <https://combine-lab.githu
 
 When merging the two main sections, the function will
 1. bring all arguments in the nested layers of any simpleaf command record to the same layer as the identity fields of that record live.
-2. merge the two sections and bring the subfields of the merged section to the root layer (same layer as these two main sections), and remove the two sections because they are empty.  
+2. merge the two sections and moving the subfields of the merged section out to the root layer (same layer as these two main sections), and remove these two sections because they are empty after moving.  
 
 add_meta_args(o)
 """"""""""""""""""""""""""""""""""""""""""""""
@@ -38,7 +38,7 @@ add_meta_args(o)
 
 **Output**: The same object but with additional ``--threads``, ``--output``, and ``--use-piscem`` fields added to its simpleaf command records if applicable. 
 
-This function finds the meta-variables, if any, defined in the *meta_info* section and the build-in variables passed by *simpleaf* and assigns additional arguments to all qualified simpleaf command records if applicable. One example can be found in our `tutorial <https://combine-lab.github.io/alevin-fry-tutorials/2023/build-simpleaf-workflow/#:~:text=workflow%20manifest.-,For%20example,-%2C%20if%20we%20pass>`_. Currently, this function can process three meta-variables:
+This function finds the meta-variables, if any, defined in the *meta_info* main section and the build-in variables passed by *simpleaf* and assigns additional arguments to all qualified simpleaf command records if applicable. One example can be found in our `tutorial <https://combine-lab.github.io/alevin-fry-tutorials/2023/build-simpleaf-workflow/#:~:text=workflow%20manifest.-,For%20example,-%2C%20if%20we%20pass>`_. Currently, this function can process three meta-variables:
 
 - *threads*: if the *threads* meta-variable is valid (it exists and is not *null*), all simpleaf command records will be assigned a ``--threads`` field with this value if, for this command, ``--threads`` is a valid argument but it does not exist in the command record.
 - *use-piscem*: if the *use-piscem* meta-variable is valid, all simpleaf command records will be assigned a ``--use-piscem`` field with this value if, for this command, ``--use-piscem`` is a valid flag but missing.
@@ -56,8 +56,8 @@ This function automatically adds the ``--index`` flag field to qualified *simple
 This function does the following steps:
 
 1. It traverses the given workflow object to find all fields with a *simpleaf_index* and a *simpleaf_quant* sub-field.
-2. For each pair found in step 1, it checks if the *simpeaf_index* field has a ``--output`` valid subfield and if the *simpleaf_quant* field misses the ``--index`` and ``--map-dir`` field. 
-3. for each pair satisfied the criteria in step 2, it adds a ``--index`` sub-field to the *simpleaf_quant* field, by appending a */index* to the value of the ``--output`` subfield in *simpleaf_index*. 
+2. For each field with the desired sub-fields found in step 1, it checks if its *simpeaf_index* has a ``--output`` valid field and if its *simpleaf_quant* misses the ``--index`` and ``--map-dir`` field. 
+3. for each *simpeaf_index* and *simpeaf_quant* field pair satisfied the criteria in step 2, it adds a ``--index`` field to that *simpleaf_quant*, by appending a */index* to the value of the ``--output`` field in the corresponding *simpleaf_index*. 
 
 For example, if we run the following Jsonnet program,
 
@@ -91,13 +91,13 @@ we will get the following JSON configuration:
 get(o, f, use_default = false, default = null)
 """"""""""""""""""""""""""""""""""""""""""""""
 
-**Input**: o: an object, f: a field name, use_default: boolean, default: any valid type
+**Input**: o: an object, f: the target field name, use_default: boolean, default: any valid type
 
-**Output**: Return the field if the object has a field with the name indicated by *f*. Otherwise,
+**Output**: Return the target field *f* in the given object if the object has a sub-field called *f*. Otherwise,
   - if *use_default* is *true*, return the value of the *default* argument (defualtly *null*).
   - if *use_default* is false, raise an error.
 
-This function tries to get a field in the provided object and return it. If the field doesn't exist, then it either returns a default value or raises an error.
+This function tries to (non-recursively) get a sub-field in the provided object and return it. If the field doesn't exist, then it either returns a default value or raises an error.
 
 Simpleaf Program Arguments
 ''''''''''''''''''''''''''
@@ -152,7 +152,7 @@ check_invalid_args(o, path = "")
 
 **Output**: If all simpleaf arguments are valid, the original object will be returned. Otherwise, an error will be raised.
 
-This function traverses the given object to find simpleaf command records. If the records contain invalid fields that neither represents an argument of the simpleaf program nor an identity field, an error will be raised. If no simpleaf command record contains invalid fields, the original object will be returned. However, we do not recommend validating simpleaf commands in any template because when parsing the resulting workflow manifest, simpleaf itself will validate all simpleaf commands and return clear error messages if encountering invalid command records.
+This function traverses the given object to find simpleaf command records. If the records contain invalid fields that are neither a simpleaf flag field nor an identity field, an error will be raised. If no simpleaf command record contains invalid fields, the original object will be returned. However, we do not recommend validating simpleaf commands in any template because when parsing the resulting workflow manifest, simpleaf itself will validate all simpleaf commands and return clear error messages if encountering invalid command records.
 
 get_recommended_args(o)
 """"""""""""""""""""""""""""""""""""""""""""""
@@ -170,4 +170,4 @@ get_missing_args(o)
 
 **Output**: An object with the same layout as the original object but only contains the missing fields with a `null`.
 
-This function will recursively traverse the object to find all fields with a null value and return those fields as the layout of the original object.
+This function will recursively traverse the object to find all fields with a null value and return those fields in the same layout as the original object.
