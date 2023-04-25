@@ -3,6 +3,31 @@ Simpleaf workflow utility library
 
 To ease the development of *simpleaf*workflow templates, the *simpleaf* team provides not only some `built-in variables <https://combine-lab.github.io/alevin-fry-tutorials/2023/build-simpleaf-workflow/#:~:text=4.%20Utilizing%20built%2Din%20variables%20and%20custom%20library%20search%20paths%20in%20custom%20templates>`_, but also a workflow utility library, which will be automatically passed to the `internal Jsonnet engine <https://github.com/CertainLach/jrsonnet>` of *simpleaf* when parsing a workflow template as the ``__utils`` external variable. One can receive this variable in their templates by adding ``utils=std.extVar("__utils")``, and use the functions in the utility library by calling ``utils.function_name(args)``, where *function_name* should be replaced by an actual function name listed below. To be consistent with the `Jsonnet official documentation <https://jsonnet.org/ref/stdlib.html>`_, here we will list the function signatures with a brief description. One can find the function definitions on `this page <https://github.com/COMBINE-lab/protocol-estuary/blob/main/utils/simpleaf_workflow_utils.libsonnet>`_. 
 
+Import the utility library
+''''''''''''''''''''''''''
+
+As the built-in variables are provided by *simpleaf* to its intenal Jsonnet engine, they will be unavailable if we want to parse the template directly using Jsonnet or Jrsonnet. Therefore, when debugging templates which utilize the utility library with an external Jsonnet engine, we must manually provide the ``__utils`` external variable to Jsonnet, and either copy and paste the library file to the same directory as the template file, which is the default library searching path when calling jsonnet or provide the directory containing the library as an additional library searching path. Althought in the following code chunk we show the code for both ways, we just need to select one in practice. 
+
+.. code-block:: console
+
+    # we either copy the library file to the same dir as the template
+    copy $ALEVIN_FRY_HOME/protocol-estuary/protocol-estuary-main/utils/simpleaf_workflow_utils.libsonnet .
+    
+    # or provide the directory as an addtional library searching path via --jpath 
+    jsonnet a_template_using_utils_lib.jsonnet --ext-code '__utils=import "simpleaf_workflow_utils.libsonnet"' --jpath "$ALEVIN_FRY_HOME/protocol-estuary/protocol-estuary-main/utils"
+
+where ``--ext-code`` is the flag for passing an external variable, and ``--jpath`` specifies the library searching path.  
+
+Although *simpleaf* automatically provides the utility library as the external variable `__utils`, we must receive this external variable in our template before starting using the functions provided in this library. 
+
+To do this, we recommend adding the following code at the beginning of your workflow template.
+
+.. code-block:: console
+
+    local utils=std.extVar("__utils");
+
+Of course, instead of ``utils``, you can receive this library as a different name such as ``local the_best_utility_library_ever=std.extVar("__utils");`` or something similar. If you do this, you should use the name you assigned to the library instead of ``utils.`` when calling the functions. 
+
 Terminology
 ''''''''''''''''''''''''''
 - `Simpleaf command record <https://combine-lab.github.io/alevin-fry-tutorials/2023/build-simpleaf-workflow/#:~:text=Define%20a%20basic%20workflow%20template>`_: a sub-object in an object that has required identify fields, *Program Name* and *Step*, and the *Program Name* represents one of the simpleaf commands.
@@ -18,7 +43,7 @@ Terminology
 Frequently Used Functions
 '''''''''''''''''''''''''''''''''''''''''''
 
-combine_main_sections(o)
+utils.combine_main_sections(o)
 """"""""""""""""""""""""""""""""""""""""""""""
 
 **Input**: o: an object
@@ -31,7 +56,7 @@ When merging the two main sections, the function will
 1. bring all arguments in the nested layers of any simpleaf command record to the same layer as the identity fields of that record live.
 2. merge the two sections and moving the subfields of the merged section out to the root layer (same layer as these two main sections), and remove these two sections because they are empty after moving.  
 
-add_meta_args(o)
+utils.add_meta_args(o)
 """"""""""""""""""""""""""""""""""""""""""""""
 
 **Input**: an object
@@ -44,8 +69,8 @@ This function finds the meta-variables, if any, defined in the *meta_info* main 
 - *use-piscem*: if the *use-piscem* meta-variable is valid, all simpleaf command records will be assigned a ``--use-piscem`` field with this value if, for this command, ``--use-piscem`` is a valid flag but missing.
 -  For *output*, it will first decide the actual output directory: if the *output* meta-variable is valid, this value will be used. Otherwise, the `__output` `built-in variable <https://combine-lab.github.io/alevin-fry-tutorials/2023/build-simpleaf-workflow/#:~:text=4.%20Utilizing%20built%2Din%20variables%20and%20custom%20library%20search%20paths%20in%20custom%20templates>`_ will be used. All simpleaf command records will be assigned a ``--output`` field with the actual output directory if, for this command, ``--use-piscem`` is a valid flag but is missing. 
 
-add_index_dir_for_simpleaf_index_quant_combo(o)
-"""""""""""""""""""""""""""""""""""""""""""""""
+utils.add_index_dir_for_simpleaf_index_quant_combo(o)
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 **Input**: o: an object
 
@@ -88,8 +113,8 @@ we will get the following JSON configuration:
     utils.add_index_dir_for_simpleaf_index_quant_combo(o)
 
 
-get(o, f, use_default = false, default = null)
-""""""""""""""""""""""""""""""""""""""""""""""
+utils.get(o, f, use_default = false, default = null)
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 **Input**: o: an object, f: the target field name, use_default: boolean, default: any valid type
 
@@ -104,7 +129,7 @@ Simpleaf Program Arguments
 This section lists the arguments of *simpleaf* command arguments for programs that are supported in *simpleaf workflow*. Usually, these fields are used for obtaining and validating the fields included in a command record. Details about a command record can be found in `protocol estuary <https://combine-lab.github.io/alevin-fry-tutorials/2023/build-simpleaf-workflow/#:~:text=There%20are%20three%20identity%20fields.>`_.
 
 utils.SimpleafPrograms["simpleaf index"]
-"""""""""""""""""""""""""""""""""""""""""
+"""""""""""""""""""""""""""""""""""""""""""""
 This field contains all command line flags of the *simpleaf index* command. Furthermore, it also includes the identity fields, *Program Name*, *Step*, and *Active*.
 
 utils.SimpleafPrograms["simpleaf quant"]
@@ -114,7 +139,7 @@ This field contains all command line flags of the *simpleaf quant* command. Furt
 Helper Functions
 ''''''''''''''''''''''''''''''''''''''''''''
 
-flat_arg_groups(o, path = "")
+utils.flat_arg_groups(o, path = "")
 """"""""""""""""""""""""""""""""""""""""""""""
 
 **Input**: o: an object
@@ -123,7 +148,7 @@ flat_arg_groups(o, path = "")
 
 The *combine_main_sections* function calls this function internally. When merging the two main sections, the function will bring all arguments in the nested layers of any simpleaf command record to the same layer as the identity fields of that record live. See our example on `setting the path for showing trajectory <https://github.com/COMBINE-lab/protocol-estuary/blob/17bfb476eaf5216f195876e385f19eade37d7dc3/utils/simpleaf_workflow_utils.libsonnet#L292>`_.
 
-recursive_get(o, target_name, path = "")
+utils.recursive_get(o, target_name, path = "")
 """"""""""""""""""""""""""""""""""""""""""""""
 
 **Input**: o: an object, target_name: name of the field to look for, path: trajectory path to the object if the object lives in a nested layer
@@ -132,7 +157,7 @@ recursive_get(o, target_name, path = "")
 
 This function recursively traverses the object to find the field with the target name. If it finds it, it will return the value of the field. If not, it will return a *null*. See our example on `setting the path for showing trajectory <https://github.com/COMBINE-lab/protocol-estuary/blob/17bfb476eaf5216f195876e385f19eade37d7dc3/utils/simpleaf_workflow_utils.libsonnet#L292>`_.
 
-get_output(o)
+utils.get_output(o)
 """"""""""""""""""""""""""""""""""""""""""""""
 
 **Input**: o: an object
@@ -145,7 +170,7 @@ This function checks two places to decide the output directory and return it as 
 
 If the meta-variable is valid, it will be the return value of this function. Otherwise, the built-in variable will be the return value. Notice that if a template uses this function to parse the template out of *simpleaf*, for example, using *jsonnet* or *jrsonnet*, one must manually provide the *__output* variable by doing something like ``jsonnet template.jsonnet --ext-code "__output='/path/to/a/directory'"``.
 
-check_invalid_args(o, path = "")
+utils.check_invalid_args(o, path = "")
 """"""""""""""""""""""""""""""""""""""""""""""
 
 **Input**: o: an object, path: trajectory path to the object if the object lives in a nested layer
@@ -154,7 +179,7 @@ check_invalid_args(o, path = "")
 
 This function traverses the given object to find simpleaf command records. If the records contain invalid fields that are neither a simpleaf flag field nor an identity field, an error will be raised. If no simpleaf command record contains invalid fields, the original object will be returned. However, we do not recommend validating simpleaf commands in any template because when parsing the resulting workflow manifest, simpleaf itself will validate all simpleaf commands and return clear error messages if encountering invalid command records.
 
-get_recommended_args(o)
+utils.get_recommended_args(o)
 """"""""""""""""""""""""""""""""""""""""""""""
 
 **Input**: o: an object
@@ -163,7 +188,7 @@ get_recommended_args(o)
 
 This function will recursively traverse the *Recommended Configuration* main section to find all fields with a null value and return those fields as the original layout of *Recommended Configuration*.
 
-get_missing_args(o)
+utils.get_missing_args(o)
 """"""""""""""""""""""""""""""""""""""""""""""
 
 **Input**: o: an object
