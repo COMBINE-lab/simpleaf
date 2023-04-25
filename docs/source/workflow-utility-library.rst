@@ -6,13 +6,16 @@ To ease the development of *simpleaf*workflow templates, the *simpleaf* team pro
 Import the utility library
 ''''''''''''''''''''''''''
 
-As the built-in variables are provided by *simpleaf* to its intenal Jsonnet engine, they will be unavailable if we want to parse the template directly using Jsonnet or Jrsonnet. Therefore, when debugging templates which utilize the utility library with an external Jsonnet engine, we must manually provide the ``__utils`` external variable to Jsonnet, and either copy and paste the library file to the same directory as the template file, which is the default library searching path when calling jsonnet or provide the directory containing the library as an additional library searching path. Althought in the following code chunk we show the code for both ways, we just need to select one in practice. 
+As the built-in variables are provided by *simpleaf* to its intenal Jsonnet engine, they will be unavailable if we want to parse the template directly using Jsonnet or Jrsonnet. Therefore, when debugging templates which utilize the utility library with an external Jsonnet engine, we must manually provide the ``__utils`` external variable to Jsonnet, and either copy and paste the library file to the same directory as the template file, which is the default library searching path when calling jsonnet or provide the directory containing the library as an additional library searching path. Althought in the following code chunk we show the code for both ways, we just need to select one in practice. Here we assume that *simpleaf* has been configured correctly, i.e., the ``ALEVIN_FRY_HOME`` env variable has been set and a local copy of the protocol-esturary exists. If not, one can directly obtain the library file from its GitHub repository.
 
-.. code-block:: console
+.. code-block:: shell
 
-    # we either copy the library file to the same dir as the template
-    copy $ALEVIN_FRY_HOME/protocol-estuary/protocol-estuary-main/utils/simpleaf_workflow_utils.libsonnet .
+    # If we haven't set up simpleaf, we pull the file directly from github
+    wget https://github.com/COMBINE-lab/protocol-estuary/blob/main/utils/simpleaf_workflow_utils.libsonnet
     
+    # Otherwise, we either copy the library file to the same dir as the template
+    copy $ALEVIN_FRY_HOME/protocol-estuary/protocol-estuary-main/utils/simpleaf_workflow_utils.libsonnet .
+
     # or provide the directory as an addtional library searching path via --jpath 
     jsonnet a_template_using_utils_lib.jsonnet --ext-code '__utils=import "simpleaf_workflow_utils.libsonnet"' --jpath "$ALEVIN_FRY_HOME/protocol-estuary/protocol-estuary-main/utils"
 
