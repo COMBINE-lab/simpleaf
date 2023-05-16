@@ -80,7 +80,7 @@ pub fn parse_jsonnet(
     // af_home_dir
     let jpath_pe_utils = utils_dir
         .to_str()
-        .with_context(||format!(" not convert Protocol Estuarys path to str: {:?}", utils_dir))?;
+        .with_context(||format!("Could not convert Protocol Estuarys path to str: {:?}", utils_dir))?;
 
     // create command vector for clap parser
     let mut jrsonnet_cmd_vec = vec![
