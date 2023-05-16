@@ -3,56 +3,59 @@
 
 use anyhow::{anyhow, Context};
 use clap::Parser;
-use jrsonnet_cli::{ConfigureState, GeneralOpts, ManifestOpts, OutputOpts, TraceOpts};
+use jrsonnet_cli::{ManifestOpts, OutputOpts, StdOpts, TlaOpts, TraceOpts};
 use jrsonnet_evaluator::{
-    apply_tla,
-    error::{Error as JrError, ErrorKind},
-    State,
+	apply_tla,
+	error::{Error as JrError, ErrorKind},
+	State
 };
 use std::path::{Path, PathBuf};
+
 
 #[derive(Parser)]
 #[command(next_help_heading = "DEBUG")]
 struct DebugOpts {
-    /// Required OS stack size.
-    /// This shouldn't be changed unless jrsonnet is failing with stack overflow error.
-    #[arg(long, id = "size")]
-    pub os_stack: Option<usize>,
+	/// Required OS stack size.
+	/// This shouldn't be changed unless jrsonnet is failing with stack overflow error.
+	#[arg(long, id = "size")]
+	pub os_stack: Option<usize>,
 }
 
 #[derive(Parser)]
 #[command(next_help_heading = "INPUT")]
 struct InputOpts {
-    /// Treat input as code, evaluate them instead of reading file
-    #[arg(long, short = 'e')]
-    pub exec: bool,
+	/// Treat input as code, evaluate them instead of reading file
+	#[arg(long, short = 'e')]
+	pub exec: bool,
 
-    /// Path to the file to be compiled if `--evaluate` is unset, otherwise code itself
-    pub input: Option<String>,
+	/// Path to the file to be compiled if `--evaluate` is unset, otherwise code itself
+	pub input: Option<String>,
 }
 
 /// Jsonnet commandline interpreter (Rust implementation)
 #[derive(Parser)]
 #[command(
-    args_conflicts_with_subcommands = true,
-    disable_version_flag = true,
-    version,
-    author
+	args_conflicts_with_subcommands = true,
+	disable_version_flag = true,
+	version,
+	author
 )]
 struct Opts {
-    #[clap(flatten)]
-    input: InputOpts,
-    #[clap(flatten)]
-    general: GeneralOpts,
+	#[clap(flatten)]
+	input: InputOpts,
+	#[clap(flatten)]
+	tla: TlaOpts,
+	#[clap(flatten)]
+	std: StdOpts,
 
-    #[clap(flatten)]
-    trace: TraceOpts,
-    #[clap(flatten)]
-    manifest: ManifestOpts,
-    #[clap(flatten)]
-    output: OutputOpts,
-    #[clap(flatten)]
-    debug: DebugOpts,
+	#[clap(flatten)]
+	trace: TraceOpts,
+	#[clap(flatten)]
+	manifest: ManifestOpts,
+	#[clap(flatten)]
+	output: OutputOpts,
+	#[clap(flatten)]
+	debug: DebugOpts,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -131,36 +134,34 @@ pub fn parse_jsonnet(
 
 #[derive(thiserror::Error, Debug)]
 enum Error {
-    // Handled differently
-    #[error("evaluation error")]
-    Evaluation(JrError),
-    #[error("io error")]
-    Io(#[from] std::io::Error),
-    #[error("input is not utf8 encoded")]
-    Utf8(#[from] std::str::Utf8Error),
-    #[error("missing input argument")]
-    MissingInputArgument,
+	// Handled differently
+	#[error("evaluation error")]
+	Evaluation(JrError),
+	#[error("io error")]
+	Io(#[from] std::io::Error),
+	#[error("input is not utf8 encoded")]
+	Utf8(#[from] std::str::Utf8Error),
+	#[error("missing input argument")]
+	MissingInputArgument,
     #[error("Evaluated empty JSON record")]
     EmptyJSON,
 }
 impl From<JrError> for Error {
-    fn from(e: JrError) -> Self {
-        Self::Evaluation(e)
-    }
+	fn from(e: JrError) -> Self {
+		Self::Evaluation(e)
+	}
 }
 impl From<ErrorKind> for Error {
-    fn from(e: ErrorKind) -> Self {
-        Self::from(JrError::from(e))
-    }
+	fn from(e: ErrorKind) -> Self {
+		Self::from(JrError::from(e))
+	}
 }
 
 fn main_catch(opts: Opts) -> anyhow::Result<String> {
-    let s = State::default();
-    let trace = opts
-        .trace
-        .configure(&s)
-        .expect("this configurator doesn't fail");
+	let s = State::default();
+	let trace = opts.trace.trace_format();
     match main_real(&s, opts) {
+
         Ok(js) => Ok(js),
         Err(e) => {
             if let Error::Evaluation(e) = e {
@@ -175,17 +176,22 @@ fn main_catch(opts: Opts) -> anyhow::Result<String> {
                 ))
             }
         }
-    }
+	}
 }
 
 fn main_real(s: &State, opts: Opts) -> Result<String, Error> {
-    let (tla, _gc_guard) = opts.general.configure(s)?;
-    let manifest_format = opts.manifest.configure(s)?;
+	let std = opts.std.context_initializer(s)?;
+	if let Some(std) = std {
+		s.set_context_initializer(std);
+	}
 
-    let input = opts.input.input.ok_or(Error::MissingInputArgument)?;
-    let val = s.import(input)?;
+	let input = opts.input.input.ok_or(Error::MissingInputArgument)?;
+	let val = s.import(&input)?;
 
-    let val = apply_tla(s.clone(), &tla, val)?;
+	let tla = opts.tla.tla_opts()?;
+	let val = apply_tla(s.clone(), &tla, val)?;
+
+	let manifest_format = opts.manifest.manifest_format();
 
     let output = val.manifest(manifest_format)?;
     if !output.is_empty() {
@@ -193,4 +199,5 @@ fn main_real(s: &State, opts: Opts) -> Result<String, Error> {
     } else {
         Err(Error::EmptyJSON)
     }
+
 }
