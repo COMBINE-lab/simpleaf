@@ -124,7 +124,7 @@ enum Error {
     // Handled differently
     #[error("evaluation error")]
     Evaluation(JrError),
-    #[error("io error")]
+    #[error("IO error")]
     Io(#[from] std::io::Error),
     #[error("input is not utf8 encoded")]
     Utf8(#[from] std::str::Utf8Error),
