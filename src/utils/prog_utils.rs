@@ -59,6 +59,7 @@ pub fn get_cmd_line_string(prog: &std::process::Command) -> String {
 }
 
 pub enum CommandVerbosityLevel {
+    #[allow(dead_code)]
     Verbose,
     Quiet,
 }
@@ -138,6 +139,7 @@ pub struct ReqProgs {
     pub pyroe: Option<ProgInfo>,
 }
 
+#[allow(dead_code)]
 pub fn check_version_constraints<S1: AsRef<str>>(
     prog_name: &str,
     req_string: S1,

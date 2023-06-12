@@ -76,7 +76,7 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
 
             // if we are generating a splici reference
             if let (Some(fasta), Some(gtf)) = (fasta, gtf) {
-                let mut input_files = vec![fasta.clone(), gtf.clone()];
+                let input_files = vec![fasta.clone(), gtf.clone()];
 
                 let aug_type = match ref_type {
                     ReferenceType::SplicedIntronic => {
@@ -97,7 +97,7 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
                     genes: gtf.clone(),
                     /// The path to the output directory (will be created if it doesn't exist).
                     out_dir: outref.clone(),
-                    aug_type: aug_type,
+                    aug_type,
                     no_transcript: false,
                     read_length: rlen.unwrap_or(91) as i64,
                     flank_trim_length: 5_i64,
