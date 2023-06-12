@@ -72,6 +72,7 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
             // mutable.
             let mut splici_t2g = None;
             let mut roers_duration = None;
+            let mut roers_aug_ref_opt = None;
             //let pyroe_cmd_string: String;
 
             // if we are generating a splici reference
@@ -79,14 +80,10 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
                 let input_files = vec![fasta.clone(), gtf.clone()];
 
                 let aug_type = match ref_type {
-                    ReferenceType::SplicedIntronic => {
-                        Some(vec![roers::AugType::Intronic])
-                    },
-                    ReferenceType::SplicedUnspliced => {
-                        Some(vec![roers::AugType::GeneBody])
-                    }
+                    ReferenceType::SplicedIntronic => Some(vec![roers::AugType::Intronic]),
+                    ReferenceType::SplicedUnspliced => Some(vec![roers::AugType::GeneBody]),
                 };
-         
+
                 let outref = output.join("ref");
                 run_fun!(mkdir -p $outref)?;
 
@@ -104,10 +101,12 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
                     no_flanking_merge: false,
                     filename_prefix: String::from("roers_ref"),
                     dedup_seqs: dedup,
-                    extra_spliced: spliced.clone(), 
+                    extra_spliced: spliced.clone(),
                     extra_unspliced: unspliced.clone(),
                     gff3: false,
                 };
+
+                roers_aug_ref_opt = Some(roers_opts.clone());
 
                 let ref_file = outref.join("roers_ref.fa");
                 let t2g_file = outref.join("t2g_3col.tsv");
@@ -364,7 +363,7 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
                         "index_time" : index_duration
                     },
                     "cmd_info" : {
-                        "roers_cmd" : "NA",
+                        "roers_cmd" : roers_aug_ref_opt,
                         "index_cmd" : index_cmd_string,                    }
                 })
             } else {

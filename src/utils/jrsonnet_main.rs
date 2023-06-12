@@ -26,15 +26,14 @@ struct InputOpts {
 struct Opts {
     #[clap(flatten)]
     input: InputOpts,
-	#[clap(flatten)]
-	misc: MiscOpts,
+    #[clap(flatten)]
+    misc: MiscOpts,
     #[clap(flatten)]
     tla: TlaOpts,
     #[clap(flatten)]
     std: StdOpts,
-	#[clap(flatten)]
-	gc: GcOpts,
-
+    #[clap(flatten)]
+    gc: GcOpts,
 
     #[clap(flatten)]
     trace: TraceOpts,
@@ -70,17 +69,23 @@ pub fn parse_jsonnet(
     // define jrsonnet arguments
     // config file
     let instantiated = template_state.is_instantiated();
-    let input_config_file_path = config_file_path
-        .to_str()
-        .with_context(||format!("Could not convert workflow config file path to str: {:?}", config_file_path))?;
+    let input_config_file_path = config_file_path.to_str().with_context(|| {
+        format!(
+            "Could not convert workflow config file path to str: {:?}",
+            config_file_path
+        )
+    })?;
     let ext_output = format!(r#"__output='{}'"#, output.display());
     let ext_utils_file_path = r#"__utils=import 'simpleaf_workflow_utils.libsonnet'"#;
     let ext_instantiated = format!(r#"__instantiated='{}'"#, instantiated);
 
     // af_home_dir
-    let jpath_pe_utils = utils_dir
-        .to_str()
-        .with_context(||format!("Could not convert Protocol Estuarys path to str: {:?}", utils_dir))?;
+    let jpath_pe_utils = utils_dir.to_str().with_context(|| {
+        format!(
+            "Could not convert Protocol Estuarys path to str: {:?}",
+            utils_dir
+        )
+    })?;
 
     // create command vector for clap parser
     let mut jrsonnet_cmd_vec = vec![
@@ -166,13 +171,12 @@ fn main_catch(opts: Opts) -> anyhow::Result<String> {
 }
 
 fn main_real(s: &State, opts: Opts) -> Result<String, Error> {
-	let _gc_leak_guard = opts.gc.leak_on_exit();
-	let _gc_print_stats = opts.gc.stats_printer();
-	let _stack_depth_override = opts.misc.stack_size_override();
+    let _gc_leak_guard = opts.gc.leak_on_exit();
+    let _gc_print_stats = opts.gc.stats_printer();
+    let _stack_depth_override = opts.misc.stack_size_override();
 
-
-	let import_resolver = opts.misc.import_resolver();
-	s.set_import_resolver(import_resolver);
+    let import_resolver = opts.misc.import_resolver();
+    s.set_import_resolver(import_resolver);
 
     let std = opts.std.context_initializer(s)?;
     if let Some(std) = std {

@@ -2071,7 +2071,7 @@ checksum = "436b050e76ed2903236f032a59761c1eb99e1b0aead2c257922771dab1fc8c78"
 [[package]]
 name = "roers"
 version = "0.1.0"
-source = "git+https://github.com/COMBINE-lab/roers?branch=main#de4707a0df0c1316a802ada06d1ab10c9e900f16"
+source = "git+https://github.com/COMBINE-lab/roers?branch=main#038840cce02c88b44c48e31ded0f91127052ea2c"
 dependencies = [
  "anyhow",
  "clap",
@@ -2079,6 +2079,7 @@ dependencies = [
  "noodles",
  "peak_alloc",
  "polars",
+ "serde",
  "serde_json",
  "tracing",
  "tracing-subscriber",
