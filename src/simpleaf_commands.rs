@@ -89,7 +89,7 @@ pub enum Commands {
             requires = "fasta",
             conflicts_with = "ref_seq",
             default_value_t = 91,
-            hide_default_value = true,
+            hide_default_value = true
         )]
         rlen: i64,
 

@@ -157,7 +157,7 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
             }
 
             let ref_seq = reference_sequence.with_context(||
-                "Reference sequence should either be generated from --fasta by make-splici or set with --ref-seq",
+                "Reference sequence should either be generated from --fasta with reftype spliced+intronic / spliced+unspliced or set with --ref-seq",
             )?;
 
             let input_files = vec![ref_seq.clone()];
