@@ -15,7 +15,6 @@ pub fn set_paths(af_home_path: PathBuf, set_path_args: Commands) -> anyhow::Resu
             salmon,
             piscem,
             alevin_fry,
-            pyroe,
         } => {
             // create AF_HOME if needed
             if !af_home_path.as_path().is_dir() {
@@ -27,7 +26,7 @@ pub fn set_paths(af_home_path: PathBuf, set_path_args: Commands) -> anyhow::Resu
                 fs::create_dir_all(af_home_path.as_path())?;
             }
 
-            let rp = get_required_progs_from_paths(salmon, piscem, alevin_fry, pyroe)?;
+            let rp = get_required_progs_from_paths(salmon, piscem, alevin_fry)?;
 
             let have_mapper = rp.salmon.is_some() || rp.piscem.is_some();
             if !have_mapper {
@@ -35,9 +34,6 @@ pub fn set_paths(af_home_path: PathBuf, set_path_args: Commands) -> anyhow::Resu
             }
             if rp.alevin_fry.is_none() {
                 bail!("Suitable alevin_fry executable not found.");
-            }
-            if rp.pyroe.is_none() {
-                bail!("Suitable pyroe executable not found.");
             }
 
             let simpleaf_info_file = af_home_path.join("simpleaf_info.json");
