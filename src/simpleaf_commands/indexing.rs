@@ -19,6 +19,7 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
             ref_type,
             fasta,
             gtf,
+            gff3_format,
             rlen,
             spliced,
             unspliced,
@@ -37,12 +38,9 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
             // Read the JSON contents of the file as an instance of `User`.
             let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
-            // we are building a custom reference
-            // make sure that the spliced+unspliced reference
-            // is supported if that's what's being requested.
+            // we are building a custom spliced+intronic reference
+            // make sure that a read length is available / was provided.
             if fasta.is_some() && matches!(ref_type, ReferenceType::SplicedIntronic) {
-                // in this branch we are making a spliced+intronic (splici) index, so
-                // the user must have specified the read length.
                 if rlen.is_none() {
                     bail!(format!("A spliced+intronic reference was requested, but no read length argument (--rlen) was provided."));
                 }
@@ -73,7 +71,6 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
             let mut splici_t2g = None;
             let mut roers_duration = None;
             let mut roers_aug_ref_opt = None;
-            //let pyroe_cmd_string: String;
 
             // if we are generating a splici reference
             if let (Some(fasta), Some(gtf)) = (fasta, gtf) {
@@ -103,7 +100,7 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
                     dedup_seqs: dedup,
                     extra_spliced: spliced.clone(),
                     extra_unspliced: unspliced.clone(),
-                    gff3: false,
+                    gff3: gff3_format,
                 };
 
                 roers_aug_ref_opt = Some(roers_opts.clone());
@@ -150,7 +147,6 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
                 )
                 .with_context(|| format!("could not write {}", info_file.display()))?;
 
-                //pyroe_cmd_string = String::from("");
                 reference_sequence = ref_seq;
             }
 

@@ -136,7 +136,6 @@ pub struct ReqProgs {
     pub salmon: Option<ProgInfo>,
     pub piscem: Option<ProgInfo>,
     pub alevin_fry: Option<ProgInfo>,
-    pub pyroe: Option<ProgInfo>,
 }
 
 #[allow(dead_code)]
@@ -229,13 +228,11 @@ pub fn get_required_progs_from_paths(
     salmon_exe: Option<PathBuf>,
     piscem_exe: Option<PathBuf>,
     alevin_fry_exe: Option<PathBuf>,
-    pyroe_exe: Option<PathBuf>,
 ) -> Result<ReqProgs> {
     let mut rp = ReqProgs {
         salmon: None,
         piscem: None,
         alevin_fry: None,
-        pyroe: None,
     };
 
     // use the given path if we have it
@@ -290,15 +287,6 @@ pub fn get_required_progs_from_paths(
             }
         },
     };
-    let pyroe = match pyroe_exe {
-        Some(p) => p,
-        None => match get_which_executable("pyroe") {
-            Ok(p) => p,
-            Err(e) => {
-                return Err(e);
-            }
-        },
-    };
 
     if let Some(piscem) = opt_piscem {
         let st = piscem.display().to_string();
@@ -328,14 +316,6 @@ pub fn get_required_progs_from_paths(
         version: format!("{}", v),
     });
 
-    let st = pyroe.display().to_string();
-    let sr = run_fun!($st --version);
-    let v = check_version_constraints_from_output("pyroe", ">=0.9.0, <1.0.0", sr)?;
-    rp.pyroe = Some(ProgInfo {
-        exe_path: pyroe,
-        version: format!("{}", v),
-    });
-
     Ok(rp)
 }
 
@@ -346,9 +326,8 @@ pub fn get_required_progs() -> Result<ReqProgs> {
     let salmon_exe = Some(search_for_executable("SALMON", "salmon")?);
     let piscem_exe = Some(search_for_executable("PISCEM", "piscem")?);
     let alevin_fry_exe = Some(search_for_executable("ALEVIN_FRY", "alevin-fry")?);
-    let pyroe_exe = Some(search_for_executable("PYROE", "pyroe")?);
 
-    get_required_progs_from_paths(salmon_exe, piscem_exe, alevin_fry_exe, pyroe_exe)
+    get_required_progs_from_paths(salmon_exe, piscem_exe, alevin_fry_exe)
 }
 
 pub fn check_files_exist(file_vec: &[PathBuf]) -> Result<()> {

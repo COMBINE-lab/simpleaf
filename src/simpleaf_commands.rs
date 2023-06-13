@@ -60,7 +60,7 @@ pub enum Commands {
               conflicts_with = "ref_seq")]
         fasta: Option<PathBuf>,
 
-        /// reference GTF file to be used for the expanded reference construction
+        /// reference GTF/GFF3 file to be used for the expanded reference construction
         #[arg(
             short,
             long,
@@ -71,29 +71,33 @@ pub enum Commands {
         )]
         gtf: Option<PathBuf>,
 
+        /// denotes that the input annotation is a GFF3 (instead of GTF) file
+        #[arg(long, display_order = 4, requires = "fasta", conflicts_with = "ref_seq")]
+        gff3_format: bool,
+
         /// the target read length the splici index will be built for
         #[arg(
             short,
             long,
             help_heading = "Expanded Reference Options",
-            display_order = 4,
+            display_order = 5,
             requires = "fasta",
             conflicts_with = "ref_seq"
         )]
         rlen: Option<u32>,
 
-        /// deduplicate identical sequences in pyroe when building an expanded reference  reference
+        /// deduplicate identical sequences in roers when building an expanded reference  reference
         #[arg(
             long = "dedup",
             help_heading = "Expanded Reference Options",
-            display_order = 5,
+            display_order = 6,
             requires = "fasta",
             conflicts_with = "ref_seq"
         )]
         dedup: bool,
 
         /// target sequences (provide target sequences directly; avoid expanded reference construction)
-        #[arg(long, alias = "refseq", help_heading = "Direct Reference Options", display_order = 6,
+        #[arg(long, alias = "refseq", help_heading = "Direct Reference Options", display_order = 7,
               conflicts_with_all = ["dedup", "unspliced", "spliced", "rlen", "gtf", "fasta"])]
         ref_seq: Option<PathBuf>,
 
@@ -101,7 +105,7 @@ pub enum Commands {
         #[arg(
             long,
             help_heading = "Expanded Reference Options",
-            display_order = 7,
+            display_order = 8,
             requires = "fasta",
             conflicts_with = "ref_seq"
         )]
@@ -111,7 +115,7 @@ pub enum Commands {
         #[arg(
             long,
             help_heading = "Expanded Reference Options",
-            display_order = 8,
+            display_order = 9,
             requires = "fasta",
             conflicts_with = "ref_seq"
         )]
@@ -302,9 +306,6 @@ pub enum Commands {
         /// path to alein-fry to use
         #[arg(short, long)]
         alevin_fry: Option<PathBuf>,
-        /// path to pyroe to use
-        #[arg(short = 'r', long)]
-        pyroe: Option<PathBuf>,
     },
     /// simpleaf workflow related command set
     Workflow(WorkflowArgs),
