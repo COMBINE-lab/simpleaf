@@ -43,9 +43,9 @@ pub enum Commands {
     /// build the (expanded) reference index
     #[command(arg_required_else_help = true)]
     #[command(group(
-             ArgGroup::new("reftype")
-             .required(true)
-             .args(["fasta", "ref_seq"])
+        ArgGroup::new("reftype")
+        .required(true)
+        .args(["fasta", "ref_seq"])
     ))]
     Index {
         /// specify whether an expanded reference, spliced+intronic (or splici) or spliced+unspliced (or spliceu), should be built
@@ -72,7 +72,12 @@ pub enum Commands {
         gtf: Option<PathBuf>,
 
         /// denotes that the input annotation is a GFF3 (instead of GTF) file
-        #[arg(long, display_order = 4, requires = "fasta", conflicts_with = "ref_seq")]
+        #[arg(
+            long,
+            display_order = 4,
+            requires = "fasta",
+            conflicts_with = "ref_seq"
+        )]
         gff3_format: bool,
 
         /// the target read length the splici index will be built for
@@ -82,9 +87,11 @@ pub enum Commands {
             help_heading = "Expanded Reference Options",
             display_order = 5,
             requires = "fasta",
-            conflicts_with = "ref_seq"
+            conflicts_with = "ref_seq",
+            default_value_t = 91,
+            hide_default_value = true,
         )]
-        rlen: Option<u32>,
+        rlen: i64,
 
         /// deduplicate identical sequences in roers when building an expanded reference  reference
         #[arg(

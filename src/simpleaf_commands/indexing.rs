@@ -40,11 +40,9 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
 
             // we are building a custom spliced+intronic reference
             // make sure that a read length is available / was provided.
-            if fasta.is_some() && matches!(ref_type, ReferenceType::SplicedIntronic) {
-                if rlen.is_none() {
-                    bail!(format!("A spliced+intronic reference was requested, but no read length argument (--rlen) was provided."));
-                }
-            }
+            // if fasta.is_some() && matches!(ref_type, ReferenceType::SplicedIntronic) && rlen.is_none() {
+            //     bail!(format!("A spliced+intronic reference was requested, but no read length argument (--rlen) was provided."));
+            // }
 
             let info_file = output.join("index_info.json");
             let mut index_info = json!({
@@ -76,13 +74,13 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
             if let (Some(fasta), Some(gtf)) = (fasta, gtf) {
                 let input_files = vec![fasta.clone(), gtf.clone()];
 
-                // the "transcript" (spliced transcriptome) is currently implicit 
-                // in roers, so we don't have to add that. If the user requested 
+                // the "transcript" (spliced transcriptome) is currently implicit
+                // in roers, so we don't have to add that. If the user requested
                 // a spliced+intronic (splici) transcriptome, then we also want introns
-                // whereas if they requested a spliced+unspliced (spliceu) transcriptome, 
-                // then we also want gene bodies. 
-                // TODO: Right now, there is not way in simpleaf, from the command line, 
-                // to specify `TranscriptBody` rather than `GeneBody`, think about if 
+                // whereas if they requested a spliced+unspliced (spliceu) transcriptome,
+                // then we also want gene bodies.
+                // TODO: Right now, there is not way in simpleaf, from the command line,
+                // to specify `TranscriptBody` rather than `GeneBody`, think about if
                 // we want to find a way to expose this.
                 let aug_type = match ref_type {
                     ReferenceType::SplicedIntronic => Some(vec![roers::AugType::Intronic]),
@@ -101,7 +99,7 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
                     out_dir: outref.clone(),
                     aug_type,
                     no_transcript: false,
-                    read_length: rlen.unwrap_or(91) as i64,
+                    read_length: rlen,
                     flank_trim_length: 5_i64, // not currently setable from the cmdline
                     no_flanking_merge: false, // not currently setable from the cmdline
                     filename_prefix: String::from("roers_ref"),
@@ -158,9 +156,9 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
                 reference_sequence = ref_seq;
             }
 
-            let ref_seq = reference_sequence.expect(
-                "reference sequence should either be generated from --fasta by make-splici or set with --ref-seq",
-            );
+            let ref_seq = reference_sequence.with_context(||
+                "Reference sequence should either be generated from --fasta by make-splici or set with --ref-seq",
+            )?;
 
             let input_files = vec![ref_seq.clone()];
             prog_utils::check_files_exist(&input_files)?;
