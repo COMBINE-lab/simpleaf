@@ -3,6 +3,7 @@ use crate::utils::prog_utils::{CommandVerbosityLevel, ReqProgs};
 
 use anyhow::{bail, Context};
 use cmd_lib::run_fun;
+use roers;
 use serde_json::json;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -18,6 +19,7 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
             ref_type,
             fasta,
             gtf,
+            gff3_format,
             rlen,
             spliced,
             unspliced,
@@ -36,28 +38,11 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
             // Read the JSON contents of the file as an instance of `User`.
             let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
-            // we are building a custom reference
-            if fasta.is_some() {
-                // make sure that the spliced+unspliced reference
-                // is supported if that's what's being requested.
-                match ref_type {
-                    ReferenceType::SplicedUnspliced => {
-                        let v = rp.pyroe.clone().unwrap().version;
-                        if let Err(e) =
-                            prog_utils::check_version_constraints("pyroe", ">=0.9.0, <1.0.0", &v)
-                        {
-                            bail!(e);
-                        }
-                    }
-                    ReferenceType::SplicedIntronic => {
-                        // in this branch we are making a spliced+intronic (splici) index, so
-                        // the user must have specified the read length.
-                        if rlen.is_none() {
-                            bail!(format!("A spliced+intronic reference was requested, but no read length argument (--rlen) was provided."));
-                        }
-                    }
-                }
-            }
+            // we are building a custom spliced+intronic reference
+            // make sure that a read length is available / was provided.
+            // if fasta.is_some() && matches!(ref_type, ReferenceType::SplicedIntronic) && rlen.is_none() {
+            //     bail!(format!("A spliced+intronic reference was requested, but no read length argument (--rlen) was provided."));
+            // }
 
             let info_file = output.join("index_info.json");
             let mut index_info = json!({
@@ -82,32 +67,52 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
             // these may or may not be set, so must be
             // mutable.
             let mut splici_t2g = None;
-            let mut pyroe_duration = None;
-            let pyroe_cmd_string: String;
+            let mut roers_duration = None;
+            let mut roers_aug_ref_opt = None;
 
             // if we are generating a splici reference
             if let (Some(fasta), Some(gtf)) = (fasta, gtf) {
-                let mut input_files = vec![fasta.clone(), gtf.clone()];
+                let input_files = vec![fasta.clone(), gtf.clone()];
+
+                // the "transcript" (spliced transcriptome) is currently implicit
+                // in roers, so we don't have to add that. If the user requested
+                // a spliced+intronic (splici) transcriptome, then we also want introns
+                // whereas if they requested a spliced+unspliced (spliceu) transcriptome,
+                // then we also want gene bodies.
+                // TODO: Right now, there is not way in simpleaf, from the command line,
+                // to specify `TranscriptBody` rather than `GeneBody`, think about if
+                // we want to find a way to expose this.
+                let aug_type = match ref_type {
+                    ReferenceType::SplicedIntronic => Some(vec![roers::AugType::Intronic]),
+                    ReferenceType::SplicedUnspliced => Some(vec![roers::AugType::GeneBody]),
+                };
 
                 let outref = output.join("ref");
                 run_fun!(mkdir -p $outref)?;
 
-                let read_len;
-                let ref_file;
-                let t2g_file;
+                let roers_opts = roers::AugRefOpts {
+                    /// The path to a genome fasta file.
+                    genome: fasta.clone(),
+                    /// The path to a gene annotation gtf/gff3 file.
+                    genes: gtf.clone(),
+                    /// The path to the output directory (will be created if it doesn't exist).
+                    out_dir: outref.clone(),
+                    aug_type,
+                    no_transcript: false,
+                    read_length: rlen,
+                    flank_trim_length: 5_i64, // not currently setable from the cmdline
+                    no_flanking_merge: false, // not currently setable from the cmdline
+                    filename_prefix: String::from("roers_ref"),
+                    dedup_seqs: dedup,
+                    extra_spliced: spliced.clone(),
+                    extra_unspliced: unspliced.clone(),
+                    gff3: gff3_format,
+                };
 
-                match ref_type {
-                    ReferenceType::SplicedIntronic => {
-                        read_len = rlen.unwrap();
-                        ref_file = format!("splici_fl{}.fa", read_len - 5);
-                        t2g_file = outref.join(format!("splici_fl{}_t2g_3col.tsv", read_len - 5));
-                    }
-                    ReferenceType::SplicedUnspliced => {
-                        read_len = 0;
-                        ref_file = String::from("spliceu.fa");
-                        t2g_file = outref.join("spliceu_t2g_3col.tsv");
-                    }
-                }
+                roers_aug_ref_opt = Some(roers_opts.clone());
+
+                let ref_file = outref.join("roers_ref.fa");
+                let t2g_file = outref.join("t2g_3col.tsv");
 
                 index_info["t2g_file"] = json!(&t2g_file);
                 index_info["args"]["fasta"] = json!(&fasta);
@@ -125,67 +130,15 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
                 // set the splici_t2g option
                 splici_t2g = Some(t2g_file);
 
-                let mut pyroe_cmd =
-                    std::process::Command::new(format!("{}", rp.pyroe.unwrap().exe_path.display()));
-                // select the command to run
-                match ref_type {
-                    ReferenceType::SplicedIntronic => {
-                        pyroe_cmd.arg("make-splici");
-                    }
-                    ReferenceType::SplicedUnspliced => {
-                        pyroe_cmd.arg("make-spliceu");
-                    }
-                };
-
-                // if the user wants to dedup output sequences
-                if dedup {
-                    pyroe_cmd.arg(String::from("--dedup-seqs"));
-                }
-
-                // extra spliced sequence
-                if let Some(es) = spliced {
-                    pyroe_cmd.arg(String::from("--extra-spliced"));
-                    pyroe_cmd.arg(format!("{}", es.display()));
-                    input_files.push(es);
-                }
-
-                // extra unspliced sequence
-                if let Some(eu) = unspliced {
-                    pyroe_cmd.arg(String::from("--extra-unspliced"));
-                    pyroe_cmd.arg(format!("{}", eu.display()));
-                    input_files.push(eu);
-                }
-
-                pyroe_cmd.arg(fasta).arg(gtf);
-
-                // if making splici the second positional argument is the
-                // read length.
-                if let ReferenceType::SplicedIntronic = ref_type {
-                    pyroe_cmd.arg(format!("{}", read_len));
-                };
-
-                // the output directory
-                pyroe_cmd.arg(&outref);
-
                 prog_utils::check_files_exist(&input_files)?;
 
-                // print pyroe command
-                pyroe_cmd_string = prog_utils::get_cmd_line_string(&pyroe_cmd);
-                info!("pyroe cmd : {}", pyroe_cmd_string);
+                info!("preparing to make reference with roers");
 
-                let pyroe_start = Instant::now();
-                let cres =
-                    prog_utils::execute_command(&mut pyroe_cmd, CommandVerbosityLevel::Verbose)
-                        .expect(
-                            "could not execute pyroe (for generating reference transcriptome).",
-                        );
-                pyroe_duration = Some(pyroe_start.elapsed());
+                let roers_start = Instant::now();
+                roers::make_ref(roers_opts)?;
+                roers_duration = Some(roers_start.elapsed());
 
-                if !cres.status.success() {
-                    bail!("pyroe failed to return succesfully {:?}", cres.status);
-                }
-
-                reference_sequence = Some(outref.join(ref_file));
+                reference_sequence = Some(ref_file);
             } else {
                 // we are running on a set of references directly
 
@@ -200,13 +153,12 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
                 )
                 .with_context(|| format!("could not write {}", info_file.display()))?;
 
-                pyroe_cmd_string = String::from("");
                 reference_sequence = ref_seq;
             }
 
-            let ref_seq = reference_sequence.expect(
-                "reference sequence should either be generated from --fasta by make-splici or set with --ref-seq",
-            );
+            let ref_seq = reference_sequence.with_context(||
+                "Reference sequence should either be generated from --fasta with reftype spliced+intronic / spliced+unspliced or set with --ref-seq",
+            )?;
 
             let input_files = vec![ref_seq.clone()];
             prog_utils::check_files_exist(&input_files)?;
@@ -405,15 +357,15 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
             }
 
             let index_log_file = output.join("simpleaf_index_log.json");
-            let index_log_info = if let Some(pyroe_duration) = pyroe_duration {
+            let index_log_info = if let Some(roers_duration) = roers_duration {
                 // if we ran make-splici
                 json!({
                     "time_info" : {
-                        "pyroe_time" : pyroe_duration,
+                        "roers_time" : roers_duration,
                         "index_time" : index_duration
                     },
                     "cmd_info" : {
-                        "pyroe_cmd" : pyroe_cmd_string,
+                        "roers_cmd" : roers_aug_ref_opt,
                         "index_cmd" : index_cmd_string,                    }
                 })
             } else {

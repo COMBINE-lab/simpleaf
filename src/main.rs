@@ -64,14 +64,12 @@ fn main() -> anyhow::Result<()> {
             salmon,
             piscem,
             alevin_fry,
-            pyroe,
         } => set_paths(
             af_home_path,
             Commands::SetPaths {
                 salmon,
                 piscem,
                 alevin_fry,
-                pyroe,
             },
         ),
         Commands::AddChemistry { name, geometry } => {
@@ -83,6 +81,7 @@ fn main() -> anyhow::Result<()> {
             ref_type,
             fasta,
             gtf,
+            gff3_format,
             rlen,
             spliced,
             unspliced,
@@ -102,6 +101,7 @@ fn main() -> anyhow::Result<()> {
                 ref_type,
                 fasta,
                 gtf,
+                gff3_format,
                 rlen,
                 spliced,
                 unspliced,

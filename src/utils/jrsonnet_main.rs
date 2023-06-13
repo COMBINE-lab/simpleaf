@@ -3,7 +3,7 @@
 
 use anyhow::{anyhow, Context};
 use clap::Parser;
-use jrsonnet_cli::{ConfigureState, GeneralOpts, ManifestOpts, OutputOpts, TraceOpts};
+use jrsonnet_cli::{GcOpts, ManifestOpts, MiscOpts, OutputOpts, StdOpts, TlaOpts, TraceOpts};
 use jrsonnet_evaluator::{
     apply_tla,
     error::{Error as JrError, ErrorKind},
@@ -12,16 +12,6 @@ use jrsonnet_evaluator::{
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
-#[command(next_help_heading = "DEBUG")]
-struct DebugOpts {
-    /// Required OS stack size.
-    /// This shouldn't be changed unless jrsonnet is failing with stack overflow error.
-    #[arg(long, id = "size")]
-    pub os_stack: Option<usize>,
-}
-
-#[derive(Parser)]
-#[command(next_help_heading = "INPUT")]
 struct InputOpts {
     /// Treat input as code, evaluate them instead of reading file
     #[arg(long, short = 'e')]
@@ -33,17 +23,17 @@ struct InputOpts {
 
 /// Jsonnet commandline interpreter (Rust implementation)
 #[derive(Parser)]
-#[command(
-    args_conflicts_with_subcommands = true,
-    disable_version_flag = true,
-    version,
-    author
-)]
 struct Opts {
     #[clap(flatten)]
     input: InputOpts,
     #[clap(flatten)]
-    general: GeneralOpts,
+    misc: MiscOpts,
+    #[clap(flatten)]
+    tla: TlaOpts,
+    #[clap(flatten)]
+    std: StdOpts,
+    #[clap(flatten)]
+    gc: GcOpts,
 
     #[clap(flatten)]
     trace: TraceOpts,
@@ -51,8 +41,6 @@ struct Opts {
     manifest: ManifestOpts,
     #[clap(flatten)]
     output: OutputOpts,
-    #[clap(flatten)]
-    debug: DebugOpts,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -81,17 +69,23 @@ pub fn parse_jsonnet(
     // define jrsonnet arguments
     // config file
     let instantiated = template_state.is_instantiated();
-    let input_config_file_path = config_file_path
-        .to_str()
-        .expect("Could not convert workflow config file path to str");
+    let input_config_file_path = config_file_path.to_str().with_context(|| {
+        format!(
+            "Could not convert workflow config file path to str: {:?}",
+            config_file_path
+        )
+    })?;
     let ext_output = format!(r#"__output='{}'"#, output.display());
     let ext_utils_file_path = r#"__utils=import 'simpleaf_workflow_utils.libsonnet'"#;
     let ext_instantiated = format!(r#"__instantiated='{}'"#, instantiated);
 
     // af_home_dir
-    let jpath_pe_utils = utils_dir
-        .to_str()
-        .expect("Could not convert Protocol Estuarys path to str");
+    let jpath_pe_utils = utils_dir.to_str().with_context(|| {
+        format!(
+            "Could not convert Protocol Estuarys path to str: {:?}",
+            utils_dir
+        )
+    })?;
 
     // create command vector for clap parser
     let mut jrsonnet_cmd_vec = vec![
@@ -124,6 +118,7 @@ pub fn parse_jsonnet(
             jrsonnet_cmd_vec.push(ext_code.as_str());
         }
     }
+    println!("{:?}", &jrsonnet_cmd_vec);
 
     let opts: Opts = Opts::parse_from(jrsonnet_cmd_vec);
     main_catch(opts)
@@ -134,7 +129,7 @@ enum Error {
     // Handled differently
     #[error("evaluation error")]
     Evaluation(JrError),
-    #[error("io error")]
+    #[error("IO error")]
     Io(#[from] std::io::Error),
     #[error("input is not utf8 encoded")]
     Utf8(#[from] std::str::Utf8Error),
@@ -156,10 +151,7 @@ impl From<ErrorKind> for Error {
 
 fn main_catch(opts: Opts) -> anyhow::Result<String> {
     let s = State::default();
-    let trace = opts
-        .trace
-        .configure(&s)
-        .expect("this configurator doesn't fail");
+    let trace = opts.trace.trace_format();
     match main_real(&s, opts) {
         Ok(js) => Ok(js),
         Err(e) => {
@@ -179,13 +171,25 @@ fn main_catch(opts: Opts) -> anyhow::Result<String> {
 }
 
 fn main_real(s: &State, opts: Opts) -> Result<String, Error> {
-    let (tla, _gc_guard) = opts.general.configure(s)?;
-    let manifest_format = opts.manifest.configure(s)?;
+    let _gc_leak_guard = opts.gc.leak_on_exit();
+    let _gc_print_stats = opts.gc.stats_printer();
+    let _stack_depth_override = opts.misc.stack_size_override();
+
+    let import_resolver = opts.misc.import_resolver();
+    s.set_import_resolver(import_resolver);
+
+    let std = opts.std.context_initializer(s)?;
+    if let Some(std) = std {
+        s.set_context_initializer(std);
+    }
 
     let input = opts.input.input.ok_or(Error::MissingInputArgument)?;
     let val = s.import(input)?;
 
+    let tla = opts.tla.tla_opts()?;
     let val = apply_tla(s.clone(), &tla, val)?;
+
+    let manifest_format = opts.manifest.manifest_format();
 
     let output = val.manifest(manifest_format)?;
     if !output.is_empty() {
