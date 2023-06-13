@@ -76,6 +76,14 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
             if let (Some(fasta), Some(gtf)) = (fasta, gtf) {
                 let input_files = vec![fasta.clone(), gtf.clone()];
 
+                // the "transcript" (spliced transcriptome) is currently implicit 
+                // in roers, so we don't have to add that. If the user requested 
+                // a spliced+intronic (splici) transcriptome, then we also want introns
+                // whereas if they requested a spliced+unspliced (spliceu) transcriptome, 
+                // then we also want gene bodies. 
+                // TODO: Right now, there is not way in simpleaf, from the command line, 
+                // to specify `TranscriptBody` rather than `GeneBody`, think about if 
+                // we want to find a way to expose this.
                 let aug_type = match ref_type {
                     ReferenceType::SplicedIntronic => Some(vec![roers::AugType::Intronic]),
                     ReferenceType::SplicedUnspliced => Some(vec![roers::AugType::GeneBody]),
@@ -94,8 +102,8 @@ pub fn build_ref_and_index(af_home_path: &Path, index_args: Commands) -> anyhow:
                     aug_type,
                     no_transcript: false,
                     read_length: rlen.unwrap_or(91) as i64,
-                    flank_trim_length: 5_i64,
-                    no_flanking_merge: false,
+                    flank_trim_length: 5_i64, // not currently setable from the cmdline
+                    no_flanking_merge: false, // not currently setable from the cmdline
                     filename_prefix: String::from("roers_ref"),
                     dedup_seqs: dedup,
                     extra_spliced: spliced.clone(),
