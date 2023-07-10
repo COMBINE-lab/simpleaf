@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/COMBINE-lab/simpleaf/compare/v0.14.0...v0.14.1) (2023-07-10)
+
+
+### Bug Fixes
+
+* bump roers dependency ([5e8a33c](https://github.com/COMBINE-lab/simpleaf/commit/5e8a33c13b38e0d8a91c99d5957b5afb064bf0bb))
+
 ## [0.14.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.13.0...v0.14.0) (2023-06-13)
 
 
