@@ -118,7 +118,6 @@ pub fn parse_jsonnet(
             jrsonnet_cmd_vec.push(ext_code.as_str());
         }
     }
-    println!("{:?}", &jrsonnet_cmd_vec);
 
     let opts: Opts = Opts::parse_from(jrsonnet_cmd_vec);
     main_catch(opts)
