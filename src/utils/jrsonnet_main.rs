@@ -187,10 +187,11 @@ fn main_real(s: &State, opts: Opts) -> Result<String, Error> {
 
     let tla = opts.tla.tla_opts()?;
     let val = apply_tla(s.clone(), &tla, val)?;
+    println!("val: {:?}", val);
 
     let manifest_format = opts.manifest.manifest_format();
-
     let output = val.manifest(manifest_format)?;
+    println!("output: {:?}", output);
     if !output.is_empty() {
         Ok(output)
     } else {

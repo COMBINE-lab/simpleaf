@@ -426,6 +426,7 @@ pub fn run_workflow<T: AsRef<Path>>(
                                     // succeed. update log
                                     workflow_log.update(&cr.field_trajectory_vec[..])?;
                                 } else {
+                                    workflow_log.write(false)?;
                                     let cmd_stderr = std::str::from_utf8(&cres.stderr[..])?;
                                     let msg = format!("{} command at step {} failed to exit with code 0 under the shell.\n\
                                                       The exit status was: {}.\n\
@@ -435,6 +436,7 @@ pub fn run_workflow<T: AsRef<Path>>(
                                 }
                             }
                             Err(e) => {
+                                workflow_log.write(false)?;
                                 let msg = format!(
                                     "{} command at step {} failed to execute under the shell.\n\
                                      The returned error was: {:?}.\n",
@@ -454,6 +456,7 @@ pub fn run_workflow<T: AsRef<Path>>(
                 info!("all commands ran successfully.");
             } else {
                 workflow_log.write(false)?;
+                info!("no execution mode ran successfully.");
             }
         } //
         _ => {
