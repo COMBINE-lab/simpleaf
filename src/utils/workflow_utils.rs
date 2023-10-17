@@ -707,13 +707,22 @@ impl ProgramName {
         if let Value::Object(args) = value {
             for (k, v) in args {
                 if !SKIPARG.contains(&k.as_str()) {
-                    arg_vec.push(k.to_string());
-                    
-                    let sv = to_quoted_string(v);
 
-                    if !sv.is_empty() {
-                        arg_vec.push(sv.to_string());
+                    // if the value is a Bool, we set the flag if it is true
+                    // else, we push the argument name and the value
+                    if let Value::Bool(b) = v {
+                        if *b {
+                            // we first push the argument name
+                            arg_vec.push(k.to_string());        
+                        }
+                    } else {
+                        arg_vec.push(k.to_string());
+                        let sv = to_quoted_string(v);
+                        if !sv.is_empty() {
+                            arg_vec.push(sv.to_string());
+                        }
                     }
+
                 }
             }
         } else {
