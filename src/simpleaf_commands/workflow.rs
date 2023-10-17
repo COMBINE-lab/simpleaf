@@ -281,10 +281,6 @@ pub fn run_workflow<T: AsRef<Path>>(
             )?;
 
             // write complete workflow json to output folder
-            // the `Step` of each command in this json file will be changed to "-1"
-            // once the command is run successfully.
-            // The final workflow file name will be the same as the input config but
-            // with json as the extention.
             let workflow_json_value: Value = serde_json::from_str(workflow_json_string.as_str())?;
 
             // initialize simpleaf workflow and log struct

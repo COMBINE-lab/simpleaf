@@ -690,6 +690,7 @@ impl ProgramName {
         matches!(self, &ProgramName::External(_))
     }
 
+
     /// Create a valid simpleaf command object using the arguments recoreded in the field.
     /// Step and Program name will be ignored in this procedure
     pub fn create_simpleaf_cmd(&self, value: &Value) -> anyhow::Result<Commands> {
@@ -707,12 +708,11 @@ impl ProgramName {
             for (k, v) in args {
                 if !SKIPARG.contains(&k.as_str()) {
                     arg_vec.push(k.to_string());
-                    if let Some(sv) = v.as_str() {
-                        if !sv.is_empty() {
-                            arg_vec.push(sv.to_string());
-                        }
-                    } else {
-                        bail!("The value of argument `{}`,{} , cannot be converted as a string; Cannot proceed. Please provide valid arguments.", k, v.to_string());
+                    
+                    let sv = to_quoted_string(v);
+
+                    if !sv.is_empty() {
+                        arg_vec.push(sv.to_string());
                     }
                 }
             }
@@ -721,11 +721,11 @@ impl ProgramName {
         };
 
         // check if empty
-        if !arg_vec.is_empty() {
+        if arg_vec.len() > 2 {
             let cmd = Cli::parse_from(arg_vec).command;
             Ok(cmd)
         } else {
-            bail!("Found simpleaf command with empty arg list. Cannot Proceed.")
+            bail!("Found a {} command with no argument. Cannot Proceed.", arg_vec.join(" "))
         }
     }
 
@@ -746,20 +746,23 @@ impl ProgramName {
 
         // fill in the argument vector
         for arg_value in arg_value_vec {
-            let arg_str = arg_value.as_str().with_context(|| {
-                format!("Could not convert {:?} as str; Cannot proceed", arg_value)
-            })?;
-            arg_vec.push(arg_str.to_string());
+            arg_vec.push(to_quoted_string(arg_value));
         }
 
-        if !arg_vec.is_empty() {
-            // make Command struct for the command
-            let external_cmd = shell(arg_vec.join(" "));
-
-            Ok(external_cmd)
-        } else {
-            bail!("Found an external command with empty arg list. Cannot Proceed.")
+        if arg_vec.len() == 1 {
+            warn!("Found a(n) {} command with no argument.", arg_vec.first().with_context(|| "Cannot get the first element of the argument vector; Cannot proceed")?);
         }
+        // make Command struct for the command
+        let external_cmd = shell(arg_vec.join(" "));
+
+        Ok(external_cmd)
+    }
+}
+
+pub (crate) fn to_quoted_string(v: &Value) -> String {
+    match v {
+        Value::String(s) => { String::from(s) },
+        val => { format!("{}", val) }
     }
 }
 
