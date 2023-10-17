@@ -281,10 +281,6 @@ pub fn run_workflow<T: AsRef<Path>>(
             )?;
 
             // write complete workflow json to output folder
-            // the `Step` of each command in this json file will be changed to "-1"
-            // once the command is run successfully.
-            // The final workflow file name will be the same as the input config but
-            // with json as the extention.
             let workflow_json_value: Value = serde_json::from_str(workflow_json_string.as_str())?;
 
             // initialize simpleaf workflow and log struct
@@ -426,6 +422,7 @@ pub fn run_workflow<T: AsRef<Path>>(
                                     // succeed. update log
                                     workflow_log.update(&cr.field_trajectory_vec[..])?;
                                 } else {
+                                    workflow_log.write(false)?;
                                     let cmd_stderr = std::str::from_utf8(&cres.stderr[..])?;
                                     let msg = format!("{} command at step {} failed to exit with code 0 under the shell.\n\
                                                       The exit status was: {}.\n\
@@ -435,6 +432,7 @@ pub fn run_workflow<T: AsRef<Path>>(
                                 }
                             }
                             Err(e) => {
+                                workflow_log.write(false)?;
                                 let msg = format!(
                                     "{} command at step {} failed to execute under the shell.\n\
                                      The returned error was: {:?}.\n",
@@ -454,6 +452,7 @@ pub fn run_workflow<T: AsRef<Path>>(
                 info!("all commands ran successfully.");
             } else {
                 workflow_log.write(false)?;
+                info!("no execution mode ran successfully.");
             }
         } //
         _ => {

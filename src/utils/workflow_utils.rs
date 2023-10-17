@@ -58,7 +58,7 @@ pub fn get_template_version<T: AsRef<Path>>(
 
     let workflow_json_value: Value = serde_json::from_str(workflow_json_string.as_str())?;
 
-    let v = if let Some(meta_info) = workflow_json_value.get("meta_info") {
+    let v = if let Some(meta_info) = workflow_json_value.get(SystemFields::MetaInfo.as_str()) {
         if let Some(version_value) = meta_info.get("template_version") {
             if let Some(v) = version_value.as_str() {
                 v.to_string()
@@ -252,16 +252,16 @@ impl SimpleafWorkflow {
                 curr_field_trajectory_vec.push(workflow_log.get_field_id(field_name));
 
                 // If "Step" exists, then this field records an external or a simpleaf command
-                if field.get("Step").is_some() {
+                if field.get(SystemFields::Step.as_str()).is_some() {
                     // parse "Step"
                     let step = field
-                        .get("Step")
+                        .get(SystemFields::Step.as_str())
                         .with_context(|| "Cannot get Step")?
                         .as_u64()
                         .with_context(|| {
                             format!(
-                                "Cannot parse Step {:?} as an integer",
-                                field.get("Step").unwrap()
+                                "Cannot parse Step field value, {:?}, as an integer",
+                                field.get(SystemFields::Step.as_str()).unwrap()
                             )
                         })?;
 
@@ -269,11 +269,11 @@ impl SimpleafWorkflow {
                     let active =
                         if workflow_log.skip_step.contains(&step) || step < workflow_log.start_at {
                             false
-                        } else if let Some(v) = field.get("Active") {
+                        } else if let Some(v) = field.get(SystemFields::Active.as_str()) {
                             v.as_bool().with_context(|| {
                                 format!(
-                                    "Cannot parse Active {:?} as a boolean",
-                                    field.get("Active").unwrap()
+                                    "Cannot parse Active field value, {:?}, as a boolean",
+                                    field.get(SystemFields::Active.as_str()).unwrap()
                                 )
                             })?
                         } else {
@@ -282,10 +282,10 @@ impl SimpleafWorkflow {
 
                     // update Active in the log
                     let cmd_field = workflow_log.get_mut_cmd_field(&curr_field_trajectory_vec)?;
-                    cmd_field["Active"] = json!(active);
+                    cmd_field[SystemFields::Active.as_str()] = json!(active);
 
                     // The field must contains an Program Name
-                    if let Some(program_name) = field.get("Program Name") {
+                    if let Some(program_name) = field.get(SystemFields::ProgramName.as_str()) {
                         pn = ProgramName::from_str(program_name.as_str().with_context(|| {
                             "Cannot create ProgramName struct from a program name"
                         })?);
@@ -441,7 +441,7 @@ impl WorkflowLog {
             .into_owned();
 
         // get meta_info
-        let workflow_meta_info = workflow_json_value.get("meta_info").map(|v| v.to_owned());
+        let workflow_meta_info = workflow_json_value.get(SystemFields::MetaInfo.as_str()).map(|v| v.to_owned());
 
         // if we don't see an meta info section, report a warning
         if workflow_meta_info.is_none() {
@@ -690,6 +690,7 @@ impl ProgramName {
         matches!(self, &ProgramName::External(_))
     }
 
+
     /// Create a valid simpleaf command object using the arguments recoreded in the field.
     /// Step and Program name will be ignored in this procedure
     pub fn create_simpleaf_cmd(&self, value: &Value) -> anyhow::Result<Commands> {
@@ -706,14 +707,22 @@ impl ProgramName {
         if let Value::Object(args) = value {
             for (k, v) in args {
                 if !SKIPARG.contains(&k.as_str()) {
-                    arg_vec.push(k.to_string());
-                    if let Some(sv) = v.as_str() {
+
+                    // if the value is a Bool, we set the flag if it is true
+                    // else, we push the argument name and the value
+                    if let Value::Bool(b) = v {
+                        if *b {
+                            // we first push the argument name
+                            arg_vec.push(k.to_string());        
+                        }
+                    } else {
+                        arg_vec.push(k.to_string());
+                        let sv = to_quoted_string(v);
                         if !sv.is_empty() {
                             arg_vec.push(sv.to_string());
                         }
-                    } else {
-                        bail!("The value of argument `{}`,{} , cannot be converted as a string; Cannot proceed. Please provide valid arguments.", k, v.to_string());
                     }
+
                 }
             }
         } else {
@@ -721,11 +730,11 @@ impl ProgramName {
         };
 
         // check if empty
-        if !arg_vec.is_empty() {
+        if arg_vec.len() > 2 {
             let cmd = Cli::parse_from(arg_vec).command;
             Ok(cmd)
         } else {
-            bail!("Found simpleaf command with empty arg list. Cannot Proceed.")
+            bail!("Found a {} command with no argument. Cannot Proceed.", arg_vec.join(" "))
         }
     }
 
@@ -735,7 +744,7 @@ impl ProgramName {
     pub fn create_external_cmd(&self, value: &Value) -> anyhow::Result<Command> {
         // get the argument vector, which is named as "Argument"
         let arg_value_vec = value
-            .get("Arguments")
+            .get(SystemFields::ExternalArguments.as_str())
             .with_context(||"Cannot find the `Arguments` field in the external command record; Cannot proceed")?
             .as_array()
             .with_context(||"Cannot convert the `Arguments` field in the external command record as an array; Cannot proceed")?;
@@ -746,20 +755,16 @@ impl ProgramName {
 
         // fill in the argument vector
         for arg_value in arg_value_vec {
-            let arg_str = arg_value.as_str().with_context(|| {
-                format!("Could not convert {:?} as str; Cannot proceed", arg_value)
-            })?;
-            arg_vec.push(arg_str.to_string());
+            arg_vec.push(to_quoted_string(arg_value));
         }
 
-        if !arg_vec.is_empty() {
-            // make Command struct for the command
-            let external_cmd = shell(arg_vec.join(" "));
-
-            Ok(external_cmd)
-        } else {
-            bail!("Found an external command with empty arg list. Cannot Proceed.")
+        if arg_vec.len() == 1 {
+            warn!("Found a(n) {} command with no argument.", arg_vec.first().with_context(|| "Cannot get the first element of the argument vector; Cannot proceed")?);
         }
+        // make Command struct for the command
+        let external_cmd = shell(arg_vec.join(" "));
+
+        Ok(external_cmd)
     }
 }
 
@@ -769,11 +774,51 @@ impl std::fmt::Display for ProgramName {
             f,
             "{}",
             match &self {
-                ProgramName::Index => String::from("simpleaf index"),
-                ProgramName::Quant => String::from("simpleaf quant"),
+                ProgramName::Index => SystemFields::SimpleafIndex.to_string(),
+                ProgramName::Quant => SystemFields::SimpleafQuant.to_string(),
                 ProgramName::External(pn) => pn.to_owned(),
             }
         )
+    }
+}
+
+
+pub (crate) fn to_quoted_string(v: &Value) -> String {
+    match v {
+        Value::String(s) => { String::from(s) },
+        val => { format!("{}", val) }
+    }
+}
+
+
+#[derive(Copy, Clone, Debug)]
+pub (crate) enum SystemFields {
+    Step,
+    ProgramName,
+    Active,
+    MetaInfo,
+    ExternalArguments,
+    SimpleafIndex,
+    SimpleafQuant,
+}
+
+impl std::fmt::Display for SystemFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}",self.as_str())
+    }
+}
+
+impl SystemFields {
+    pub fn as_str(&self) -> &str {
+        match self {
+            SystemFields::Step => "Step",
+            SystemFields::ProgramName => "Program Name",
+            SystemFields::Active => "Active",
+            SystemFields::MetaInfo => "meta_info",
+            SystemFields::ExternalArguments => "Arguments",
+            SystemFields::SimpleafIndex => "simpleaf index",
+            SystemFields::SimpleafQuant => "simpleaf quant",
+        }
     }
 }
 
@@ -1097,7 +1142,7 @@ mod tests {
 
                 assert_eq!(
                     workflow_meta_info,
-                    &Some(workflow_json_value.get("meta_info").unwrap().to_owned())
+                    &Some(workflow_json_value.get(SystemFields::MetaInfo.as_str()).unwrap().to_owned())
                 );
 
                 let mut new_value = value.to_owned();
