@@ -23,9 +23,9 @@ use super::jrsonnet_main::TemplateState;
 use super::prog_utils::shell;
 
 // fields that are not representing any simpleaf flag
-const SKIPARG: &[&str] = &["Step", "Program Name", "Active"];
+const SKIPARG: &[&str] = &["step", "program-name", "active"];
 
-// This function gets the version string from the workflwo template file in the provided folder
+// This function gets the version string from the workflow template file in the provided folder
 pub fn get_template_version<T: AsRef<Path>>(
     template_dir: PathBuf,
     utils_dir: T,
@@ -216,7 +216,7 @@ impl SimpleafWorkflow {
             workflow_log,
         )?;
 
-        // sort the cmd queue by its `Step`.
+        // sort the cmd queue by its `step`.
         cmd_queue.sort_by(|cmd1, cmd2| cmd1.step.cmp(&cmd2.step));
 
         Ok(SimpleafWorkflow {
@@ -229,7 +229,7 @@ impl SimpleafWorkflow {
     /// parse them as `CommandRecord` structs and push them into the `cmd_queue` vector.
     /// ### Details
     /// This function will iterate over all layers in the `Value` object to find the command records
-    /// with both `Step` and `Program Name`. **These two fields must appear simutaneously**, otherwise this function
+    /// with both `step` and `program-name`. **These two fields must appear simutaneously**, otherwise this function
     /// will return an error.  
     /// A CommandRecord struct will be initilizaed from Each command record with a positive `Step`,
     /// including external commands and simpleaf command,
@@ -253,26 +253,26 @@ impl SimpleafWorkflow {
 
                 // If "Step" exists, then this field records an external or a simpleaf command
                 if field.get(SystemFields::Step.as_str()).is_some() {
-                    // parse "Step"
+                    // parse "step"
                     let step = field
                         .get(SystemFields::Step.as_str())
-                        .with_context(|| "Cannot get Step")?
+                        .with_context(|| "Cannot get step")?
                         .as_u64()
                         .with_context(|| {
                             format!(
-                                "Cannot parse Step field value, {:?}, as an integer",
+                                "Cannot parse step field value, {:?}, as an integer",
                                 field.get(SystemFields::Step.as_str()).unwrap()
                             )
                         })?;
 
-                    // parse "Active" if there is one
+                    // parse "active" if there is one
                     let active =
                         if workflow_log.skip_step.contains(&step) || step < workflow_log.start_at {
                             false
                         } else if let Some(v) = field.get(SystemFields::Active.as_str()) {
                             v.as_bool().with_context(|| {
                                 format!(
-                                    "Cannot parse Active field value, {:?}, as a boolean",
+                                    "Cannot parse active field value, {:?}, as a boolean",
                                     field.get(SystemFields::Active.as_str()).unwrap()
                                 )
                             })?
@@ -280,11 +280,11 @@ impl SimpleafWorkflow {
                             true
                         };
 
-                    // update Active in the log
+                    // update active in the log
                     let cmd_field = workflow_log.get_mut_cmd_field(&curr_field_trajectory_vec)?;
                     cmd_field[SystemFields::Active.as_str()] = json!(active);
 
-                    // The field must contains an Program Name
+                    // The field must contains an program-name
                     if let Some(program_name) = field.get(SystemFields::ProgramName.as_str()) {
                         pn = ProgramName::from_str(program_name.as_str().with_context(|| {
                             "Cannot create ProgramName struct from a program name"
@@ -292,8 +292,8 @@ impl SimpleafWorkflow {
                         // if active, then push to execution queue
                         if active {
                             info!("Parsing {} command for Step {}", pn, step);
-                            // The `Step` will be used for sorting the cmd_queue vector.
-                            // All commands must have an valid `Step`.
+                            // The `step` will be used for sorting the cmd_queue vector.
+                            // All commands must have an valid `step`.
                             // Note that we store this as a string in json b/c all value in config
                             // file are strings.
                             if pn.is_external() {
@@ -301,7 +301,7 @@ impl SimpleafWorkflow {
                                 let external_cmd = match pn.create_external_cmd(field) {
                                     Ok(v) => v,
                                     Err(e) => {
-                                        bail!("Could not parse external command {} for Step {}. The error message was: {}", pn, step, e);
+                                        bail!("Could not parse external command {} for step {}. The error message was: {}", pn, step, e);
                                     }
                                 };
 
@@ -318,7 +318,7 @@ impl SimpleafWorkflow {
                                 let simpleaf_cmd = match pn.create_simpleaf_cmd(field) {
                                     Ok(v) => v,
                                     Err(e) => {
-                                        bail!("Could not parse simpleaf command {} for Step {}. The error message was: {}", pn, step, e);
+                                        bail!("Could not parse simpleaf command {} for step {}. The error message was: {}", pn, step, e);
                                     }
                                 };
 
@@ -332,7 +332,7 @@ impl SimpleafWorkflow {
                                 });
                             }
                         } else {
-                            info!("Skipping {} command for Step {}", pn, step);
+                            info!("Skipping {} command for step {}", pn, step);
                         } // if active
                     } // if have ProgramName
                 } else {
@@ -359,7 +359,7 @@ struct CommandRuntime {
 /// This struct is used for writing the workflow log JSON file.
 /// ### What?
 /// This struct contains the parsed and complete workflow JSON record.\
-/// The `Step` field of the successfully invoked commands will be set as a negatvie integer
+/// The `step` field of the successfully invoked commands will be set as a negatvie integer
 /// and will be ignored by simpleaf if feeding the output JSON file to simpleaf workflow.\
 /// ### Why?
 /// The purpose of having this log is that if some command in the workflow fails, the user can
@@ -367,7 +367,7 @@ struct CommandRuntime {
 /// ### How?
 /// It will be initialized together with the `SimpleafWorkflow` struct and
 /// will be used to write a workflow JSON file that is the same as the one
-/// interpreted from user-provided JSONNET file except the Step
+/// interpreted from user-provided JSONNET file except the step
 /// field of the commands that were run sucessfully are negative values.
 pub struct WorkflowLog {
     // meta info log file path
@@ -386,7 +386,7 @@ pub struct WorkflowLog {
 
     cmd_runtime_records: Map<String, Value>,
     // this vector records all field names in the complete workflow.
-    // This is used for locating the Step for each command
+    // This is used for locating the step for each command
     field_id_to_name: Vec<String>,
     // TODO: the trajectory vector in each CommandRecord can be
     // move here as a long vector, and in each CommandRecord
@@ -445,7 +445,7 @@ impl WorkflowLog {
 
         // if we don't see an meta info section, report a warning
         if workflow_meta_info.is_none() {
-            warn!("Found config file without meta_info field.");
+            warn!("Found config file without meta-info field.");
         };
 
         Ok(WorkflowLog {
@@ -476,7 +476,7 @@ impl WorkflowLog {
     /// Write log to the output path.
     /// 1. an execution log file includes the whole workflow,
     ///    in which succeffully invoked commands have
-    ///     a negative `Step`
+    ///     a negative `step`
     /// 2. an info log file records runtime, workflow name,
     ///     output path etc.
     pub fn write(&self, succeed: bool) -> anyhow::Result<()> {
@@ -624,7 +624,7 @@ impl WorkflowLog {
     }
 
     /// Update WorkflowLog:
-    /// 1. the `Active` field of the executed commands in execution log
+    /// 1. the `active` field of the executed commands in execution log
     /// 2. cmd runtime
     /// 3. number of succeed commands.
 
@@ -641,10 +641,10 @@ impl WorkflowLog {
         //update num_succ
         self.num_succ += 1;
 
-        // update `Active`
+        // update `active`
         let curr_field = self.get_mut_cmd_field(field_trajectory_vec)?;
 
-        curr_field["Active"] = json!(false);
+        curr_field["active"] = json!(false);
 
         Ok(())
     }
@@ -659,7 +659,7 @@ pub struct CommandRecord {
     pub simpleaf_cmd: Option<Commands>,
     pub external_cmd: Option<Command>,
     // This vector records the field name trajectory from the top level
-    // this is used to update the `Step` after invoked successfully.
+    // this is used to update the `step` after invoked successfully.
     pub field_trajectory_vec: Vec<usize>,
 }
 
@@ -692,7 +692,7 @@ impl ProgramName {
 
 
     /// Create a valid simpleaf command object using the arguments recoreded in the field.
-    /// Step and Program name will be ignored in this procedure
+    /// step and program name will be ignored in this procedure
     pub fn create_simpleaf_cmd(&self, value: &Value) -> anyhow::Result<Commands> {
         let mut arg_vec = match self {
             ProgramName::Index => vec![String::from("simpleaf"), String::from("index")],
@@ -740,14 +740,14 @@ impl ProgramName {
 
     /// This function instantiates a std::process::Command
     /// for an external command record according to
-    /// the  "Arguments" field.
+    /// the  "arguments" field.
     pub fn create_external_cmd(&self, value: &Value) -> anyhow::Result<Command> {
         // get the argument vector, which is named as "Argument"
         let arg_value_vec = value
             .get(SystemFields::ExternalArguments.as_str())
-            .with_context(||"Cannot find the `Arguments` field in the external command record; Cannot proceed")?
+            .with_context(||"Cannot find the `arguments` field in the external command record; Cannot proceed")?
             .as_array()
-            .with_context(||"Cannot convert the `Arguments` field in the external command record as an array; Cannot proceed")?;
+            .with_context(||"Cannot convert the `arguments` field in the external command record as an array; Cannot proceed")?;
 
         // initialize argument vector
         let mut arg_vec = vec![self.to_string()];
@@ -811,11 +811,11 @@ impl std::fmt::Display for SystemFields {
 impl SystemFields {
     pub fn as_str(&self) -> &str {
         match self {
-            SystemFields::Step => "Step",
-            SystemFields::ProgramName => "Program Name",
-            SystemFields::Active => "Active",
-            SystemFields::MetaInfo => "meta_info",
-            SystemFields::ExternalArguments => "Arguments",
+            SystemFields::Step => "step",
+            SystemFields::ProgramName => "program-name",
+            SystemFields::Active => "active",
+            SystemFields::MetaInfo => "meta-info",
+            SystemFields::ExternalArguments => "arguments",
             SystemFields::SimpleafIndex => "simpleaf index",
             SystemFields::SimpleafQuant => "simpleaf quant",
         }
@@ -1012,17 +1012,17 @@ mod tests {
         assert_eq!(
             index,
             ProgramName::Index,
-            "Could not get correct ProgramName from simpleaf index"
+            "Could not get correct program-name from simpleaf index"
         );
         assert_eq!(
             quant,
             ProgramName::Quant,
-            "Could not get correct ProgramName from simpleaf quant"
+            "Could not get correct program-name from simpleaf quant"
         );
         assert_eq!(
             external,
             ProgramName::External("awk".to_string()),
-            "Could not get correct ProgramName from invalid command"
+            "Could not get correct program-name from invalid command"
         );
 
         assert!(
@@ -1047,14 +1047,14 @@ mod tests {
 
         let workflow_json_string = String::from(
             r#"{
-            "meta_info": {
+            "meta-info": {
                 "output_dir": "output_dir"
             },
             "rna": {
                 "simpleaf_index": {
-                    "Step": 1,
-                    "Program Name": "simpleaf index", 
-                    "Active": true,
+                    "step": 1,
+                    "program-name": "simpleaf index", 
+                    "active": true,
                     "--ref-type": "spliced+unspliced",
                     "--fasta": "genome.fa",
                     "--gtf": "genes.gtf",
@@ -1063,9 +1063,9 @@ mod tests {
                     "--overwrite": ""
                 },
                 "simpleaf_quant": {
-                    "Step": 2,
-                    "Program Name": "simpleaf quant",  
-                    "Active": true,
+                    "step": 2,
+                    "program-name": "simpleaf quant",  
+                    "active": true,
                     "--chemistry": "10xv3",
                     "--resolution": "cr-like",
                     "--expected-ori": "fw",
@@ -1079,18 +1079,18 @@ mod tests {
                     "--use-selective-alignment": ""
                 }
             }, 
-            "External Commands": {
+            "external-commands": {
                 "HTO ref gunzip": {
-                    "Step": 3,
-                    "Program Name": "gunzip",
-                    "Active": true,
-                    "Arguments": ["-c","hto_ref.csv.gz",">","hto_ref.csv"]
+                    "step": 3,
+                    "program-name": "gunzip",
+                    "active": true,
+                    "arguments": ["-c","hto_ref.csv.gz",">","hto_ref.csv"]
                 },
                 "ADT ref gunzip": {
-                    "Step": 4,
-                    "Program Name": "gunzip",
-                    "Active": true,
-                    "Arguments": ["-c","adt_ref.csv.gz",">","adt_ref.csv"]
+                    "step": 4,
+                    "program-name": "gunzip",
+                    "active": true,
+                    "arguments": ["-c","adt_ref.csv.gz",">","adt_ref.csv"]
                 }
             }
         }"#,
@@ -1146,8 +1146,8 @@ mod tests {
                 );
 
                 let mut new_value = value.to_owned();
-                new_value["rna"]["simpleaf_index"]["Active"] = json!(true);
-                new_value["External Commands"]["HTO ref gunzip"]["Active"] = json!(true);
+                new_value["rna"]["simpleaf_index"]["active"] = json!(true);
+                new_value["external-commands"]["HTO ref gunzip"]["active"] = json!(true);
 
                 assert_eq!(new_value, workflow_json_value);
 
@@ -1157,10 +1157,10 @@ mod tests {
                 assert_eq!(skip_step, &vec![3]);
                 assert!(
                     field_id_to_name.contains(&"rna".to_string())
-                        && field_id_to_name.contains(&"meta_info".to_string())
+                        && field_id_to_name.contains(&"meta-info".to_string())
                         && field_id_to_name.contains(&"simpleaf_index".to_string())
                         && field_id_to_name.contains(&"simpleaf_quant".to_string())
-                        && field_id_to_name.contains(&"External Commands".to_string())
+                        && field_id_to_name.contains(&"external-commands".to_string())
                         && field_id_to_name.contains(&"HTO ref gunzip".to_string())
                         && field_id_to_name.contains(&"ADT ref gunzip".to_string())
                 );
@@ -1185,7 +1185,7 @@ mod tests {
         // check meta_info
         // we skipped two
         assert_eq!(
-            wl.get_mut_cmd_field(&cmd.field_trajectory_vec).unwrap()["Step"].as_u64(),
+            wl.get_mut_cmd_field(&cmd.field_trajectory_vec).unwrap()["step"].as_u64(),
             Some(4)
         );
 
@@ -1206,7 +1206,7 @@ mod tests {
                 .get(field_trajectory_vec[0])
                 .unwrap()
                 .to_owned(),
-            String::from("External Commands")
+            String::from("external-commands")
         );
         assert_eq!(
             field_id_to_name
