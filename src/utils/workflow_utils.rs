@@ -157,6 +157,160 @@ pub fn get_previous_log<T: AsRef<Path>>(output: T) -> anyhow::Result<Value> {
     }
 }
 
+pub fn execute_commands_in_workflow<T: AsRef<Path>>(simpleaf_workflow: SimpleafWorkflow, af_home_path: T, workflow_log: &mut WorkflowLog) -> anyhow::Result<()> {
+    for cr in simpleaf_workflow.cmd_queue {
+        let pn = cr.program_name;
+        let step = cr.step;
+        // this if statement is no longer needed as commands with a negative exec order
+        // are ignore when constructing the the cmd queue
+        // say something
+        info!("Running {} command for step {}.", pn, step,);
+
+        // initiliaze a stopwatch
+        workflow_log.timeit(step);
+
+        if let Some(cmd) = cr.simpleaf_cmd {
+            let exec_result = match cmd {
+                Commands::Index {
+                    ref_type,
+                    fasta,
+                    gtf,
+                    gff3_format,
+                    rlen,
+                    spliced,
+                    unspliced,
+                    dedup,
+                    keep_duplicates,
+                    ref_seq,
+                    output,
+                    use_piscem,
+                    kmer_length,
+                    minimizer_length,
+                    overwrite,
+                    sparse,
+                    threads,
+                } => crate::indexing::build_ref_and_index(
+                        af_home_path.as_ref(),
+                        Commands::Index {
+                            ref_type,
+                            fasta,
+                            gtf,
+                            gff3_format,
+                            rlen,
+                            spliced,
+                            unspliced,
+                            dedup,
+                            keep_duplicates,
+                            ref_seq,
+                            output,
+                            use_piscem,
+                            kmer_length,
+                            minimizer_length,
+                            overwrite,
+                            sparse,
+                            threads,
+                        },
+                    ),
+
+                // if we are running mapping and quantification
+                Commands::Quant {
+                    index,
+                    use_piscem,
+                    map_dir,
+                    reads1,
+                    reads2,
+                    threads,
+                    use_selective_alignment,
+                    expected_ori,
+                    knee,
+                    unfiltered_pl,
+                    explicit_pl,
+                    forced_cells,
+                    expect_cells,
+                    min_reads,
+                    resolution,
+                    t2g_map,
+                    chemistry,
+                    output,
+                } => crate::quant::map_and_quant(
+                        af_home_path.as_ref(),
+                        Commands::Quant {
+                            index,
+                            use_piscem,
+                            map_dir,
+                            reads1,
+                            reads2,
+                            threads,
+                            use_selective_alignment,
+                            expected_ori,
+                            knee,
+                            unfiltered_pl,
+                            explicit_pl,
+                            forced_cells,
+                            expect_cells,
+                            min_reads,
+                            resolution,
+                            t2g_map,
+                            chemistry,
+                            output,
+                        },
+                    ),
+                _ => todo!(),
+            };
+            if let Err(e) = exec_result {
+                workflow_log.write(false)?;
+                info!("Execution terminated at {} command for step {}", pn, step);
+                return Err(e);
+            } else {
+                info!("Successfully ran {} command for step {}", pn, step);
+
+                workflow_log.update(&cr.field_trajectory_vec[..])?;
+            }
+        }
+
+        // If this is an external command, then initialize it and run
+        if let Some(mut ext_cmd) = cr.external_cmd {
+            // log
+            let cmd_string = prog_utils::get_cmd_line_string(&ext_cmd);
+            info!("Invoking command : {}", cmd_string);
+
+            // initiate a stopwatch
+            workflow_log.timeit(cr.step);
+
+            match ext_cmd.output() {
+                Ok(cres) => {
+                    // check the return status of external command
+                    if cres.status.success() {
+                        // succeed. update log
+                        workflow_log.update(&cr.field_trajectory_vec[..])?;
+                    } else {
+                        workflow_log.write(false)?;
+                        let cmd_stderr = std::str::from_utf8(&cres.stderr[..])?;
+                        let msg = format!("{} command at step {} failed to exit with code 0 under the shell.\n\
+                            The exit status was: {}.\n\
+                            The stderr of the invocation was: {}.", pn, step, cres.status, cmd_stderr);
+                        warn!(msg);
+                        bail!(msg);
+                    }
+                }
+                Err(e) => {
+                    workflow_log.write(false)?;
+                    let msg = format!(
+                        "{} command at step {} failed to execute under the shell.\n\
+                            The returned error was: {:?}.\n",
+                        pn, step, e
+                    );
+                    warn!(msg);
+                    bail!(msg);
+                } // TODO: use this in the log somewhere.
+            } // invoke external cmd
+
+            info!("successfully ran {} command for step {}.", pn, step);
+        } // for cmd_queue
+    }
+    Ok(())
+}
+
 /// intialize simpleaf workflow realted structs:
 /// SimpleafWorkflow and WorkfowLog
 pub fn initialize_workflow<T: AsRef<Path>>(
@@ -284,16 +438,16 @@ impl SimpleafWorkflow {
                     let cmd_field = workflow_log.get_mut_cmd_field(&curr_field_trajectory_vec)?;
                     cmd_field[SystemFields::Active.as_str()] = json!(active);
 
-                    // The field must contains an program-name
+                    // The field must contains a program-name
                     if let Some(program_name) = field.get(SystemFields::ProgramName.as_str()) {
                         pn = ProgramName::from_str(program_name.as_str().with_context(|| {
                             "Cannot create ProgramName struct from a program name"
                         })?);
                         // if active, then push to execution queue
                         if active {
-                            info!("Parsing {} command for Step {}", pn, step);
+                            info!("Parsing {} command for step {}", pn, step);
                             // The `step` will be used for sorting the cmd_queue vector.
-                            // All commands must have an valid `step`.
+                            // All commands must have a valid `step`.
                             // Note that we store this as a string in json b/c all value in config
                             // file are strings.
                             if pn.is_external() {
@@ -337,6 +491,7 @@ impl SimpleafWorkflow {
                     } // if have ProgramName
                 } else {
                     // If this is not a command record, we move to the next level
+                    // recursively calling this function on the current field.
                     SimpleafWorkflow::fill_cmd_queue(
                         field,
                         cmd_queue,
