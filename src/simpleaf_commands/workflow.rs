@@ -254,17 +254,14 @@ pub fn run_workflow<T: AsRef<Path>>(
             skip_step,
             ext_codes,
         } => {
+            // recursively make the output directory
             run_fun!(mkdir -p $output)?;
 
             // we need to convert the optional to a vector
-            let final_skip_step = if let Some(ss) = skip_step {
-                ss
-            } else {
-                Vec::new()
-            };
+            let final_skip_step = skip_step.unwrap_or(Vec::new());
 
             //  check the validity of the file
-            if !template.exists() {
+            if !template.exists() || !template.is_file() {
                 bail!("the path of the given workflow configuratioin file doesn't exist; Cannot proceed.")
             }
 
@@ -280,7 +277,7 @@ pub fn run_workflow<T: AsRef<Path>>(
                 &ext_codes,
             )?;
 
-            // write complete workflow json to output folder
+            // write complete workflow (i.e. the manifest) JSON to output folder
             let workflow_json_value: Value = serde_json::from_str(workflow_json_string.as_str())?;
 
             // initialize simpleaf workflow and log struct
