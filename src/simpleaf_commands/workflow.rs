@@ -292,7 +292,11 @@ pub fn run_workflow<T: AsRef<Path>>(
             )?;
 
             if !no_execution {
-                workflow_utils::execute_commands_in_workflow(simpleaf_workflow, af_home_path, &mut workflow_log)?;
+                workflow_utils::execute_commands_in_workflow(
+                    simpleaf_workflow,
+                    af_home_path,
+                    &mut workflow_log,
+                )?;
                 // write log
                 workflow_log.write(true)?;
                 info!("all commands ran successfully.");

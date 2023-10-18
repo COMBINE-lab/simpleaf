@@ -11,7 +11,6 @@ use serde_json::{json, Map, Value};
 use std::fs;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use tracing::warn;
 
 use crate::utils::jrsonnet_main::parse_jsonnet;
@@ -24,6 +23,12 @@ use super::prog_utils::shell;
 
 // fields that are not representing any simpleaf flag
 const SKIPARG: &[&str] = &["step", "program-name", "active"];
+
+#[derive(Debug)]
+pub enum WFCommand {
+    SimpleafCommand(crate::Commands),
+    ExternalCommand(std::process::Command),
+}
 
 // This function gets the version string from the workflow template file in the provided folder
 pub fn get_template_version<T: AsRef<Path>>(
@@ -157,7 +162,11 @@ pub fn get_previous_log<T: AsRef<Path>>(output: T) -> anyhow::Result<Value> {
     }
 }
 
-pub fn execute_commands_in_workflow<T: AsRef<Path>>(simpleaf_workflow: SimpleafWorkflow, af_home_path: T, workflow_log: &mut WorkflowLog) -> anyhow::Result<()> {
+pub fn execute_commands_in_workflow<T: AsRef<Path>>(
+    simpleaf_workflow: SimpleafWorkflow,
+    af_home_path: T,
+    workflow_log: &mut WorkflowLog,
+) -> anyhow::Result<()> {
     for cr in simpleaf_workflow.cmd_queue {
         let pn = cr.program_name;
         let step = cr.step;
@@ -169,27 +178,28 @@ pub fn execute_commands_in_workflow<T: AsRef<Path>>(simpleaf_workflow: SimpleafW
         // initiliaze a stopwatch
         workflow_log.timeit(step);
 
-        if let Some(cmd) = cr.simpleaf_cmd {
-            let exec_result = match cmd {
-                Commands::Index {
-                    ref_type,
-                    fasta,
-                    gtf,
-                    gff3_format,
-                    rlen,
-                    spliced,
-                    unspliced,
-                    dedup,
-                    keep_duplicates,
-                    ref_seq,
-                    output,
-                    use_piscem,
-                    kmer_length,
-                    minimizer_length,
-                    overwrite,
-                    sparse,
-                    threads,
-                } => crate::indexing::build_ref_and_index(
+        match cr.cmd {
+            WFCommand::SimpleafCommand(cmd) => {
+                let exec_result = match cmd {
+                    Commands::Index {
+                        ref_type,
+                        fasta,
+                        gtf,
+                        gff3_format,
+                        rlen,
+                        spliced,
+                        unspliced,
+                        dedup,
+                        keep_duplicates,
+                        ref_seq,
+                        output,
+                        use_piscem,
+                        kmer_length,
+                        minimizer_length,
+                        overwrite,
+                        sparse,
+                        threads,
+                    } => crate::indexing::build_ref_and_index(
                         af_home_path.as_ref(),
                         Commands::Index {
                             ref_type,
@@ -212,27 +222,27 @@ pub fn execute_commands_in_workflow<T: AsRef<Path>>(simpleaf_workflow: SimpleafW
                         },
                     ),
 
-                // if we are running mapping and quantification
-                Commands::Quant {
-                    index,
-                    use_piscem,
-                    map_dir,
-                    reads1,
-                    reads2,
-                    threads,
-                    use_selective_alignment,
-                    expected_ori,
-                    knee,
-                    unfiltered_pl,
-                    explicit_pl,
-                    forced_cells,
-                    expect_cells,
-                    min_reads,
-                    resolution,
-                    t2g_map,
-                    chemistry,
-                    output,
-                } => crate::quant::map_and_quant(
+                    // if we are running mapping and quantification
+                    Commands::Quant {
+                        index,
+                        use_piscem,
+                        map_dir,
+                        reads1,
+                        reads2,
+                        threads,
+                        use_selective_alignment,
+                        expected_ori,
+                        knee,
+                        unfiltered_pl,
+                        explicit_pl,
+                        forced_cells,
+                        expect_cells,
+                        min_reads,
+                        resolution,
+                        t2g_map,
+                        chemistry,
+                        output,
+                    } => crate::quant::map_and_quant(
                         af_home_path.as_ref(),
                         Commands::Quant {
                             index,
@@ -255,59 +265,57 @@ pub fn execute_commands_in_workflow<T: AsRef<Path>>(simpleaf_workflow: SimpleafW
                             output,
                         },
                     ),
-                _ => todo!(),
-            };
-            if let Err(e) = exec_result {
-                workflow_log.write(false)?;
-                info!("Execution terminated at {} command for step {}", pn, step);
-                return Err(e);
-            } else {
-                info!("Successfully ran {} command for step {}", pn, step);
+                    _ => todo!(),
+                };
+                if let Err(e) = exec_result {
+                    workflow_log.write(false)?;
+                    info!("Execution terminated at {} command for step {}", pn, step);
+                    return Err(e);
+                } else {
+                    info!("Successfully ran {} command for step {}", pn, step);
+                    workflow_log.update(&cr.field_trajectory_vec[..])?;
+                }
+            },
+            // If this is an external command, then initialize it and run
+            WFCommand::ExternalCommand(mut ext_cmd) => {
+                // log
+                let cmd_string = prog_utils::get_cmd_line_string(&ext_cmd);
+                info!("Invoking command : {}", cmd_string);
 
-                workflow_log.update(&cr.field_trajectory_vec[..])?;
-            }
-        }
+                // initiate a stopwatch
+                workflow_log.timeit(cr.step);
 
-        // If this is an external command, then initialize it and run
-        if let Some(mut ext_cmd) = cr.external_cmd {
-            // log
-            let cmd_string = prog_utils::get_cmd_line_string(&ext_cmd);
-            info!("Invoking command : {}", cmd_string);
-
-            // initiate a stopwatch
-            workflow_log.timeit(cr.step);
-
-            match ext_cmd.output() {
-                Ok(cres) => {
-                    // check the return status of external command
-                    if cres.status.success() {
-                        // succeed. update log
-                        workflow_log.update(&cr.field_trajectory_vec[..])?;
-                    } else {
-                        workflow_log.write(false)?;
-                        let cmd_stderr = std::str::from_utf8(&cres.stderr[..])?;
-                        let msg = format!("{} command at step {} failed to exit with code 0 under the shell.\n\
+                match ext_cmd.output() {
+                    Ok(cres) => {
+                        // check the return status of external command
+                        if cres.status.success() {
+                            // succeed. update log
+                            workflow_log.update(&cr.field_trajectory_vec[..])?;
+                        } else {
+                            workflow_log.write(false)?;
+                            let cmd_stderr = std::str::from_utf8(&cres.stderr[..])?;
+                            let msg = format!("{} command at step {} failed to exit with code 0 under the shell.\n\
                             The exit status was: {}.\n\
                             The stderr of the invocation was: {}.", pn, step, cres.status, cmd_stderr);
+                            warn!(msg);
+                            bail!(msg);
+                        }
+                    }
+                    Err(e) => {
+                        workflow_log.write(false)?;
+                        let msg = format!(
+                            "{} command at step {} failed to execute under the shell.\n\
+                            The returned error was: {:?}.\n",
+                            pn, step, e
+                        );
                         warn!(msg);
                         bail!(msg);
-                    }
-                }
-                Err(e) => {
-                    workflow_log.write(false)?;
-                    let msg = format!(
-                        "{} command at step {} failed to execute under the shell.\n\
-                            The returned error was: {:?}.\n",
-                        pn, step, e
-                    );
-                    warn!(msg);
-                    bail!(msg);
-                } // TODO: use this in the log somewhere.
-            } // invoke external cmd
-
-            info!("successfully ran {} command for step {}.", pn, step);
-        } // for cmd_queue
-    }
+                    } // TODO: use this in the log somewhere.
+                } // invoke external cmd
+            }
+        }
+        info!("successfully ran {} command for step {}.", pn, step);
+    } // for cmd_queue
     Ok(())
 }
 
@@ -447,44 +455,24 @@ impl SimpleafWorkflow {
                         if active {
                             info!("Parsing {} command for step {}", pn, step);
                             // The `step` will be used for sorting the cmd_queue vector.
-                            // All commands must have a valid `step`.
-                            // Note that we store this as a string in json b/c all value in config
-                            // file are strings.
-                            if pn.is_external() {
-                                // creating an external command records using the args recorded in the field
-                                let external_cmd = match pn.create_external_cmd(field) {
-                                    Ok(v) => v,
-                                    Err(e) => {
+                            // all commands must have a valid `step`.
+                            let cmd = match pn.create_cmd(field) {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    if pn.is_external() {
                                         bail!("Could not parse external command {} for step {}. The error message was: {}", pn, step, e);
-                                    }
-                                };
-
-                                cmd_queue.push(CommandRecord {
-                                    step,
-                                    active,
-                                    program_name: pn,
-                                    simpleaf_cmd: None,
-                                    external_cmd: Some(external_cmd),
-                                    field_trajectory_vec: curr_field_trajectory_vec,
-                                });
-                            } else {
-                                // create a simpleaf command record using the args recorded in the field
-                                let simpleaf_cmd = match pn.create_simpleaf_cmd(field) {
-                                    Ok(v) => v,
-                                    Err(e) => {
+                                    } else {
                                         bail!("Could not parse simpleaf command {} for step {}. The error message was: {}", pn, step, e);
                                     }
-                                };
-
-                                cmd_queue.push(CommandRecord {
-                                    step,
-                                    active,
-                                    program_name: pn,
-                                    simpleaf_cmd: Some(simpleaf_cmd),
-                                    external_cmd: None,
-                                    field_trajectory_vec: curr_field_trajectory_vec,
-                                });
-                            }
+                                }
+                            };
+                            cmd_queue.push(CommandRecord {
+                                step,
+                                active,
+                                program_name: pn,
+                                cmd,
+                                field_trajectory_vec: curr_field_trajectory_vec,
+                            });
                         } else {
                             info!("Skipping {} command for step {}", pn, step);
                         } // if active
@@ -596,7 +584,9 @@ impl WorkflowLog {
             .into_owned();
 
         // get meta_info
-        let workflow_meta_info = workflow_json_value.get(SystemFields::MetaInfo.as_str()).map(|v| v.to_owned());
+        let workflow_meta_info = workflow_json_value
+            .get(SystemFields::MetaInfo.as_str())
+            .map(|v| v.to_owned());
 
         // if we don't see an meta info section, report a warning
         if workflow_meta_info.is_none() {
@@ -811,11 +801,23 @@ pub struct CommandRecord {
     pub step: u64,
     pub active: bool,
     pub program_name: ProgramName,
-    pub simpleaf_cmd: Option<Commands>,
-    pub external_cmd: Option<Command>,
+    pub cmd: WFCommand,
+    //pub simpleaf_cmd: Option<Commands>,
+    //pub external_cmd: Option<Command>,
+
     // This vector records the field name trajectory from the top level
     // this is used to update the `step` after invoked successfully.
     pub field_trajectory_vec: Vec<usize>,
+}
+
+impl CommandRecord {
+    pub fn is_external(&self) -> bool {
+        self.program_name.is_external()
+    }
+
+    pub fn is_simpleaf(&self) -> bool {
+        !self.is_external()
+    }
 }
 
 /// This enum represents the program name of a command.
@@ -845,10 +847,9 @@ impl ProgramName {
         matches!(self, &ProgramName::External(_))
     }
 
-
     /// Create a valid simpleaf command object using the arguments recoreded in the field.
     /// step and program name will be ignored in this procedure
-    pub fn create_simpleaf_cmd(&self, value: &Value) -> anyhow::Result<Commands> {
+    pub fn create_simpleaf_cmd(&self, value: &Value) -> anyhow::Result<WFCommand> {
         let mut arg_vec = match self {
             ProgramName::Index => vec![String::from("simpleaf"), String::from("index")],
             ProgramName::Quant => vec![String::from("simpleaf"), String::from("quant")],
@@ -862,13 +863,12 @@ impl ProgramName {
         if let Value::Object(args) = value {
             for (k, v) in args {
                 if !SKIPARG.contains(&k.as_str()) {
-
                     // if the value is a Bool, we set the flag if it is true
                     // else, we push the argument name and the value
                     if let Value::Bool(b) = v {
                         if *b {
                             // we first push the argument name
-                            arg_vec.push(k.to_string());        
+                            arg_vec.push(k.to_string());
                         }
                     } else {
                         arg_vec.push(k.to_string());
@@ -877,7 +877,6 @@ impl ProgramName {
                             arg_vec.push(sv.to_string());
                         }
                     }
-
                 }
             }
         } else {
@@ -887,16 +886,19 @@ impl ProgramName {
         // check if empty
         if arg_vec.len() > 2 {
             let cmd = Cli::parse_from(arg_vec).command;
-            Ok(cmd)
+            Ok(WFCommand::SimpleafCommand(cmd))
         } else {
-            bail!("Found a {} command with no argument. Cannot Proceed.", arg_vec.join(" "))
+            bail!(
+                "Found a {} command with no argument. Cannot Proceed.",
+                arg_vec.join(" ")
+            )
         }
     }
 
     /// This function instantiates a std::process::Command
     /// for an external command record according to
     /// the  "arguments" field.
-    pub fn create_external_cmd(&self, value: &Value) -> anyhow::Result<Command> {
+    pub fn create_external_cmd(&self, value: &Value) -> anyhow::Result<WFCommand> {
         // get the argument vector, which is named as "Argument"
         let arg_value_vec = value
             .get(SystemFields::ExternalArguments.as_str())
@@ -914,12 +916,25 @@ impl ProgramName {
         }
 
         if arg_vec.len() == 1 {
-            warn!("Found a(n) {} command with no argument.", arg_vec.first().with_context(|| "Cannot get the first element of the argument vector; Cannot proceed")?);
+            warn!(
+                "Found a(n) {} command with no argument.",
+                arg_vec.first().with_context(|| {
+                    "Cannot get the first element of the argument vector; Cannot proceed"
+                })?
+            );
         }
         // make Command struct for the command
         let external_cmd = shell(arg_vec.join(" "));
 
-        Ok(external_cmd)
+        Ok(WFCommand::ExternalCommand(external_cmd))
+    }
+
+    pub fn create_cmd(&self, value: &Value) -> anyhow::Result<WFCommand> {
+        if self.is_external() {
+            self.create_external_cmd(value)
+        } else {
+            self.create_simpleaf_cmd(value)
+        }
     }
 }
 
@@ -937,17 +952,17 @@ impl std::fmt::Display for ProgramName {
     }
 }
 
-
-pub (crate) fn to_quoted_string(v: &Value) -> String {
+pub(crate) fn to_quoted_string(v: &Value) -> String {
     match v {
-        Value::String(s) => { String::from(s) },
-        val => { format!("{}", val) }
+        Value::String(s) => String::from(s),
+        val => {
+            format!("{}", val)
+        }
     }
 }
 
-
 #[derive(Copy, Clone, Debug)]
-pub (crate) enum SystemFields {
+pub(crate) enum SystemFields {
     Step,
     ProgramName,
     Active,
@@ -959,7 +974,7 @@ pub (crate) enum SystemFields {
 
 impl std::fmt::Display for SystemFields {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}",self.as_str())
+        write!(f, "{:?}", self.as_str())
     }
 }
 
@@ -1142,9 +1157,10 @@ pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> anyhow::Res
 mod tests {
     // use clap::Parser;
 
-    use serde_json::{json, Map, Value};
-
     use super::ProgramName;
+    use super::WFCommand;
+    use crate::utils::workflow_utils::SystemFields;
+    use serde_json::{json, Map, Value};
     // use crate::Cli;
     // use crate::Commands;
     // use crate::SimpleafCmdRecord;
@@ -1297,7 +1313,12 @@ mod tests {
 
                 assert_eq!(
                     workflow_meta_info,
-                    &Some(workflow_json_value.get(SystemFields::MetaInfo.as_str()).unwrap().to_owned())
+                    &Some(
+                        workflow_json_value
+                            .get(SystemFields::MetaInfo.as_str())
+                            .unwrap()
+                            .to_owned()
+                    )
                 );
 
                 let mut new_value = value.to_owned();
@@ -1350,8 +1371,8 @@ mod tests {
         // let cmd = sw.cmd_queue.pop().unwrap();
         assert_eq!(cmd.step, 4);
         assert_eq!(cmd.program_name, ProgramName::from_str("gunzip"));
-        assert!(cmd.external_cmd.is_some());
-        assert!(cmd.simpleaf_cmd.is_none());
+        assert!(cmd.is_external());
+        assert!(!cmd.is_simpleaf());
 
         let field_trajectory_vec = cmd.field_trajectory_vec.clone();
         let field_id_to_name = wl.field_id_to_name.clone();
@@ -1372,16 +1393,23 @@ mod tests {
         );
         let gunzip_cmd = shell("gunzip -c adt_ref.csv.gz > adt_ref.csv");
 
-        assert_eq!(
-            get_cmd_line_string(&cmd.external_cmd.unwrap()),
-            get_cmd_line_string(&gunzip_cmd),
-        );
+        if let WFCommand::ExternalCommand(ext_cmd) = &cmd.cmd {
+            assert_eq!(
+                get_cmd_line_string(ext_cmd),
+                get_cmd_line_string(&gunzip_cmd),
+            );
+        } else {
+            panic!(
+                "Expected {:?} to match WFCommand::ExternalCommand, but it didn't",
+                &cmd.cmd
+            );
+        }
 
         // check command #2: simpleaf quant
         let cmd = sw.cmd_queue.pop().unwrap();
         assert_eq!(cmd.step, 2);
         assert_eq!(cmd.program_name, ProgramName::from_str("simpleaf quant"));
-        assert!(cmd.external_cmd.is_none());
+        assert!(!cmd.is_external());
 
         let field_trajectory_vec = cmd.field_trajectory_vec.clone();
         let field_id_to_name = wl.field_id_to_name.clone();
@@ -1401,8 +1429,8 @@ mod tests {
             String::from("simpleaf_quant")
         );
 
-        match cmd.simpleaf_cmd {
-            Some(Commands::Quant {
+        match cmd.cmd {
+            WFCommand::SimpleafCommand(Commands::Quant {
                 chemistry,
                 output,
                 threads,
