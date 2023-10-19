@@ -28,6 +28,13 @@ pub fn refresh_protocol_estuary<T: AsRef<Path>>(af_home_path: T) -> anyhow::Resu
     Ok(())
 }
 
+pub fn patch_manifest_or_template<T: AsRef<Path>>(
+    af_home_path: T,
+    workflow_cmd: WorkflowCommands) -> anyhow::Result<()> {
+
+    Ok(())
+}
+
 pub fn list_workflows<T: AsRef<Path>>(af_home_path: T) -> anyhow::Result<()> {
     // get af_home
     let v: Value = prog_utils::inspect_af_home(af_home_path.as_ref())?;

@@ -14,7 +14,7 @@ pub mod quant;
 pub use self::quant::map_and_quant;
 
 pub mod workflow;
-pub use self::workflow::{get_wokflow, list_workflows, refresh_protocol_estuary, run_workflow};
+pub use self::workflow::{get_wokflow, list_workflows, patch_manifest_or_template, refresh_protocol_estuary, run_workflow};
 
 use clap::{builder::ArgPredicate, ArgGroup, Args, Subcommand};
 use std::path::PathBuf;
@@ -346,6 +346,26 @@ pub enum WorkflowCommands {
         // only write the essential information without any instructions
         // #[arg(short, long)]
         // essential_only: bool,
+    },
+
+    #[command(arg_required_else_help = true)]
+    #[command(group(
+        clap::ArgGroup::new("source")
+        .required(true)
+        .args(&["manifest", "template"]),
+    ))]
+    /// Patch a workflow template or instantiated manifest with a subset of parameters 
+    /// to produce a series of workflow manifests.
+    Patch {
+        /// fully-instantiated manifest (JSON file) to patch
+        #[arg(short, long)]
+        manifest: Option<PathBuf>,
+        /// partially-instantiated template (JSONNET file) to patch
+        #[arg(short, long)]
+        template: Option<PathBuf>,
+        /// patch to apply
+        #[arg(short, long)]
+        patch: PathBuf
     },
 
     #[command(arg_required_else_help = true)]
