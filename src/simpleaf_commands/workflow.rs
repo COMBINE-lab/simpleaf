@@ -32,6 +32,20 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
     af_home_path: T,
     workflow_cmd: WorkflowCommands) -> anyhow::Result<()> {
 
+    match workflow_cmd {
+        WorkflowCommands::Patch{
+            manifest, template, patch
+        } => {
+            if let Some(manifest_value) = manifest {
+
+            } else if let Some(template_value) = template {
+
+            }
+        },
+        _ => {
+            bail!("The patch function received a non-patch command. This should not happen. Please report this issue.");
+        }
+    }
     Ok(())
 }
 
