@@ -50,7 +50,7 @@ pub struct JsonPatch {
 
 #[derive(Debug)]
 pub struct PatchCollection {
-    patches: Vec<JsonPatch>,
+    pub patches: Vec<JsonPatch>,
 }
 
 impl PatchCollection {
@@ -102,7 +102,7 @@ pub fn template_patches_from_csv(csv: PathBuf) -> anyhow::Result<PatchCollection
         }
     }
     // loop over every row (but the headers)
-    for (i, row) in rdr.records().enumerate() {
+    for (_i, row) in rdr.records().enumerate() {
         let mut output_json = json!({});
         let mut patch_name = String::new();
         // for each key that we need to replace
@@ -229,6 +229,7 @@ pub fn get_template_version<T: AsRef<Path>>(
         &template_path,
         PathBuf::from(".").as_path(),
         utils_dir.as_ref(),
+        &None,
         &None,
         &None,
         TemplateState::Uninstantiated,
@@ -1199,6 +1200,7 @@ pub fn parse_workflow_config<T: AsRef<Path>>(
         &protocol_estuary.utils_dir,
         jpaths,
         ext_codes,
+        &None,
         TemplateState::Instantiated,
     ) {
         Ok(js) => Ok(js),

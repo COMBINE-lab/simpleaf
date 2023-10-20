@@ -1,7 +1,7 @@
 // This crate is a modified version of jrsonnet cli.
 // https://github.com/CertainLach/jrsonnet/blob/master/cmds/jrsonnet/src/main.rs
 
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, Context, bail};
 use clap::Parser;
 use jrsonnet_cli::{GcOpts, ManifestOpts, MiscOpts, OutputOpts, StdOpts, TlaOpts, TraceOpts};
 use jrsonnet_evaluator::{
@@ -10,6 +10,7 @@ use jrsonnet_evaluator::{
     State,
 };
 use std::path::{Path, PathBuf};
+use crate::utils::workflow_utils::JsonPatch;
 
 #[derive(Parser)]
 struct InputOpts {
@@ -64,17 +65,22 @@ pub fn parse_jsonnet(
     utils_dir: &Path,
     jpaths: &Option<Vec<PathBuf>>,
     ext_codes: &Option<Vec<String>>,
+    patch : &Option<&JsonPatch>,
     template_state: TemplateState,
 ) -> anyhow::Result<String> {
     // define jrsonnet arguments
     // config file
     let instantiated = template_state.is_instantiated();
-    let input_config_file_path = config_file_path.to_str().with_context(|| {
-        format!(
-            "Could not convert workflow config file path to str: {:?}",
-            config_file_path
-        )
-    })?;
+    let tla_config_file_path = format!("workflow='{}'", 
+        config_file_path.to_str().with_context(|| {
+            format!(
+                "Could not convert workflow config file path to str: {:?}",
+                config_file_path
+            )
+        })?);
+
+
+
     let ext_output = format!(r#"__output='{}'"#, output.display());
     let ext_utils_file_path = r#"__utils=import 'simpleaf_workflow_utils.libsonnet'"#;
     let ext_instantiated = format!(r#"__instantiated='{}'"#, instantiated);
@@ -87,10 +93,22 @@ pub fn parse_jsonnet(
         )
     })?;
 
+    // get main.jsonnet file path
+    let main_jsonnet_file_path = utils_dir.join("main.jsonnet");
+    if !main_jsonnet_file_path.exists() {
+        bail!("Could not find main.jsonnet file protocol-asturay; Please update it by invoking `simpleaf workflow refresh`")
+    }
+    let main_jsonnet_file_str = main_jsonnet_file_path.to_str().with_context(|| {
+        format!(
+            "Could not convert main.jsonnet file path to str: {:?}",
+            main_jsonnet_file_path
+        )
+    })?;
+    
     // create command vector for clap parser
     let mut jrsonnet_cmd_vec = vec![
         "jrsonnet",
-        input_config_file_path,
+        main_jsonnet_file_str,
         "--ext-code",
         &ext_output,
         "--ext-code",
@@ -99,6 +117,8 @@ pub fn parse_jsonnet(
         &ext_instantiated,
         "--jpath",
         jpath_pe_utils,
+        "--tla-code-file",
+        tla_config_file_path.as_str(),
     ];
 
     // if the user provides more lib search path, then assign it.
@@ -118,6 +138,16 @@ pub fn parse_jsonnet(
             jrsonnet_cmd_vec.push(ext_code.as_str());
         }
     }
+
+    
+    // if the user provides patch, then assign it.
+    let patch_string = if let Some(patch) = patch {
+        jrsonnet_cmd_vec.push("--tla-code");
+        format!("patch='{}'", patch.patch.to_string())
+    } else {
+        "".to_string()
+    };
+    jrsonnet_cmd_vec.push(patch_string.as_str());
 
     let opts: Opts = Opts::parse_from(jrsonnet_cmd_vec);
     main_catch(opts)

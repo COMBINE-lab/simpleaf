@@ -1,8 +1,9 @@
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::ReqProgs;
 use crate::utils::workflow_utils;
+use crate::utils::jrsonnet_main::{parse_jsonnet, TemplateState};
 
-use anyhow::{bail, Context};
+use anyhow::{bail, Context, anyhow};
 use cmd_lib::run_fun;
 use serde_json::json;
 use serde_json::Value;
@@ -30,16 +31,43 @@ pub fn refresh_protocol_estuary<T: AsRef<Path>>(af_home_path: T) -> anyhow::Resu
 
 pub fn patch_manifest_or_template<T: AsRef<Path>>(
     af_home_path: T,
-    workflow_cmd: WorkflowCommands) -> anyhow::Result<()> {
-
+    workflow_cmd: WorkflowCommands
+) -> anyhow::Result<()> {
+    // get protocol_estuary path
+    let protocol_estuary =
+        workflow_utils::get_protocol_estuary(af_home_path.as_ref(), workflow_utils::RegistrySourceStrategy::PreferLocal)?;
+    
     match workflow_cmd {
         WorkflowCommands::Patch{
-            manifest, template, patch
+            manifest, 
+            template, 
+            patch
         } => {
+            let patches: workflow_utils::PatchCollection = workflow_utils::template_patches_from_csv(patch)?;
+
             if let Some(manifest_value) = manifest {
+                for p in patches.patches.iter() {
+                    // call parse_jsonnet to patch the template
+                    match parse_jsonnet(
+                        // af_home_path,
+                        manifest_value.as_ref(),
+                        &manifest_value,
+                        &protocol_estuary.utils_dir,
+                        &None,
+                        &None,
+                        &Some(p),
+                        TemplateState::Instantiated,
+                    ) {
+                        Ok(js) => Ok(js),
+                        Err(e) => Err(anyhow!(
+                            "Error occurred when processing the input config file {}. The error message was {}",
+                            manifest_value.display(),
+                            e
+                        )),
+                    };
+                }
+            } else if let Some(_template_value) = template {
                 todo!();
-            } else if let Some(template_value) = template {
-                let patches = workflow_utils::template_patches_from_csv(patch);
             }
         },
         _ => {
