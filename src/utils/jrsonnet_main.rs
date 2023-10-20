@@ -71,7 +71,7 @@ pub fn parse_jsonnet(
     // define jrsonnet arguments
     // config file
     let instantiated = template_state.is_instantiated();
-    let tla_config_file_path = format!("workflow='{}'", 
+    let tla_config_file_path = format!("workflow={}", 
         config_file_path.to_str().with_context(|| {
             format!(
                 "Could not convert workflow config file path to str: {:?}",
@@ -143,7 +143,7 @@ pub fn parse_jsonnet(
     // if the user provides patch, then assign it.
     let patch_string = if let Some(patch) = patch {
         jrsonnet_cmd_vec.push("--tla-code");
-        format!("patch='{}'", patch.patch.to_string())
+        format!("patch={}", patch.patch.to_string())
     } else {
         "".to_string()
     };

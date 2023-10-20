@@ -50,7 +50,7 @@ pub struct JsonPatch {
 
 #[derive(Debug)]
 pub struct PatchCollection {
-    pub patches: Vec<JsonPatch>,
+    patches: Vec<JsonPatch>,
 }
 
 impl PatchCollection {
@@ -62,6 +62,10 @@ impl PatchCollection {
 
     pub fn add_patch(&mut self, p: JsonPatch) {
         self.patches.push(p);
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<JsonPatch> {
+        self.patches.iter()
     }
 }
 

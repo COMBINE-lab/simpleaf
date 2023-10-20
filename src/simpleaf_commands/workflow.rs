@@ -45,29 +45,36 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
         } => {
             let patches: workflow_utils::PatchCollection = workflow_utils::template_patches_from_csv(patch)?;
 
-            if let Some(manifest_value) = manifest {
-                for p in patches.patches.iter() {
+            if let Some(_manifest_value) = manifest {
+                todo!();
+            } else if let Some(template_value) = template {
+                let template_value = template_value.canonicalize()?;
+                for p in patches.iter() {
                     // call parse_jsonnet to patch the template
                     match parse_jsonnet(
                         // af_home_path,
-                        manifest_value.as_ref(),
-                        &manifest_value,
+                        template_value.as_ref(),
+                        &template_value,
                         &protocol_estuary.utils_dir,
                         &None,
                         &None,
                         &Some(p),
                         TemplateState::Instantiated,
                     ) {
-                        Ok(js) => Ok(js),
-                        Err(e) => Err(anyhow!(
+                        Ok(js) => {
+                            // get template location
+                            let path = template_value.with_file_name(format!("{}.json",p.name));
+                            let fw = std::fs::File::create(path)?; 
+                            serde_json::to_writer_pretty(fw, &js)
+                            //Ok(js)  
+                        },
+                        Err(e) => bail!(
                             "Error occurred when processing the input config file {}. The error message was {}",
-                            manifest_value.display(),
+                            template_value.display(),
                             e
-                        )),
+                        ),
                     };
                 }
-            } else if let Some(_template_value) = template {
-                todo!();
             }
         },
         _ => {
