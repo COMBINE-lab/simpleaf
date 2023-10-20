@@ -37,9 +37,9 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
             manifest, template, patch
         } => {
             if let Some(manifest_value) = manifest {
-
+                todo!();
             } else if let Some(template_value) = template {
-
+                let patches = workflow_utils::template_patches_from_csv(patch);
             }
         },
         _ => {

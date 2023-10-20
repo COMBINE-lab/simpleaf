@@ -9,6 +9,7 @@ use cmd_lib::log::info;
 use cmd_lib::run_cmd;
 use serde_json::{json, Map, Value};
 use std::fs;
+use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use tracing::warn;
@@ -28,6 +29,181 @@ const SKIPARG: &[&str] = &["step", "program-name", "active"];
 pub enum WFCommand {
     SimpleafCommand(crate::Commands),
     ExternalCommand(std::process::Command),
+}
+
+#[allow(dead_code)]
+enum ColumnTypeTag {
+    String,
+    Boolean,
+    Number,
+    Null,
+    Array,
+    Object,
+    Name,
+}
+
+#[derive(Debug)]
+pub struct JsonPatch {
+    pub name: String,
+    pub patch: serde_json::Value
+}
+
+#[derive(Debug)]
+pub struct PatchCollection {
+    patches: Vec<JsonPatch>,
+}
+
+impl PatchCollection {
+    pub fn new() -> Self  {
+        Self {
+            patches: Vec::new() 
+        }
+    }
+
+    pub fn add_patch(&mut self, p: JsonPatch) {
+        self.patches.push(p);
+    }
+}
+
+pub fn template_patches_from_csv(csv: PathBuf) -> anyhow::Result<PatchCollection> {
+    // read the patch (CSV) file
+    let patch_file = File::open(csv)?;
+    let csv_reader = std::io::BufReader::new(patch_file);
+    
+    // the collection of patches we will return
+    let mut patches = PatchCollection::new();
+
+    // our patch parameter table is `;` separated
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(b';')
+        .from_reader(csv_reader);
+    
+    const NAME_COL : &'static str = "name";
+
+    // the headers give the paths to the keys that should be replaced
+    let headers = rdr.headers()?.clone();
+    let mut header_type_map = Vec::<(String, ColumnTypeTag)>::new();
+    for h in headers.iter() {
+        if h != NAME_COL {
+            if h.starts_with('<') {
+                let (type_tag, header) = h.split_at(3);
+                let json_type = match type_tag {
+                    "<s>" => ColumnTypeTag::String,
+                    "<b>" => ColumnTypeTag::Boolean,
+                    "<a>" => ColumnTypeTag::Array,
+                    _ => bail!("type not handled"),
+                };
+                header_type_map.push((header.to_string(), json_type));
+            } else {
+                header_type_map.push((h.to_string(), ColumnTypeTag::String));
+            }
+        } else {
+            header_type_map.push((h.to_string(), ColumnTypeTag::Name));
+        }
+    }
+    // loop over every row (but the headers)
+    for (i, row) in rdr.records().enumerate() {
+        let mut output_json = json!({});
+        let mut patch_name = String::new();
+        // for each key that we need to replace
+        for ((h, t), rec) in header_type_map.iter().zip(row?.iter()) {
+            if h == NAME_COL { patch_name = String::from(rec); continue; }
+            // the path to the key is the set of identifiers obtained
+            // by splitting on `.`.
+            let v = h.split('/').filter(|s| !s.is_empty()).collect::<Vec<&str>>();
+            let mut iter = v.iter().peekable();
+            let mut key_string = String::new();
+            while let Some(k) = iter.next() {
+                if iter.peek().is_some() {
+                    if let Some(ref mut x) = output_json.pointer_mut(&key_string) {
+                        match x {
+                            serde_json::Value::Object(m) => {
+                                match m.entry(k.to_string()) {
+                                    serde_json::map::Entry::Occupied(_o) => {
+                                        // this section already exists, we don't
+                                        // have to add it again.
+                                    }
+                                    serde_json::map::Entry::Vacant(v) => {
+                                        // this section didn't exist yet, so make
+                                        // the corresponding value an object.
+                                        v.insert(json!({}));
+                                    }
+                                }
+                            }
+                            _ => bail!("no good"),
+                        };
+                    } else {
+                        // shouldn't happen!
+                        bail!("Should never query a non-existent path!");
+                    }
+                    key_string.push_str(&format!("/{}", *k));
+                } else {
+                    // at the end of the path, the last element is not an
+                    // object, but a direct key / value pair, so add it as
+                    // such.
+                    if let Some(ref mut x) = output_json.pointer_mut(&key_string) {
+                        match x {
+                            serde_json::Value::Object(m) => {
+                                match m.entry(k.to_string()) {
+                                    serde_json::map::Entry::Occupied(_o) => {
+                                        bail!("should not see same key more than once!");
+                                    }
+                                    serde_json::map::Entry::Vacant(v) => {
+                                        match t {
+                                            ColumnTypeTag::String => { 
+                                                if rec == "null" {
+                                                    v.insert(json!(null)); 
+                                                } else {
+                                                    v.insert(json!(rec)); 
+                                                }
+                                            },
+                                            ColumnTypeTag::Number => {
+                                                if let Ok(n) = rec.parse::<i64>() {
+                                                    v.insert(json!(n));
+                                                } else if let Ok(n) = rec.parse::<f64>() {
+                                                    v.insert(json!(n));
+                                                } else {
+                                                    bail!("could not parse {}, which is expected to be a number, as such", rec);
+                                                }
+                                            },
+                                            ColumnTypeTag::Boolean => {
+                                                if let Ok(b) = rec.parse::<bool>() {
+                                                    v.insert(json!(b));
+                                                } else {
+                                                    bail!("could not parse {}, which is expected to be boolean, as such", rec);
+                                                }
+                                            },
+                                            ColumnTypeTag::Array => {
+                                                let no_pref = rec.strip_prefix('[').with_context(
+                                                    || format!("In record {}, array type must begin with [", rec))?;
+                                                let no_suffix = no_pref.strip_suffix(']').with_context(
+                                                    || format!("In record {}, array type must end with ]", rec))?;
+                                                let inner = no_suffix.trim();
+                                                let rdr = csv::ReaderBuilder::new().
+                                                    has_headers(false).from_reader(inner.as_bytes());
+                                                let array_elems_result = rdr.into_records().next();
+                                                if let Some(Ok(ok_array_elems)) = array_elems_result {
+                                                    let array_elems = ok_array_elems.into_iter()
+                                                        .map( |s| json!(s)).collect::<Vec<serde_json::Value>>();
+                                                    v.insert(serde_json::Value::Array(array_elems));
+                                                }
+                                            },
+                                            _ => bail!("type not supported")
+                                        }
+                                    }
+                                }
+                            },
+                            _ => bail!("encountered a path that led to a non-object entry; this shouldn't happen")
+                        };
+                    } else {
+                        bail!("Should never query a non-existent path!");
+                    }
+                }
+            }
+        }
+        patches.add_patch( JsonPatch{ name: patch_name, patch: output_json.clone() } );
+    }
+    Ok(patches)
 }
 
 // This function gets the version string from the workflow template file in the provided folder
