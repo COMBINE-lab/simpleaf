@@ -1,7 +1,18 @@
 simpleaf workflow patch
 =======================
 
-``simpleaf workflow patch`` does awesome stuff.
+``simpleaf workflow patch`` allow "patching" ``simpleaf`` workflows. Specifically, it allows one to patch either a workflow template 
+prior to instantiation (and therefore, to patch the values of variables in the workflow that may affect large parts of the configuration) or
+a workflow manifest (where patching only directly affects the specific fields being replaced).  The patch command is useful when you wish 
+to use the "skeleton" of a workflow (e.g. a template with many of the variables set), but you wish to parameterize other fields over some 
+set of different options.  Concretely, for example, you may have many gene 10x chromium v3 samples, all of which you wish to process with 
+the same workflow, but providing different reads as input and different output locations for the workflow output.  The ``patch`` command 
+makes this easy to accomplish.
+
+When operating on a template, the patch command takes as input a workflow template (which can be uninstantiated or partially filled in) via the ``--template`` 
+parameter, as well as a parameter table as a ``;`` separated CSV file via the ``--patch`` parameter.  For each (non-header) row in the 
+CSV file, it will patch the template with parameters provided in this row, instantiate a new manifest from this template (*after* replacement), and 
+write the instantiated manifest out to a ``JSON`` file.
 
 Full Usage
 ^^^^^^^^^^
