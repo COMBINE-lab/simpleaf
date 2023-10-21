@@ -143,7 +143,9 @@ pub fn parse_jsonnet(
     // if the user provides patch, then assign it.
     let patch_string = if let Some(patch) = patch {
         jrsonnet_cmd_vec.push("--tla-code");
-        format!("patch={}", patch.patch.to_string())
+        jrsonnet_cmd_vec.push(r#"patch=true"#);
+        jrsonnet_cmd_vec.push("--tla-code");
+        format!("json={}", patch.patch.to_string())
     } else {
         "".to_string()
     };
