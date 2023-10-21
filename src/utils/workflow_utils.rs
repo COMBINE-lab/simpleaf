@@ -46,7 +46,7 @@ enum ColumnTypeTag {
 #[derive(Debug)]
 pub struct JsonPatch {
     pub name: String,
-    pub patch: serde_json::Value
+    pub patch: serde_json::Value,
 }
 
 #[derive(Debug)]
@@ -55,9 +55,9 @@ pub struct PatchCollection {
 }
 
 impl PatchCollection {
-    pub fn new() -> Self  {
+    pub fn new() -> Self {
         Self {
-            patches: Vec::new() 
+            patches: Vec::new(),
         }
     }
 
@@ -74,7 +74,7 @@ pub fn template_patches_from_csv(csv: PathBuf) -> anyhow::Result<PatchCollection
     // read the patch (CSV) file
     let patch_file = File::open(csv)?;
     let csv_reader = std::io::BufReader::new(patch_file);
-    
+
     // the collection of patches we will return
     let mut patches = PatchCollection::new();
 
@@ -82,8 +82,8 @@ pub fn template_patches_from_csv(csv: PathBuf) -> anyhow::Result<PatchCollection
     let mut rdr = csv::ReaderBuilder::new()
         .delimiter(b';')
         .from_reader(csv_reader);
-    
-    const NAME_COL : &str = "name";
+
+    const NAME_COL: &str = "name";
 
     // the headers give the paths to the keys that should be replaced
     let headers = rdr.headers()?.clone();
@@ -112,10 +112,16 @@ pub fn template_patches_from_csv(csv: PathBuf) -> anyhow::Result<PatchCollection
         let mut patch_name = String::new();
         // for each key that we need to replace
         for ((h, t), rec) in header_type_map.iter().zip(row?.iter()) {
-            if h == NAME_COL { patch_name = String::from(rec); continue; }
+            if h == NAME_COL {
+                patch_name = String::from(rec);
+                continue;
+            }
             // the path to the key is the set of identifiers obtained
             // by splitting on `.`.
-            let v = h.split('/').filter(|s| !s.is_empty()).collect::<Vec<&str>>();
+            let v = h
+                .split('/')
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<&str>>();
             let mut iter = v.iter().peekable();
             let mut key_string = String::new();
             while let Some(k) = iter.next() {
@@ -155,11 +161,11 @@ pub fn template_patches_from_csv(csv: PathBuf) -> anyhow::Result<PatchCollection
                                     }
                                     serde_json::map::Entry::Vacant(v) => {
                                         match t {
-                                            ColumnTypeTag::String => { 
+                                            ColumnTypeTag::String => {
                                                 if rec == "null" {
-                                                    v.insert(json!(null)); 
+                                                    v.insert(json!(null));
                                                 } else {
-                                                    v.insert(json!(rec)); 
+                                                    v.insert(json!(rec));
                                                 }
                                             },
                                             ColumnTypeTag::Number => {
@@ -206,7 +212,10 @@ pub fn template_patches_from_csv(csv: PathBuf) -> anyhow::Result<PatchCollection
                 }
             }
         }
-        patches.add_patch( JsonPatch{ name: patch_name, patch: output_json.clone() } );
+        patches.add_patch(JsonPatch {
+            name: patch_name,
+            patch: output_json.clone(),
+        });
     }
     Ok(patches)
 }
@@ -457,7 +466,7 @@ pub fn execute_commands_in_workflow<T: AsRef<Path>>(
                     info!("Successfully ran {} command for step {}", pn, step);
                     workflow_log.update(&cr.field_trajectory_vec[..])?;
                 }
-            },
+            }
             // If this is an external command, then initialize it and run
             WFCommand::ExternalCommand(mut ext_cmd) => {
                 // log

@@ -1,7 +1,7 @@
+use crate::utils::jrsonnet_main::{parse_jsonnet, TemplateState};
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::ReqProgs;
 use crate::utils::workflow_utils;
-use crate::utils::jrsonnet_main::{parse_jsonnet, TemplateState};
 
 use anyhow::{bail, Context};
 use cmd_lib::run_fun;
@@ -31,19 +31,22 @@ pub fn refresh_protocol_estuary<T: AsRef<Path>>(af_home_path: T) -> anyhow::Resu
 
 pub fn patch_manifest_or_template<T: AsRef<Path>>(
     af_home_path: T,
-    workflow_cmd: WorkflowCommands
+    workflow_cmd: WorkflowCommands,
 ) -> anyhow::Result<()> {
     // get protocol_estuary path
-    let protocol_estuary =
-        workflow_utils::get_protocol_estuary(af_home_path.as_ref(), workflow_utils::RegistrySourceStrategy::PreferLocal)?;
-    
+    let protocol_estuary = workflow_utils::get_protocol_estuary(
+        af_home_path.as_ref(),
+        workflow_utils::RegistrySourceStrategy::PreferLocal,
+    )?;
+
     match workflow_cmd {
-        WorkflowCommands::Patch{
-            manifest, 
-            template, 
-            patch
+        WorkflowCommands::Patch {
+            manifest,
+            template,
+            patch,
         } => {
-            let patches: workflow_utils::PatchCollection = workflow_utils::template_patches_from_csv(patch)?;
+            let patches: workflow_utils::PatchCollection =
+                workflow_utils::template_patches_from_csv(patch)?;
 
             if let Some(_manifest_value) = manifest {
                 todo!();
@@ -71,7 +74,7 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
                                 format!("{}.json", p.name)
                             };
                             let path = template_value.with_file_name(patch_name);
-                            let fw = std::fs::File::create(path)?; 
+                            let fw = std::fs::File::create(path)?;
                             serde_json::to_writer_pretty(fw, &v)?
                         },
                         Err(e) => bail!(
@@ -82,7 +85,7 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
                     };
                 }
             }
-        },
+        }
         _ => {
             bail!("The patch function received a non-patch command. This should not happen. Please report this issue.");
         }

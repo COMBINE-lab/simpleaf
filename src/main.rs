@@ -208,14 +208,14 @@ fn main() -> anyhow::Result<()> {
                 WorkflowCommands::Patch {
                     manifest: manifest_opt,
                     template: template_opt,
-                    patch
+                    patch,
                 } => patch_manifest_or_template(
-                        af_home_path.as_path(),
-                        WorkflowCommands::Patch {
-                            manifest: manifest_opt,
-                            template: template_opt,
-                            patch
-                        }
+                    af_home_path.as_path(),
+                    WorkflowCommands::Patch {
+                        manifest: manifest_opt,
+                        template: template_opt,
+                        patch,
+                    },
                 ),
 
                 WorkflowCommands::List {} => list_workflows(af_home_path.as_path()),

@@ -1,7 +1,8 @@
 // This crate is a modified version of jrsonnet cli.
 // https://github.com/CertainLach/jrsonnet/blob/master/cmds/jrsonnet/src/main.rs
 
-use anyhow::{anyhow, Context, bail};
+use crate::utils::workflow_utils::JsonPatch;
+use anyhow::{anyhow, bail, Context};
 use clap::Parser;
 use jrsonnet_cli::{GcOpts, ManifestOpts, MiscOpts, OutputOpts, StdOpts, TlaOpts, TraceOpts};
 use jrsonnet_evaluator::{
@@ -10,7 +11,6 @@ use jrsonnet_evaluator::{
     State,
 };
 use std::path::{Path, PathBuf};
-use crate::utils::workflow_utils::JsonPatch;
 
 #[derive(Parser)]
 struct InputOpts {
@@ -65,21 +65,21 @@ pub fn parse_jsonnet(
     utils_dir: &Path,
     jpaths: &Option<Vec<PathBuf>>,
     ext_codes: &Option<Vec<String>>,
-    patch : &Option<&JsonPatch>,
+    patch: &Option<&JsonPatch>,
     template_state: TemplateState,
 ) -> anyhow::Result<String> {
     // define jrsonnet arguments
     // config file
     let instantiated = template_state.is_instantiated();
-    let tla_config_file_path = format!("workflow={}", 
+    let tla_config_file_path = format!(
+        "workflow={}",
         config_file_path.to_str().with_context(|| {
             format!(
                 "Could not convert workflow config file path to str: {:?}",
                 config_file_path
             )
-        })?);
-
-
+        })?
+    );
 
     let ext_output = format!(r#"__output='{}'"#, output.display());
     let ext_utils_file_path = r#"__utils=import 'simpleaf_workflow_utils.libsonnet'"#;
@@ -104,7 +104,7 @@ pub fn parse_jsonnet(
             main_jsonnet_file_path
         )
     })?;
-    
+
     // create command vector for clap parser
     let mut jrsonnet_cmd_vec = vec![
         "jrsonnet",
@@ -138,7 +138,7 @@ pub fn parse_jsonnet(
             jrsonnet_cmd_vec.push(ext_code.as_str());
         }
     }
-    
+
     // if the user provides patch, then assign it.
     let patch_string = if let Some(patch) = patch {
         jrsonnet_cmd_vec.push("--tla-code");
