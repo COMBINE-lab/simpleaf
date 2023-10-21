@@ -138,18 +138,19 @@ pub fn parse_jsonnet(
             jrsonnet_cmd_vec.push(ext_code.as_str());
         }
     }
-
     
     // if the user provides patch, then assign it.
     let patch_string = if let Some(patch) = patch {
         jrsonnet_cmd_vec.push("--tla-code");
         jrsonnet_cmd_vec.push(r#"patch=true"#);
         jrsonnet_cmd_vec.push("--tla-code");
-        format!("json={}", patch.patch.to_string())
+        Some(format!("json={}", patch.patch.to_string()))
     } else {
-        "".to_string()
+        None
     };
-    jrsonnet_cmd_vec.push(patch_string.as_str());
+    if let Some(s) = &patch_string {
+        jrsonnet_cmd_vec.push(s.as_str());
+    }
 
     let opts: Opts = Opts::parse_from(jrsonnet_cmd_vec);
     main_catch(opts)
