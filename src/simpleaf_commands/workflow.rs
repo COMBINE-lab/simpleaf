@@ -45,16 +45,17 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
             template,
             patch,
         } => {
+            // generate a set of JSON patch files from the input
+            // semicolon separated CSV file.
             let patches: workflow_utils::PatchCollection =
                 workflow_utils::template_patches_from_csv(patch)?;
 
-            if let Some(_manifest_value) = manifest {
-                todo!();
-            } else if let Some(template_value) = template {
-                let template_value = template_value.canonicalize()?;
-                for p in patches.iter() {
-                    // call parse_jsonnet to patch the template
-                    match parse_jsonnet(
+            let template_value = template.unwrap_or_else(|| manifest.unwrap());
+
+            let template_value = template_value.canonicalize()?;
+            for p in patches.iter() {
+                // call parse_jsonnet to patch the template
+                match parse_jsonnet(
                         // af_home_path,
                         template_value.as_ref(),
                         &template_value,
@@ -64,26 +65,25 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
                         &Some(p),
                         TemplateState::Instantiated,
                     ) {
-                        Ok(js) => {
-                            let v: Value = serde_json::from_str(js.as_str())?;
+                            Ok(js) => {
+                                let v: Value = serde_json::from_str(js.as_str())?;
 
-                            // get template location
-                            let patch_name = if let Some(stem) = template_value.file_stem() {
-                                format!("{}_{}.json", Path::new(stem).display(), p.name)
-                            } else {
-                                format!("{}.json", p.name)
-                            };
-                            let path = template_value.with_file_name(patch_name);
-                            let fw = std::fs::File::create(path)?;
-                            serde_json::to_writer_pretty(fw, &v)?
-                        },
-                        Err(e) => bail!(
-                            "Error occurred when processing the input config file {}. The error message was {}",
-                            template_value.display(),
-                            e
-                        ),
-                    };
-                }
+                                // get template location
+                                let patch_name = if let Some(stem) = template_value.file_stem() {
+                                    format!("{}_{}.json", Path::new(stem).display(), p.name)
+                                } else {
+                                    format!("{}.json", p.name)
+                                };
+                                let path = template_value.with_file_name(patch_name);
+                                let fw = std::fs::File::create(path)?;
+                                serde_json::to_writer_pretty(fw, &v)?
+                            },
+                            Err(e) => bail!(
+                                "Error occurred when processing the input config file {}. The error message was {}",
+                                template_value.display(),
+                                e
+                            ),
+                        };
             }
         }
         _ => {

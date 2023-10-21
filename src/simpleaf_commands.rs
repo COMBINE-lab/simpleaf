@@ -359,13 +359,20 @@ pub enum WorkflowCommands {
     /// Patch a workflow template or instantiated manifest with a subset of parameters
     /// to produce a series of workflow manifests.
     Patch {
-        /// fully-instantiated manifest (JSON file) to patch
+        /// fully-instantiated manifest (JSON file) to patch. If this argument
+        /// is given, the patch is applied directly to the JSON file in a manner
+        /// akin to simple key-value replacement. Since the manifest is
+        /// fully-instantiated, no derived values will be affected.
         #[arg(short, long)]
         manifest: Option<PathBuf>,
-        /// partially-instantiated template (JSONNET file) to patch
+        /// partially-instantiated template (JSONNET file) to patch. If this
+        /// argument is given, the patch is applied *before* the template is
+        /// instantiated (i.e. if you override a variable used elswhere in
+        /// the template, all derived values will be affected).
         #[arg(short, long)]
         template: Option<PathBuf>,
-        /// patch to apply
+        /// patch to apply as a ';' separated parameter table with headers
+        /// declared as specified in the documentation.
         #[arg(short, long)]
         patch: PathBuf,
     },
@@ -381,7 +388,8 @@ pub enum WorkflowCommands {
         #[arg(short, long, display_order = 2)]
         output: PathBuf,
 
-        /// return after converting the config file to JSON foramt without executing the commands.
+        /// return after instantiating the template (JSONNET file) into a manifest (JSON foramt) without actually executing
+        /// the resulting manifest.
         #[arg(short,
             long,
             display_order = 3,
