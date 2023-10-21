@@ -8,6 +8,7 @@ use clap::Parser;
 use cmd_lib::log::info;
 use cmd_lib::run_cmd;
 use serde_json::{json, Map, Value};
+use std::boxed::Box;
 use std::fs;
 use std::fs::File;
 use std::io::BufReader;
@@ -27,7 +28,7 @@ const SKIPARG: &[&str] = &["step", "program-name", "active"];
 
 #[derive(Debug)]
 pub enum WFCommand {
-    SimpleafCommand(crate::Commands),
+    SimpleafCommand(Box<crate::Commands>),
     ExternalCommand(std::process::Command),
 }
 
@@ -82,7 +83,7 @@ pub fn template_patches_from_csv(csv: PathBuf) -> anyhow::Result<PatchCollection
         .delimiter(b';')
         .from_reader(csv_reader);
     
-    const NAME_COL : &'static str = "name";
+    const NAME_COL : &str = "name";
 
     // the headers give the paths to the keys that should be replaced
     let headers = rdr.headers()?.clone();
@@ -361,7 +362,7 @@ pub fn execute_commands_in_workflow<T: AsRef<Path>>(
 
         match cr.cmd {
             WFCommand::SimpleafCommand(cmd) => {
-                let exec_result = match cmd {
+                let exec_result = match *cmd {
                     Commands::Index {
                         ref_type,
                         fasta,
@@ -992,10 +993,12 @@ pub struct CommandRecord {
 }
 
 impl CommandRecord {
+    #[allow(dead_code)]
     pub fn is_external(&self) -> bool {
         self.program_name.is_external()
     }
 
+    #[allow(dead_code)]
     pub fn is_simpleaf(&self) -> bool {
         !self.is_external()
     }
@@ -1067,7 +1070,7 @@ impl ProgramName {
         // check if empty
         if arg_vec.len() > 2 {
             let cmd = Cli::parse_from(arg_vec).command;
-            Ok(WFCommand::SimpleafCommand(cmd))
+            Ok(WFCommand::SimpleafCommand(Box::new(cmd)))
         } else {
             bail!(
                 "Found a {} command with no argument. Cannot Proceed.",
