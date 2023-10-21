@@ -10,6 +10,7 @@ Besides, we also provides a *simpleaf workflow utility* library for developers, 
    workflow-get 
    workflow-run
    workflow-list
+   workflow-patch
    workflow-refresh
    workflow-utility-library
 
