@@ -14,6 +14,41 @@ parameter, as well as a parameter table as a ``;`` separated CSV file via the ``
 CSV file, it will patch the template with parameters provided in this row, instantiate a new manifest from this template (*after* replacement), and 
 write the instantiated manifest out to a ``JSON`` file.
 
+Patch file
+~~~~~~~~~~
+
+The patch file should be a ``;``-separated CSV-like file.  The header column will contain one entry for each field of the template or manifest
+that is to be replaced, as well as an additional special column called ``name`` that gives a name to the parameter tuple encoded in each row.
+To refer to a field in the template or manifest, one should use the JSON pointer syntax described in `RFC6901 <https://datatracker.ietf.org/doc/html/rfc6901>`_.
+Additionally, since the values being replaced can be of distinct valid JSON types, this type information must also be encoded in the column header.
+For example, imagine that your template has two fields defined as below:
+
+.. code-block:: json
+
+  {
+     "workflow" : {
+       "simpelaf_quant" : {
+         "--reads1" : "reads0_1.fq.gz",
+         "ready" : false,
+       }
+     }
+  }
+
+
+that you wish to replace. You wish to replace "--reads1" with "reads1_1.fq.gz" and "ready" with ``true`` (the boolean value true, not the string).
+Then the definition of the corresponding column headers would be ``/workflow/simpleaf_quant/--reads1`` and ``<b>/workflow/simpleaf_quant/ready``, respectively.
+The ``<b>`` before the second column header designates that this column will hold boolean parameters.  You could also prefix the first column header 
+with ``<s>`` (for the string type), but this is the default and can be omitted.  Finally, then, the full patch file might look something like:
+
+.. code-block:: console
+
+   name;/workflow/simpleaf_quant/--reads1;<b>/workflow/simpleaf_quant/ready
+   sample1;"reads1_1.fq.gz";true
+
+The valid type tags are ``<s>`` for string, ``<b>`` for boolean and ``<a>`` for array. Currently, patching does not support parameter entries that are
+themselves full object types.  Finally, if any entry contains the string "null", it will automatically be converted into the JSON ``null`` constant 
+(which means that currently, at least, there is a restriction that the string "null" can not be patched into a template or manifest).
+
 Full Usage
 ^^^^^^^^^^
 
