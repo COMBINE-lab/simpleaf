@@ -65,9 +65,14 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
                             let v: Value = serde_json::from_str(js.as_str())?;
 
                             // get template location
-                            let path = template_value.with_file_name(format!("{}.json",p.name));
+                            let patch_name = if let Some(stem) = template_value.file_stem() {
+                                format!("{}_{}.json", Path::new(stem).display(), p.name)
+                            } else {
+                                format!("{}.json", p.name)
+                            };
+                            let path = template_value.with_file_name(patch_name);
                             let fw = std::fs::File::create(path)?; 
-                            serde_json::to_writer_pretty(fw, &v)
+                            serde_json::to_writer_pretty(fw, &v)?
                         },
                         Err(e) => bail!(
                             "Error occurred when processing the input config file {}. The error message was {}",

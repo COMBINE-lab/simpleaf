@@ -144,7 +144,7 @@ pub fn parse_jsonnet(
         jrsonnet_cmd_vec.push("--tla-code");
         jrsonnet_cmd_vec.push(r#"patch=true"#);
         jrsonnet_cmd_vec.push("--tla-code");
-        Some(format!("json={}", patch.patch.to_string()))
+        Some(format!("json={}", patch.patch))
     } else {
         None
     };
