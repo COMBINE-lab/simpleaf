@@ -80,8 +80,8 @@ it will automatically be converted into the JSON ``null`` constant
 (which means that currently, at least, there is a restriction that the 
 string "null" can not be patched into a template or manifest).
 
-Full Usage
-^^^^^^^^^^
+workflow patch: Full Usage
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The relevant options (which you can obtain by running ``simpleaf workflow patch -h``) are:
 
