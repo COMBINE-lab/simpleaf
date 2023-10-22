@@ -24,7 +24,7 @@ use super::jrsonnet_main::TemplateState;
 use super::prog_utils::shell;
 
 // fields that are not representing any simpleaf flag
-const SKIPARG: &[&str] = &["step", "program-name", "active"];
+const SKIPARG: &[&str] = &["step", "program_name", "active"];
 
 #[derive(Debug)]
 pub enum WFCommand {
@@ -600,7 +600,7 @@ impl SimpleafWorkflow {
     /// parse them as `CommandRecord` structs and push them into the `cmd_queue` vector.
     /// ### Details
     /// This function will iterate over all layers in the `Value` object to find the command records
-    /// with both `step` and `program-name`. **These two fields must appear simutaneously**, otherwise this function
+    /// with both `step` and `program_name`. **These two fields must appear simutaneously**, otherwise this function
     /// will return an error.  
     /// A CommandRecord struct will be initilizaed from Each command record with a positive `Step`,
     /// including external commands and simpleaf command,
@@ -655,7 +655,7 @@ impl SimpleafWorkflow {
                     let cmd_field = workflow_log.get_mut_cmd_field(&curr_field_trajectory_vec)?;
                     cmd_field[SystemFields::Active.as_str()] = json!(active);
 
-                    // The field must contains a program-name
+                    // The field must contains a program_name
                     if let Some(program_name) = field.get(SystemFields::ProgramName.as_str()) {
                         pn = ProgramName::from_str(program_name.as_str().with_context(|| {
                             "Cannot create ProgramName struct from a program name"
@@ -1193,7 +1193,7 @@ impl SystemFields {
     pub fn as_str(&self) -> &str {
         match self {
             SystemFields::Step => "step",
-            SystemFields::ProgramName => "program-name",
+            SystemFields::ProgramName => "program_name",
             SystemFields::Active => "active",
             SystemFields::MetaInfo => "meta-info",
             SystemFields::ExternalArguments => "arguments",
@@ -1412,17 +1412,17 @@ mod tests {
         assert_eq!(
             index,
             ProgramName::Index,
-            "Could not get correct program-name from simpleaf index"
+            "Could not get correct program_name from simpleaf index"
         );
         assert_eq!(
             quant,
             ProgramName::Quant,
-            "Could not get correct program-name from simpleaf quant"
+            "Could not get correct program_name from simpleaf quant"
         );
         assert_eq!(
             external,
             ProgramName::External("awk".to_string()),
-            "Could not get correct program-name from invalid command"
+            "Could not get correct program_name from invalid command"
         );
 
         assert!(
@@ -1453,7 +1453,7 @@ mod tests {
             "rna": {
                 "simpleaf_index": {
                     "step": 1,
-                    "program-name": "simpleaf index", 
+                    "program_name": "simpleaf index", 
                     "active": true,
                     "--ref-type": "spliced+unspliced",
                     "--fasta": "genome.fa",
@@ -1464,7 +1464,7 @@ mod tests {
                 },
                 "simpleaf_quant": {
                     "step": 2,
-                    "program-name": "simpleaf quant",  
+                    "program_name": "simpleaf quant",  
                     "active": true,
                     "--chemistry": "10xv3",
                     "--resolution": "cr-like",
@@ -1482,13 +1482,13 @@ mod tests {
             "external-commands": {
                 "HTO ref gunzip": {
                     "step": 3,
-                    "program-name": "gunzip",
+                    "program_name": "gunzip",
                     "active": true,
                     "arguments": ["-c","hto_ref.csv.gz",">","hto_ref.csv"]
                 },
                 "ADT ref gunzip": {
                     "step": 4,
-                    "program-name": "gunzip",
+                    "program_name": "gunzip",
                     "active": true,
                     "arguments": ["-c","adt_ref.csv.gz",">","adt_ref.csv"]
                 }
@@ -1659,46 +1659,51 @@ mod tests {
         );
 
         match cmd.cmd {
-            WFCommand::SimpleafCommand(Commands::Quant {
-                chemistry,
-                output,
-                threads,
-                index,
-                reads1,
-                reads2,
-                use_selective_alignment,
-                use_piscem,
-                map_dir,
-                knee,
-                unfiltered_pl,
-                forced_cells,
-                explicit_pl,
-                expect_cells,
-                expected_ori,
-                min_reads,
-                t2g_map,
-                resolution,
-            }) => {
-                assert_eq!(chemistry, String::from("10xv3"));
-                assert_eq!(output, PathBuf::from("quant_output"));
-                assert_eq!(threads, 16);
-                assert_eq!(index, Some(PathBuf::from("index_output/index")));
-                assert_eq!(reads1, Some(vec![PathBuf::from("reads1.fastq")]));
-                assert_eq!(reads2, Some(vec![PathBuf::from("reads2.fastq")]));
-                assert_eq!(use_selective_alignment, true);
-                assert_eq!(use_piscem, true);
-                assert_eq!(map_dir, None);
-                assert_eq!(knee, false);
-                assert_eq!(unfiltered_pl, Some(None));
-                assert_eq!(forced_cells, None);
-                assert_eq!(explicit_pl, None);
-                assert_eq!(expect_cells, None);
-                assert_eq!(expected_ori, Some(String::from("fw")));
-                assert_eq!(min_reads, 10);
-                assert_eq!(t2g_map, Some(PathBuf::from("t2g.tsv")));
-                assert_eq!(resolution, String::from("cr-like"));
-            }
-            _ => panic!(),
+            WFCommand::SimpleafCommand(v) =>  {
+                match *v {
+                    Commands::Quant {
+                        chemistry,
+                        output,
+                        threads,
+                        index,
+                        reads1,
+                        reads2,
+                        use_selective_alignment,
+                        use_piscem,
+                        map_dir,
+                        knee,
+                        unfiltered_pl,
+                        forced_cells,
+                        explicit_pl,
+                        expect_cells,
+                        expected_ori,
+                        min_reads,
+                        t2g_map,
+                        resolution,
+                    } => {
+                            assert_eq!(chemistry, String::from("10xv3"));
+                            assert_eq!(output, PathBuf::from("quant_output"));
+                            assert_eq!(threads, 16);
+                            assert_eq!(index, Some(PathBuf::from("index_output/index")));
+                            assert_eq!(reads1, Some(vec![PathBuf::from("reads1.fastq")]));
+                            assert_eq!(reads2, Some(vec![PathBuf::from("reads2.fastq")]));
+                            assert_eq!(use_selective_alignment, true);
+                            assert_eq!(use_piscem, true);
+                            assert_eq!(map_dir, None);
+                            assert_eq!(knee, false);
+                            assert_eq!(unfiltered_pl, Some(None));
+                            assert_eq!(forced_cells, None);
+                            assert_eq!(explicit_pl, None);
+                            assert_eq!(expect_cells, None);
+                            assert_eq!(expected_ori, Some(String::from("fw")));
+                            assert_eq!(min_reads, 10);
+                            assert_eq!(t2g_map, Some(PathBuf::from("t2g.tsv")));
+                            assert_eq!(resolution, String::from("cr-like"));
+                    },
+                    c => panic!("expected quant command, found {:?}", c),
+                }
+            },
+            e => panic!("expected SimpleafCommand, found {:?}", e),
         };
     }
 }

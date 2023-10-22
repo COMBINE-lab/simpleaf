@@ -313,6 +313,7 @@ pub fn run_workflow<T: AsRef<Path>>(
             template,
             output,
             // TODO: write JSON only if no execution
+            // actually, we want to write it regardless, right?
             no_execution,
             manifest,
             start_at,
@@ -339,7 +340,7 @@ pub fn run_workflow<T: AsRef<Path>>(
             } else if let Some(template) = template {
                 //  check the validity of the file
                 if !template.exists() || !template.is_file() {
-                    bail!("the path of the given workflow configuratioin file doesn't exist; Cannot proceed.")
+                    bail!("the path of the given workflow template file doesn't exist; Cannot proceed.")
                 }
 
                 info!("Processing simpleaf template to produce and execute manifest.");
