@@ -61,7 +61,7 @@ impl TemplateState {
 
 pub fn parse_jsonnet(
     config_file_path: &Path,
-    output: &Path,
+    output_opt: Option<PathBuf>,
     utils_dir: &Path,
     jpaths: &Option<Vec<PathBuf>>,
     ext_codes: &Option<Vec<String>>,
@@ -81,7 +81,11 @@ pub fn parse_jsonnet(
         })?
     );
 
-    let ext_output = format!(r#"__output='{}'"#, output.display());
+    let ext_output = if let Some(output) = output_opt {
+        format!(r#"__output='{}'"#, output.display())
+    } else {
+        String::new()
+    };
     let ext_utils_file_path = r#"__utils=import 'simpleaf_workflow_utils.libsonnet'"#;
     let ext_instantiated = format!(r#"__instantiated='{}'"#, instantiated);
 

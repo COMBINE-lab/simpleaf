@@ -58,7 +58,9 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
                 match parse_jsonnet(
                         // af_home_path,
                         template_value.as_ref(),
-                        &template_value,
+                        // @DongzeHe: Is this correct here, since there is no "output"
+                        // argument to patch?
+                        None,
                         &protocol_estuary.utils_dir,
                         &None,
                         &None,
@@ -319,15 +321,12 @@ pub fn run_workflow<T: AsRef<Path>>(
             skip_step,
             ext_codes,
         } => {
-            // Note: @DongzeHe  -- we should handle the fact that
-            // the output may not be provided, and in that case, should
-            // instead be derived from the workflow manifest or template
-
-            // recursively make the output directory
-            run_fun!(mkdir -p $output)?;
+            // designate that output is optional
+            let output_opt = output;
 
             let instantiated_manifest: serde_json::Value;
             let source_path: std::path::PathBuf;
+            let output_path: std::path::PathBuf;
             if let Some(manifest) = manifest {
                 // If the user passed a fully-instantiated
                 // manifest to execute
@@ -335,6 +334,7 @@ pub fn run_workflow<T: AsRef<Path>>(
                 // iterate json files and parse records to commands
                 // convert files into json string vector
                 instantiated_manifest = workflow_utils::parse_manifest(&manifest)?;
+                output_path = workflow_utils::get_output_path(&instantiated_manifest)?;
                 source_path = manifest.clone();
             } else if let Some(template) = template {
                 //  check the validity of the file
@@ -349,13 +349,36 @@ pub fn run_workflow<T: AsRef<Path>>(
                 let workflow_json_string = workflow_utils::instantiate_workflow_template(
                     af_home_path.as_ref(),
                     template.as_path(),
-                    output.as_path(),
+                    output_opt.clone(),
                     &jpaths,
                     &ext_codes,
                 )?;
 
                 // write complete workflow (i.e. the manifest) JSON to output folder
                 instantiated_manifest = serde_json::from_str(workflow_json_string.as_str())?;
+                output_path = workflow_utils::get_output_path(&instantiated_manifest)?;
+
+                // check if the output path we read from the instantiated template matches 
+                // the output path requested by the user (if the user passed one in). If 
+                // they do not match, issue an obnoxious warning.
+                // @DongzeHe : We should also probably log this warning to the output 
+                // log for subsequent inspection.
+                if let Some(requested_output_path) = output_opt {
+                    if requested_output_path != output_path {
+                        warn!(
+                            r#"The output path {} was requested via the command line, but 
+                            the output path {} was resolved from the workflow template.
+                            In this case, since the output variable is not used when instantiating 
+                            the template, the value ({}) present in the template must be used.
+                            Please be aware that {} will not be used for output!"#,
+                            requested_output_path.display(),
+                            output_path.display(),
+                            output_path.display(),
+                            requested_output_path.display()
+                        );
+                    }
+                }
+
                 source_path = template.clone();
             } else {
                 bail!(concat!(
@@ -363,6 +386,11 @@ pub fn run_workflow<T: AsRef<Path>>(
                     "but provided neither; this shouldn't happen"
                 ));
             }
+
+            // recursively make the output directory, which at this point 
+            // has been resolved as the one used in the template or manifest 
+            // (possibly as provided by the user in the former case).
+            run_fun!(mkdir -p $output_path)?;
 
             // we need to convert the optional to a vector
             let final_skip_step = skip_step.unwrap_or(Vec::new());
@@ -372,7 +400,7 @@ pub fn run_workflow<T: AsRef<Path>>(
             let (simpleaf_workflow, mut workflow_log) = workflow_utils::initialize_workflow(
                 af_home_path.as_ref(),
                 source_path.as_path(),
-                output.as_path(),
+                output_path.as_path(),
                 instantiated_manifest,
                 start_at,
                 final_skip_step,

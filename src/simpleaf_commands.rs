@@ -393,7 +393,7 @@ pub enum WorkflowCommands {
         // NOTE @DongzeHe  --- per our discussion, we should make the output paramter
         // here optional, and derive it from the template or manifest if it is not provided.
         #[arg(short, long, display_order = 2)]
-        output: PathBuf,
+        output: Option<PathBuf>,
 
         /// return after instantiating the template (JSONNET file) into a manifest (JSON foramt) without actually executing
         /// the resulting manifest.
@@ -410,7 +410,7 @@ pub enum WorkflowCommands {
             short,
             long,
             display_order = 4,
-            conflicts_with_all=["template", "no_execution", "jpaths", "ext_codes"]
+            conflicts_with_all=["template", "output", "no_execution", "jpaths", "ext_codes"]
         )]
         manifest: Option<PathBuf>,
 

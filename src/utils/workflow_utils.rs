@@ -220,6 +220,24 @@ pub fn template_patches_from_csv(csv: PathBuf) -> anyhow::Result<PatchCollection
     Ok(patches)
 }
 
+pub fn get_output_path(manifest: &serde_json::Value) -> anyhow::Result<PathBuf> {
+    // we assume that the path we want is /meta-info/output, and it *must* exist
+    // as a key!
+    if let Some(output) = manifest.pointer("/meta-info/output") {
+        match output {
+            Value::String(s) => Ok(std::path::PathBuf::from(s)),
+            _ => {
+                bail!("/meta-info/output must have JSON string type, int he manifest, but it did not.")
+            }
+        }
+    } else {
+        bail!(concat!(
+            "The provided manifest had no entry at /meta-info/output, so an ",
+            "output path cannot be extracted."
+        ));
+    }
+}
+
 // This function gets the version string from the workflow template file in the provided folder
 pub fn get_template_version<T: AsRef<Path>>(
     template_dir: PathBuf,
@@ -241,7 +259,7 @@ pub fn get_template_version<T: AsRef<Path>>(
     // Then we call Jrsonnet to get JSON string
     let workflow_json_string = match parse_jsonnet(
         &template_path,
-        PathBuf::from(".").as_path(),
+        Some(PathBuf::from(".")),
         utils_dir.as_ref(),
         &None,
         &None,
@@ -1206,7 +1224,7 @@ impl ProtocolEstuary {
 pub fn parse_manifest<T: AsRef<Path>>(manifest_path: &T) -> anyhow::Result<serde_json::Value> {
     // Open the file in read-only mode with buffer.
     let manifest_path = manifest_path.as_ref();
-    let file = File::open(&manifest_path)
+    let file = File::open(manifest_path)
         .with_context(|| format!("couldn't open manifest path {}", &manifest_path.display()))?;
     let reader = BufReader::new(file);
     let manifest = serde_json::from_reader(reader)?;
@@ -1217,7 +1235,7 @@ pub fn parse_manifest<T: AsRef<Path>>(manifest_path: &T) -> anyhow::Result<serde
 pub fn instantiate_workflow_template<T: AsRef<Path>>(
     af_home_path: T,
     config_file_path: T,
-    output: T,
+    output: Option<PathBuf>,
     jpaths: &Option<Vec<PathBuf>>,
     ext_codes: &Option<Vec<String>>,
 ) -> anyhow::Result<String> {
@@ -1229,7 +1247,7 @@ pub fn instantiate_workflow_template<T: AsRef<Path>>(
     match parse_jsonnet(
         // af_home_path,
         config_file_path.as_ref(),
-        output.as_ref(),
+        output,
         &protocol_estuary.utils_dir,
         jpaths,
         ext_codes,
