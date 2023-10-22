@@ -1196,8 +1196,25 @@ impl ProtocolEstuary {
     }
 }
 
+/// parse a manifest file (fully-instantiated JSON file), and return the resulting
+/// JSON object.
+/// NOTE: This is possibly redundant with `instantiate_workflow_template`, as a JSON file is
+/// a valid JSONNET file, and that should also parse a manifest.  However, this function
+/// is smaller and simpler and avoids jrsonnet altogether. We should think if it makes
+/// sense to retain this separate function or if we want to use instantiate_workflow_template
+/// for both.
+pub fn parse_manifest<T: AsRef<Path>>(manifest_path: &T) -> anyhow::Result<serde_json::Value> {
+    // Open the file in read-only mode with buffer.
+    let manifest_path = manifest_path.as_ref();
+    let file = File::open(&manifest_path)
+        .with_context(|| format!("couldn't open manifest path {}", &manifest_path.display()))?;
+    let reader = BufReader::new(file);
+    let manifest = serde_json::from_reader(reader)?;
+    Ok(manifest)
+}
+
 /// parse the input file (either a workflow configuration file or a complete workflow JSON file) to obtain a JSON string.
-pub fn parse_workflow_config<T: AsRef<Path>>(
+pub fn instantiate_workflow_template<T: AsRef<Path>>(
     af_home_path: T,
     config_file_path: T,
     output: T,

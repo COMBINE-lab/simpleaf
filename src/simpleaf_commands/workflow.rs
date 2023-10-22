@@ -319,55 +319,61 @@ pub fn run_workflow<T: AsRef<Path>>(
             skip_step,
             ext_codes,
         } => {
-            if let Some(_manifest) = manifest {
-                // If the user passed a fully-instantiated 
-                // manifest to execute
-                todo!();
-            };
-
-            // If the above conditional didn't execute, we have 
-            // a template rather than a manifest. 
-            let template = template.expect(concat!("You must have one of a manifest or",
-                                          "template, and didn't have a manifest;",
-                                          "shouldn't happen"));
-
             // Note: @DongzeHe  -- we should handle the fact that
-            // the output may not be provided, and in that case, should 
+            // the output may not be provided, and in that case, should
             // instead be derived from the workflow manifest or template
 
             // recursively make the output directory
             run_fun!(mkdir -p $output)?;
 
-            // we need to convert the optional to a vector
-            let final_skip_step = skip_step.unwrap_or(Vec::new());
+            let instantiated_manifest: serde_json::Value;
+            let source_path: std::path::PathBuf;
+            if let Some(manifest) = manifest {
+                // If the user passed a fully-instantiated
+                // manifest to execute
+                info!("Loading and executing manifest.");
+                // iterate json files and parse records to commands
+                // convert files into json string vector
+                instantiated_manifest = workflow_utils::parse_manifest(&manifest)?;
+                source_path = manifest.clone();
+            } else if let Some(template) = template {
+                //  check the validity of the file
+                if !template.exists() || !template.is_file() {
+                    bail!("the path of the given workflow configuratioin file doesn't exist; Cannot proceed.")
+                }
 
-            //  check the validity of the file
-            if !template.exists() || !template.is_file() {
-                bail!("the path of the given workflow configuratioin file doesn't exist; Cannot proceed.")
+                info!("Processing simpleaf template to produce and execute manifest.");
+
+                // iterate json files and parse records to commands
+                // convert files into json string vector
+                let workflow_json_string = workflow_utils::instantiate_workflow_template(
+                    af_home_path.as_ref(),
+                    template.as_path(),
+                    output.as_path(),
+                    &jpaths,
+                    &ext_codes,
+                )?;
+
+                // write complete workflow (i.e. the manifest) JSON to output folder
+                instantiated_manifest = serde_json::from_str(workflow_json_string.as_str())?;
+                source_path = template.clone();
+            } else {
+                bail!(concat!(
+                    "You must have one of a manifest or template, ",
+                    "but provided neither; this shouldn't happen"
+                ));
             }
 
-            info!("Processing simpleaf workflow configuration file.");
-
-            // iterate json files and parse records to commands
-            // convert files into json string vector
-            let workflow_json_string = workflow_utils::parse_workflow_config(
-                af_home_path.as_ref(),
-                template.as_path(),
-                output.as_path(),
-                &jpaths,
-                &ext_codes,
-            )?;
-
-            // write complete workflow (i.e. the manifest) JSON to output folder
-            let workflow_json_value: Value = serde_json::from_str(workflow_json_string.as_str())?;
+            // we need to convert the optional to a vector
+            let final_skip_step = skip_step.unwrap_or(Vec::new());
 
             // initialize simpleaf workflow and log struct
             // TODO: print some log using meta_info fields
             let (simpleaf_workflow, mut workflow_log) = workflow_utils::initialize_workflow(
                 af_home_path.as_ref(),
-                template.as_path(),
+                source_path.as_path(),
                 output.as_path(),
-                workflow_json_value,
+                instantiated_manifest,
                 start_at,
                 final_skip_step,
                 resume,

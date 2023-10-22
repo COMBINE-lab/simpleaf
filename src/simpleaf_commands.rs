@@ -390,7 +390,7 @@ pub enum WorkflowCommands {
         template: Option<PathBuf>,
 
         /// output directory for log files and the workflow outputs that have no explicit output directory.
-        // NOTE @DongzeHe  --- per our discussion, we should make the output paramter 
+        // NOTE @DongzeHe  --- per our discussion, we should make the output paramter
         // here optional, and derive it from the template or manifest if it is not provided.
         #[arg(short, long, display_order = 2)]
         output: PathBuf,
@@ -407,8 +407,8 @@ pub enum WorkflowCommands {
 
         /// path to an instantiated simpleaf workflow template.
         #[arg(
-            short, 
-            long, 
+            short,
+            long,
             display_order = 4,
             conflicts_with_all=["template", "no_execution", "jpaths", "ext_codes"]
         )]
