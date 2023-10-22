@@ -312,12 +312,29 @@ pub fn run_workflow<T: AsRef<Path>>(
             output,
             // TODO: write JSON only if no execution
             no_execution,
+            manifest,
             start_at,
             resume,
             jpaths,
             skip_step,
             ext_codes,
         } => {
+            if let Some(_manifest) = manifest {
+                // If the user passed a fully-instantiated 
+                // manifest to execute
+                todo!();
+            };
+
+            // If the above conditional didn't execute, we have 
+            // a template rather than a manifest. 
+            let template = template.expect(concat!("You must have one of a manifest or",
+                                          "template, and didn't have a manifest;",
+                                          "shouldn't happen"));
+
+            // Note: @DongzeHe  -- we should handle the fact that
+            // the output may not be provided, and in that case, should 
+            // instead be derived from the workflow manifest or template
+
             // recursively make the output directory
             run_fun!(mkdir -p $output)?;
 

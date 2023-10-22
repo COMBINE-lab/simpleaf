@@ -382,9 +382,11 @@ pub enum WorkflowCommands {
     Run {
         /// path to an instantiated simpleaf workflow template.
         #[arg(short, long, display_order = 1)]
-        template: PathBuf,
+        template: Option<PathBuf>,
 
         /// output directory for log files and the workflow outputs that have no explicit output directory.
+        // NOTE @DongzeHe  --- per our discussion, we should make the output paramter 
+        // here optional, and derive it from the template or manifest if it is not provided.
         #[arg(short, long, display_order = 2)]
         output: PathBuf,
 
@@ -398,12 +400,21 @@ pub enum WorkflowCommands {
         )]
         no_execution: bool,
 
+        /// path to an instantiated simpleaf workflow template.
+        #[arg(
+            short, 
+            long, 
+            display_order = 4,
+            conflicts_with_all=["template", "no_execution", "jpaths", "ext_codes"]
+        )]
+        manifest: Option<PathBuf>,
+
         /// Start the execution from a specific Step. All previous steps will be ignored.  
         #[arg(
             short,
             long,
             default_value_t = 1,
-            display_order = 4,
+            display_order = 5,
             conflicts_with_all=["resume"],
             help_heading = "Control Flow"
         )]
@@ -415,7 +426,7 @@ pub enum WorkflowCommands {
             short,
             long,
             conflicts_with = "start_at",
-            display_order = 5,
+            display_order = 6,
             conflicts_with_all=["start_at"],
             help_heading = "Control Flow",
         )]
@@ -425,7 +436,7 @@ pub enum WorkflowCommands {
         #[arg(
             short,
             long,
-            display_order = 6,
+            display_order = 7,
             value_delimiter = ',',
             help_heading = "Jsonnet"
         )]
@@ -435,7 +446,7 @@ pub enum WorkflowCommands {
         #[arg(
             short,
             long,
-            display_order = 6,
+            display_order = 8,
             value_delimiter = ',',
             help_heading = "Jsonnet",
             hide = true
@@ -445,7 +456,7 @@ pub enum WorkflowCommands {
         /// comma separated integers indicating which steps (commands) will be skipped during the execution.
         #[arg(
             long,
-            display_order = 7,
+            display_order = 9,
             value_delimiter = ',',
             help_heading = "Control Flow"
         )]
