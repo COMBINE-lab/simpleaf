@@ -378,6 +378,11 @@ pub enum WorkflowCommands {
     },
 
     #[command(arg_required_else_help = true)]
+    #[command(group(
+        clap::ArgGroup::new("source")
+        .required(true)
+        .args(&["manifest", "template"]),
+    ))]
     /// Parse an instantiated workflow template and invoke the workflow commands.
     Run {
         /// path to an instantiated simpleaf workflow template.
