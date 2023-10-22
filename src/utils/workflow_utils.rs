@@ -221,18 +221,18 @@ pub fn template_patches_from_csv(csv: PathBuf) -> anyhow::Result<PatchCollection
 }
 
 pub fn get_output_path(manifest: &serde_json::Value) -> anyhow::Result<PathBuf> {
-    // we assume that the path we want is /meta-info/output, and it *must* exist
+    // we assume that the path we want is /meta_info/output, and it *must* exist
     // as a key!
-    if let Some(output) = manifest.pointer("/meta-info/output") {
+    if let Some(output) = manifest.pointer("/meta_info/output") {
         match output {
             Value::String(s) => Ok(std::path::PathBuf::from(s)),
             _ => {
-                bail!("/meta-info/output must have JSON string type, int he manifest, but it did not.")
+                bail!("/meta_info/output must have JSON string type, int he manifest, but it did not.")
             }
         }
     } else {
         bail!(concat!(
-            "The provided manifest had no entry at /meta-info/output, so an ",
+            "The provided manifest had no entry at /meta_info/output, so an ",
             "output path cannot be extracted."
         ));
     }
@@ -799,7 +799,7 @@ impl WorkflowLog {
 
         // if we don't see an meta info section, report a warning
         if workflow_meta_info.is_none() {
-            warn!("Found config file without meta-info field.");
+            warn!("Found config file without meta_info field.");
         };
 
         Ok(WorkflowLog {
@@ -1195,7 +1195,7 @@ impl SystemFields {
             SystemFields::Step => "step",
             SystemFields::ProgramName => "program_name",
             SystemFields::Active => "active",
-            SystemFields::MetaInfo => "meta-info",
+            SystemFields::MetaInfo => "meta_info",
             SystemFields::ExternalArguments => "arguments",
             SystemFields::SimpleafIndex => "simpleaf index",
             SystemFields::SimpleafQuant => "simpleaf quant",
@@ -1447,7 +1447,7 @@ mod tests {
 
         let workflow_json_string = String::from(
             r#"{
-            "meta-info": {
+            "meta_info": {
                 "output_dir": "output_dir"
             },
             "rna": {
@@ -1562,7 +1562,7 @@ mod tests {
                 assert_eq!(skip_step, &vec![3]);
                 assert!(
                     field_id_to_name.contains(&"rna".to_string())
-                        && field_id_to_name.contains(&"meta-info".to_string())
+                        && field_id_to_name.contains(&"meta_info".to_string())
                         && field_id_to_name.contains(&"simpleaf_index".to_string())
                         && field_id_to_name.contains(&"simpleaf_quant".to_string())
                         && field_id_to_name.contains(&"external-commands".to_string())
