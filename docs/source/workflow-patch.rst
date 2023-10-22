@@ -14,6 +14,14 @@ parameter, as well as a parameter table as a ``;`` separated CSV file via the ``
 CSV file, it will patch the template with parameters provided in this row, instantiate a new manifest from this template (*after* replacement), and 
 write the instantiated manifest out to a ``JSON`` file.
 
+When operating on a manifest, the patch command takes as input a manifest files via the ``--manifest`` 
+parameter, as well as a parameter table as a ``;`` separated CSV file via the ``--patch`` parameter.  
+For each (non-header) row in the CSV file, it will patch the manifest with parameters provided in 
+this row and write the resulting patched manifest out to a ``JSON`` file. Note that, in this case, 
+since the input being patched is a fully-instantiated manifest, the patch simply replaces the values 
+of the designated fields, but it will not affect the values of any fields that are not diretly patched.
+
+
 Patch file
 ~~~~~~~~~~
 
@@ -21,16 +29,22 @@ The patch file should be a ``;``-separated CSV-like file.  The header column wil
 that is to be replaced, as well as an additional special column called ``name`` that gives a name to the parameter tuple encoded in each row.
 To refer to a field in the template or manifest, one should use the JSON pointer syntax described in `RFC6901 <https://datatracker.ietf.org/doc/html/rfc6901>`_.
 Additionally, since the values being replaced can be of distinct valid JSON types, this type information must also be encoded in the column header.
+
+
 For example, imagine that your template has two fields defined as below:
 
-.. code-block:: json
+.. code-block:: javascript
 
   {
      "workflow" : {
+       /* possibly other content */
        "simpelaf_quant" : {
+         /* possibly other content */
          "--reads1" : "reads0_1.fq.gz",
+          /* possibly other content */
          "ready" : false,
        }
+       /* possibly other content */
      }
   }
 
@@ -45,9 +59,23 @@ with ``<s>`` (for the string type), but this is the default and can be omitted. 
    name;/workflow/simpleaf_quant/--reads1;<b>/workflow/simpleaf_quant/ready
    sample1;"reads1_1.fq.gz";true
 
-The valid type tags are ``<s>`` for string, ``<b>`` for boolean and ``<a>`` for array. Currently, patching does not support parameter entries that are
-themselves full object types.  Finally, if any entry contains the string "null", it will automatically be converted into the JSON ``null`` constant 
-(which means that currently, at least, there is a restriction that the string "null" can not be patched into a template or manifest).
+The valid type tags are 
+
+``<s>`` 
+  prefixes a header that is a pointer to a string-valued field. This is also the default
+  so if a header has no prefix, then ``<s>`` is implicitly assumed
+
+``<b>`` 
+  prefixes a header that is a pointer to a boolean-valued field. 
+
+``<a>`` 
+  prefixes a header that is a pointer to an array-valued field. 
+
+**Note**: Currently, patching does not support parameter entries that are
+themselves full object types.  Finally, if any entry contains the string "null", 
+it will automatically be converted into the JSON ``null`` constant 
+(which means that currently, at least, there is a restriction that the 
+string "null" can not be patched into a template or manifest).
 
 Full Usage
 ^^^^^^^^^^
