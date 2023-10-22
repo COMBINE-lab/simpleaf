@@ -41,26 +41,25 @@ The relevant options (which you can obtain by running ``simpleaf workflow run -h
 
 .. code-block:: console
 
-    Parse an instantiated workflow template and invoke the workflow commands
+  Parse and instantiate a workflow template and invoke the workflow commands, or run an instantiated manifest directly
 
-    Usage: simpleaf workflow run [OPTIONS] --template <TEMPLATE> --output <OUTPUT>
+  Usage: simpleaf workflow run [OPTIONS] <--manifest <MANIFEST>|--template <TEMPLATE>>
 
-    Options:
+  Options:
     -t, --template <TEMPLATE>  path to an instantiated simpleaf workflow template
     -o, --output <OUTPUT>      output directory for log files and the workflow outputs that have no explicit output directory
+    -m, --manifest <MANIFEST>  path to an instantiated simpleaf workflow template
     -h, --help                 Print help
     -V, --version              Print version
 
-    Control Flow:
-    -n, --no-execution           return after converting the config file to JSON foramt without executing the commands
-    -s, --start-at <START_AT>    Start the execution from a specific step. All previous steps will be ignored [default: 1]
-    -r, --resume                 resume execution from the termination step of a previous run. To use this flag, the output directory must
-                                contains the JSON file generated from a previous run
+  Control Flow:
+    -n, --no-execution           return after instantiating the template (JSONNET file) into a manifest (JSON foramt) without actually executing the resulting manifest
+    -s, --start-at <START_AT>    Start the execution from a specific Step. All previous steps will be ignored [default: 1]
+    -r, --resume                 resume execution from the termination step of a previous run. To use this flag, the output directory must contains the JSON file generated from a previous run
         --skip-step <SKIP_STEP>  comma separated integers indicating which steps (commands) will be skipped during the execution
 
-    Jsonnet:
-    -j, --jpaths <JPATHS>        comma separated library search paths passing to internal Jsonnet engine as --jpath flags
-
+  Jsonnet:
+    -j, --jpaths <JPATHS>  comma separated library search paths passing to internal Jsonnet engine as --jpath flags
 
 
 The procedure of parsing a simpleaf workflow template
