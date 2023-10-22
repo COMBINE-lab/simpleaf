@@ -1,17 +1,21 @@
 simpleaf workflow patch
 =======================
 
-``simpleaf workflow patch`` allow "patching" ``simpleaf`` workflows. Specifically, it allows one to patch either a workflow template 
+The ``simpleaf workflow patch`` command allow "patching" ``simpleaf`` workflows. Specifically, it allows one to patch either a *workflow template*
 prior to instantiation (and therefore, to patch the values of variables in the workflow that may affect large parts of the configuration) or
-a workflow manifest (where patching only directly affects the specific fields being replaced).  The patch command is useful when you wish 
-to use the "skeleton" of a workflow (e.g. a template with many of the variables set), but you wish to parameterize other fields over some 
-set of different options.  Concretely, for example, you may have many gene 10x chromium v3 samples, all of which you wish to process with 
+a *workflow manifest* (where patching only directly affects the specific fields being replaced).  Here, the act of patching refers to the 
+replacement of one or more fields in the template or manifest with alternative values drawn from a parameter table (e.g. a "sample sheet").
+
+The patch command is useful when you wish to use the "skeleton" of a workflow (e.g. a template with many of the variables set), but you wish to 
+parameterize other fields over some set of different options.  
+
+Concretely, for example, you may have many gene 10x chromium v3 samples, all of which you wish to process with 
 the same workflow, but providing different reads as input and different output locations for the workflow output.  The ``patch`` command 
 makes this easy to accomplish.
 
 When operating on a template, the patch command takes as input a workflow template (which can be uninstantiated or partially filled in) via the ``--template`` 
-parameter, as well as a parameter table as a ``;`` separated CSV file via the ``--patch`` parameter.  For each (non-header) row in the 
-CSV file, it will patch the template with parameters provided in this row, instantiate a new manifest from this template (*after* replacement), and 
+parameter, as well as a parameter table as a ``;`` separated CSV file via the ``--patch`` parameter (see details on the format `below <#patch-file>`_).  
+For each (non-header) row in the CSV file, it will patch the template with parameters provided in this row, instantiate a new manifest from this template (*after* replacement), and 
 write the instantiated manifest out to a ``JSON`` file.
 
 When operating on a manifest, the patch command takes as input a manifest files via the ``--manifest`` 
@@ -26,10 +30,9 @@ Patch file
 ~~~~~~~~~~
 
 The patch file should be a ``;``-separated CSV-like file.  The header column will contain one entry for each field of the template or manifest
-that is to be replaced, as well as an additional special column called ``name`` that gives a name to the parameter tuple encoded in each row.
+that is to be replaced, as well as an additional special column called ``name``, that gives a name to the parameter tuple encoded in each row.
 To refer to a field in the template or manifest, one should use the JSON pointer syntax described in `RFC6901 <https://datatracker.ietf.org/doc/html/rfc6901>`_.
 Additionally, since the values being replaced can be of distinct valid JSON types, this type information must also be encoded in the column header.
-
 
 For example, imagine that your template has two fields defined as below:
 
@@ -49,7 +52,7 @@ For example, imagine that your template has two fields defined as below:
   }
 
 
-that you wish to replace. You wish to replace "--reads1" with "reads1_1.fq.gz" and "ready" with ``true`` (the boolean value true, not the string).
+that you wish to replace. You wish to replace "--reads1" with "reads1_sample2_1.fq.gz" and "ready" with ``true`` (the boolean value true, not the string).
 Then the definition of the corresponding column headers would be ``/workflow/simpleaf_quant/--reads1`` and ``<b>/workflow/simpleaf_quant/ready``, respectively.
 The ``<b>`` before the second column header designates that this column will hold boolean parameters.  You could also prefix the first column header 
 with ``<s>`` (for the string type), but this is the default and can be omitted.  Finally, then, the full patch file might look something like:
@@ -57,9 +60,9 @@ with ``<s>`` (for the string type), but this is the default and can be omitted. 
 .. code-block:: console
 
    name;/workflow/simpleaf_quant/--reads1;<b>/workflow/simpleaf_quant/ready
-   sample1;"reads1_1.fq.gz";true
+   sample1;"reads1_sample2_1.fq.gz";true
 
-The valid type tags are 
+The valid type tags are: 
 
 ``<s>`` 
   prefixes a header that is a pointer to a string-valued field. This is also the default
