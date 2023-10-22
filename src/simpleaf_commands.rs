@@ -383,7 +383,8 @@ pub enum WorkflowCommands {
         .required(true)
         .args(&["manifest", "template"]),
     ))]
-    /// Parse an instantiated workflow template and invoke the workflow commands.
+    /// Parse and instantiate a workflow template and invoke the workflow commands, or run an 
+    /// instantiated manifest directly.
     Run {
         /// path to an instantiated simpleaf workflow template.
         #[arg(short, long, display_order = 1)]
