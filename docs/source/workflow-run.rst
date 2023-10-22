@@ -63,28 +63,31 @@ The relevant options (which you can obtain by running ``simpleaf workflow run -h
 
 
 The procedure of parsing a simpleaf workflow template
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-In ``simpleaf workflow``, we use the `Jrsonnet <https://github.com/CertainLach/jrsonnet>`_, a rust implementation of Jsonnet, to parse the instantiated workflow template passed. Any valid `Jsonnet <https://jsonnet.org/>`_  program and JSON file is a valid simpleaf workflow template as long as it can produce a valid workflow manifest.
-When calling Jrsonnet, ``simpleaf workflow`` automatically passes the following built-in arguments in addition to the provided template. This also means that any custom configuration program can access the ``__output`` and ``__utils`` variables in the Jsonnet program using ``std.extVar("__output")`` and ``std.extVar("__utils")``. Note that the path to the parent directory of the file passed to ``--template`` is an additional library search directory in Jrsonnet by default.
+In ``simpleaf workflow``, we use the `Jrsonnet <https://github.com/CertainLach/jrsonnet>`_ library, a rust implementation of Jsonnet, to parse and instantiate the workflow template. 
+Any valid `Jsonnet <https://jsonnet.org/>`_  program and JSON file is a valid simpleaf workflow template, as long as it can produce a valid workflow manifest.
+When calling Jrsonnet, ``simpleaf workflow`` automatically passes the following built-in arguments in addition to the provided template. 
 
 1) The output directory passed to ``--output`` as the external variable ``output``.
 2) The workflow utility library from the protocol estuary as the external variable ``utils``.
 3) The path to the ``utils`` folder in the protocol estuary in ``ALEVIN_FRY_HOME`` as an additional library search directory.
 4) The paths passed to the ``--lib-path`` flag, if any, as additional library search directories.
 
-Valid simpleaf workflow manifest format
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+This also means that any custom configuration program can access the ``__output`` and ``__utils`` variables in the Jsonnet program using ``std.extVar("__output")`` and ``std.extVar("__utils")``. Note that the path to the parent directory of the file passed to ``--template`` is an additional library search directory in Jrsonnet by default.
 
-Although any Jsonnet program or JSON file is a valid input for ``simpleaf workflow``, it doesn't means they all can be converted to a valid simpleaf workflow manifest JSON. To provide the greatest flexibility, we only set the requirements for the fields representing a command record, either a simpleaf command or an external command, in the simpleaf workflow manifest JSON file (not the configuration program). 
+Valid simpleaf workflow manifest format
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Although any Jsonnet program or JSON file is a valid input for ``simpleaf workflow``, it doesn't mean that all such files can be converted to a valid ``simpleaf`` workflow manifest. To provide the greatest flexibility, we set only the below requirements for the fields representing a command record --- either a ``simpleaf`` command or an external command, in the simpleaf workflow manifest JSON file (not necessarily the template). 
 
 * To ease the later parsing process, all fields that represents a  command argument must be provided as strings, i.e., wrapped by quotes (``"value"``), even for integers like the number of threads (for example, ``{“--threads”: "16"}`` for simpleaf commands).
-* A command record field must contain a ``step`` and a ``program_name`` sub-field, where the ``step`` field represents which step, **using an unassigned integer**, this command constitutes in the workflow. This is the only valid integer field being parsed in the workflow manifest. The ``program_name`` field represents a valid program in the user's execution environment **as a string**. 
+* A command record field must contain a ``step`` and a ``program_name`` sub-field, where the ``step`` field represents which step, **using an unassigned integer**, this command constitutes in the workflow. The ``program_name`` field represents a valid program in the user's execution environment **as a string**. 
     * For a simpleaf command, the correct ``program_name`` is the name of the simpleaf command as a string. For example, for ``simpleaf index``, it is ``"simpleaf index"`` and for ``simpleaf quant``, it is ``"simpleaf quant"``.
-    * For an external command such as ``awk``, if its binary is in the user's ``PATH`` environmental variable, it can just be ``"awk"``; if not, it must contain a valid path to its binary, for example, ``"/usr/bin/awk"``.
-* A command record can also have a `"active"` boolean field representing if this command is active. Simpleaf will ignore (neither parse nor invoke) all commands that are inactive (`{"active": false}`). For command records missing this field, simpleaf will regard them as active commands.
-* If a field records a simpleaf command, the name of its sub-fields, except ``step`` and ``program_name``, must be valid simpleaf flags (for example, options like ``--fasta``, or ``-f`` for short, for ``simpleaf index`` and ``--unfiltered-pl`` (or ``-u``) for ``simpleaf quant``). Those option names (sub-field names), together with their values, if any, will be used to call the corresponding simpleaf program. Sub-fields not named by a valid simpleaf flag will trigger an error.
-* If a field records an external shell command, it must contain a valid ``step`` and ``program_name`` sub-field as described above. In contrast to simpleaf command records, all arguments of an external shell command must be provided in an array, in order, with the name ``"arguments"``. ``Simpleaf workflow`` will parse the entries in the array to build the actual command in order. For example, to tell ``simpleaf workflow`` to invoke the shell command  ``ls -l -h .`` at step 7, one needs to use the following JSON record:
+    * For an external command such as ``awk``, if the binary is invokable given the user's ``PATH`` environment variable, it can just be ``"awk"``; if not, it must contain a valid full path to the binary, for example, ``"/usr/bin/awk"``.
+* A command record can also have a `"active"` boolean field, representing if this command is active. Simpleaf will ignore (neither parse nor invoke) all commands that are inactive (`{"active": false}`). For command records missing this field, simpleaf will regard them as active commands.
+* If a field records a ``simpleaf`` command, the name of its sub-fields, except ``step`` and ``program_name``, must be valid simpleaf flags (for example, options like ``--fasta``, or ``-f`` for short, for ``simpleaf index`` and ``--unfiltered-pl`` (or ``-u``) for ``simpleaf quant``). Those option names (sub-field names), together with their values, if any, will be used to call the corresponding simpleaf program. Sub-fields not named by a valid simpleaf flag will trigger an error.
+* If a field records an external command, it must contain valid ``step`` and ``program_name`` sub-fields as described above. In contrast to ``simpleaf`` command records, all arguments of an external shell command must be provided in an array, in order, with the name ``"arguments"``. ``simpleaf workflow`` will parse the entries in the array to build the actual command in order. For example, to tell ``simpleaf workflow`` to invoke the command  ``ls -l -h .`` at step 7, one needs to use the following JSON record:
 
   .. code-block:: javascript
 
