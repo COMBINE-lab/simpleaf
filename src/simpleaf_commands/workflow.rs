@@ -81,14 +81,10 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
                         } else {
                             format!("{}.json", p.name)
                         };
-                        let path = match output {
-                            Some(ref o) => {
-                                let mut output_base = o.clone();
-                                output_base.push(patch_name);
-                                output_base
-                            },
-                            None => template_value.with_file_name(patch_name)
-                        };
+                        let path = output.clone().map_or_else(
+                            || { template_value.with_file_name(&patch_name) },
+                            |mut v| { v.push(&patch_name); v }
+                        );
                         let fw = std::fs::File::create(path)?;
                         serde_json::to_writer_pretty(fw, &v)?
                     }
