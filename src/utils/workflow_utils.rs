@@ -96,12 +96,12 @@ pub fn patches_from_csv(csv: PathBuf, target: PatchTargetType) -> anyhow::Result
 
     const NAME_COL: &str = "name";
 
-    // the expected_columns map is a hash map from column 
+    // the expected_columns map is a hash map from column
     // headers (that we expect will exist in the patch file)
-    // to actions that we wish to take if the corresponding 
-    // column header is *not* found in the patch file. If 
-    // the header was required, then an error is issues and 
-    // this function returns an Error result, if the header 
+    // to actions that we wish to take if the corresponding
+    // column header is *not* found in the patch file. If
+    // the header was required, then an error is issues and
+    // this function returns an Error result, if the header
     // was recommended, then just a warning is printed.
 
     // the "name" header is always required
