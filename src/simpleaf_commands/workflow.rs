@@ -29,6 +29,26 @@ pub fn refresh_protocol_estuary<T: AsRef<Path>>(af_home_path: T) -> anyhow::Resu
     Ok(())
 }
 
+
+/// This function takes a patch command, represented as the Patch 
+/// variant of the WorkflowCommands enum, which specifies *either* a 
+/// template or a manifest, as well as the path to a patch file and 
+/// optionally an output directory.
+///
+/// The function first generates JSON patches from the input patch file 
+/// and then applies these patches one at a time to the provided template
+/// or manifest.
+///
+/// If the optional output directory is provided, the resulting patched 
+/// manfiests are written to that directory. Otherwise, they are written
+/// in the same directory as the input template or manifest.
+///
+/// If all patches are applied and written succesfully, this function returns
+/// OK(()). This function returns an Error if any error occurs in the processing 
+/// and application of the patches, which could include errors related to 
+/// instantiation of the underlying template, failure to parse the provided
+/// patch file into JSON records, or even permission errors on the specified 
+/// output destination. 
 pub fn patch_manifest_or_template<T: AsRef<Path>>(
     af_home_path: T,
     workflow_cmd: WorkflowCommands,
