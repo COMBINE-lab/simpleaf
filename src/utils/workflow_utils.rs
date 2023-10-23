@@ -83,7 +83,12 @@ enum HeaderFieldAction {
 
 pub fn patches_from_csv(csv: PathBuf, target: PatchTargetType) -> anyhow::Result<PatchCollection> {
     // read the patch (CSV) file
-    let patch_file = File::open(&csv)?;
+    let patch_file = File::open(&csv).with_context(|| {
+        format!(
+            "Could not open patch file {} for reading",
+            csv.display()
+        )
+    })?;
     let csv_reader = std::io::BufReader::new(patch_file);
 
     // the collection of patches we will return
