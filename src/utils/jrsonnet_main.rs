@@ -108,7 +108,7 @@ pub fn parse_jsonnet(
     let ext_output = if let Some(output) = output_opt {
         format!(r#"__output='{}'"#, output.display())
     } else {
-        format!(r#"__output=null"#)
+        r#"__output=null"#.to_string()
     };
 
     // create command vector for clap parser
@@ -196,9 +196,7 @@ fn main_catch(opts: Opts) -> anyhow::Result<String> {
             if let Error::Evaluation(e) = e {
                 let mut out = String::new();
                 trace.write_trace(&mut out, &e).expect("format error");
-                Err(anyhow!(
-                    "Jsonnet {out}"
-                ))
+                Err(anyhow!("Jsonnet {out}"))
             } else {
                 Err(anyhow!(
                     "Found invalid configuration file. The error message was: {e}"

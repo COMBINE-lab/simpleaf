@@ -62,35 +62,35 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
             for p in patches.iter() {
                 // call parse_jsonnet to patch the template
                 match parse_jsonnet(
-                        // af_home_path,
-                        template_value.as_ref(),
-                        None,
-                        &protocol_estuary.utils_dir,
-                        &None,
-                        &None,
-                        &Some(p),
-                        TemplateState::Instantiated,
-                    ) {
-                            Ok(js) => {
-                                let v: Value = serde_json::from_str(js.as_str())?;
+                    // af_home_path,
+                    template_value.as_ref(),
+                    None,
+                    &protocol_estuary.utils_dir,
+                    &None,
+                    &None,
+                    &Some(p),
+                    TemplateState::Instantiated,
+                ) {
+                    Ok(js) => {
+                        let v: Value = serde_json::from_str(js.as_str())?;
 
-                                // get template location
-                                let patch_name = if let Some(stem) = template_value.file_stem() {
-                                    format!("{}_{}.json", Path::new(stem).display(), p.name)
-                                } else {
-                                    format!("{}.json", p.name)
-                                };
-                                let path = template_value.with_file_name(patch_name);
-                                let fw = std::fs::File::create(path)?;
-                                serde_json::to_writer_pretty(fw, &v)?
-                            },
-                            Err(e) => bail!(
-                                "Failed patching file {} using patch {}. {}",
-                                template_value.display(),
-                                p.name,
-                                e
-                            ),
+                        // get template location
+                        let patch_name = if let Some(stem) = template_value.file_stem() {
+                            format!("{}_{}.json", Path::new(stem).display(), p.name)
+                        } else {
+                            format!("{}.json", p.name)
                         };
+                        let path = template_value.with_file_name(patch_name);
+                        let fw = std::fs::File::create(path)?;
+                        serde_json::to_writer_pretty(fw, &v)?
+                    }
+                    Err(e) => bail!(
+                        "Failed patching file {} using patch {}. {}",
+                        template_value.display(),
+                        p.name,
+                        e
+                    ),
+                };
             }
         }
         _ => {

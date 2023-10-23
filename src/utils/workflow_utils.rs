@@ -143,8 +143,8 @@ be certain you intend to do this.",
         }
     }
 
-    // loop over the list of expected column header, and if any 
-    // remain that we have not seen, print out the appropriate 
+    // loop over the list of expected column header, and if any
+    // remain that we have not seen, print out the appropriate
     // warning (or error) message. If the message is an error, then
     // bail after issuing it.
     for (_cn, action) in expected_columns.iter() {
