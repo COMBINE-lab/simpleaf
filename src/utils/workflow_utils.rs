@@ -1256,7 +1256,7 @@ pub fn instantiate_workflow_template<T: AsRef<Path>>(
     ) {
         Ok(js) => Ok(js),
         Err(e) => Err(anyhow!(
-            "Error occurred when processing the input config file {}. The error message was {}",
+            "Failed evaluating file {}. {}",
             config_file_path.as_ref().display(),
             e
         )),

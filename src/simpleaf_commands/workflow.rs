@@ -79,8 +79,9 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
                                 serde_json::to_writer_pretty(fw, &v)?
                             },
                             Err(e) => bail!(
-                                "Error occurred when processing the input config file {}. The error message was {}",
+                                "Failed patching file {} using patch {}. {}",
                                 template_value.display(),
+                                p.name,
                                 e
                             ),
                         };
