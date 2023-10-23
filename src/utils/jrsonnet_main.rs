@@ -118,7 +118,7 @@ pub fn parse_jsonnet(
         "--ext-code",
         ext_utils_file_path,
         "--ext-code",
-        ext_output;
+        &ext_output,
         "--ext-code",
         &ext_instantiated,
         "--jpath",

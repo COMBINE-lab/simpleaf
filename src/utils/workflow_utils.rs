@@ -9,11 +9,12 @@ use cmd_lib::log::info;
 use cmd_lib::run_cmd;
 use serde_json::{json, Map, Value};
 use std::boxed::Box;
+use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use tracing::warn;
+use tracing::{error, warn};
 
 use crate::utils::jrsonnet_main::parse_jsonnet;
 use crate::utils::prog_utils;
@@ -70,9 +71,19 @@ impl PatchCollection {
     }
 }
 
-pub fn template_patches_from_csv(csv: PathBuf) -> anyhow::Result<PatchCollection> {
+pub enum PatchTargetType {
+    Template,
+    Manifest,
+}
+
+enum HeaderFieldAction {
+    Required(String),
+    Recommended(String),
+}
+
+pub fn patches_from_csv(csv: PathBuf, target: PatchTargetType) -> anyhow::Result<PatchCollection> {
     // read the patch (CSV) file
-    let patch_file = File::open(csv)?;
+    let patch_file = File::open(&csv)?;
     let csv_reader = std::io::BufReader::new(patch_file);
 
     // the collection of patches we will return
@@ -84,6 +95,28 @@ pub fn template_patches_from_csv(csv: PathBuf) -> anyhow::Result<PatchCollection
         .from_reader(csv_reader);
 
     const NAME_COL: &str = "name";
+
+    let mut expected_columns = HashMap::from([(
+        String::from(NAME_COL),
+        HeaderFieldAction::Required(format!(
+            "The provided patch file {} is missing the required name column",
+            csv.display()
+        )),
+    )]);
+
+    if matches!(target, PatchTargetType::Template) {
+        expected_columns.insert(
+            String::from("/meta_info/output"),
+            HeaderFieldAction::Recommended(format!(
+                r"
+You appear to be patching template file, but the provided patch 
+file, {}, is not overriding the /meta_info/output field, so the 
+manifests may not write to different output directories. You should  
+be certain you intend to do this.",
+                csv.display()
+            )),
+        );
+    }
 
     // the headers give the paths to the keys that should be replaced
     let headers = rdr.headers()?.clone();
@@ -99,13 +132,29 @@ pub fn template_patches_from_csv(csv: PathBuf) -> anyhow::Result<PatchCollection
                     _ => bail!("type not handled"),
                 };
                 header_type_map.push((header.to_string(), json_type));
+                expected_columns.remove(header);
             } else {
                 header_type_map.push((h.to_string(), ColumnTypeTag::String));
+                expected_columns.remove(h);
             }
         } else {
             header_type_map.push((h.to_string(), ColumnTypeTag::Name));
+            expected_columns.remove(h);
         }
     }
+
+    for (_cn, action) in expected_columns.iter() {
+        match action {
+            HeaderFieldAction::Recommended(msg) => {
+                warn!("{}", msg);
+            }
+            HeaderFieldAction::Required(msg) => {
+                error!("{}", msg);
+                bail!(msg.clone());
+            }
+        }
+    }
+
     // loop over every row (but the headers)
     for (_i, row) in rdr.records().enumerate() {
         let mut output_json = json!({});
@@ -1659,49 +1708,47 @@ mod tests {
         );
 
         match cmd.cmd {
-            WFCommand::SimpleafCommand(v) =>  {
-                match *v {
-                    Commands::Quant {
-                        chemistry,
-                        output,
-                        threads,
-                        index,
-                        reads1,
-                        reads2,
-                        use_selective_alignment,
-                        use_piscem,
-                        map_dir,
-                        knee,
-                        unfiltered_pl,
-                        forced_cells,
-                        explicit_pl,
-                        expect_cells,
-                        expected_ori,
-                        min_reads,
-                        t2g_map,
-                        resolution,
-                    } => {
-                            assert_eq!(chemistry, String::from("10xv3"));
-                            assert_eq!(output, PathBuf::from("quant_output"));
-                            assert_eq!(threads, 16);
-                            assert_eq!(index, Some(PathBuf::from("index_output/index")));
-                            assert_eq!(reads1, Some(vec![PathBuf::from("reads1.fastq")]));
-                            assert_eq!(reads2, Some(vec![PathBuf::from("reads2.fastq")]));
-                            assert_eq!(use_selective_alignment, true);
-                            assert_eq!(use_piscem, true);
-                            assert_eq!(map_dir, None);
-                            assert_eq!(knee, false);
-                            assert_eq!(unfiltered_pl, Some(None));
-                            assert_eq!(forced_cells, None);
-                            assert_eq!(explicit_pl, None);
-                            assert_eq!(expect_cells, None);
-                            assert_eq!(expected_ori, Some(String::from("fw")));
-                            assert_eq!(min_reads, 10);
-                            assert_eq!(t2g_map, Some(PathBuf::from("t2g.tsv")));
-                            assert_eq!(resolution, String::from("cr-like"));
-                    },
-                    c => panic!("expected quant command, found {:?}", c),
+            WFCommand::SimpleafCommand(v) => match *v {
+                Commands::Quant {
+                    chemistry,
+                    output,
+                    threads,
+                    index,
+                    reads1,
+                    reads2,
+                    use_selective_alignment,
+                    use_piscem,
+                    map_dir,
+                    knee,
+                    unfiltered_pl,
+                    forced_cells,
+                    explicit_pl,
+                    expect_cells,
+                    expected_ori,
+                    min_reads,
+                    t2g_map,
+                    resolution,
+                } => {
+                    assert_eq!(chemistry, String::from("10xv3"));
+                    assert_eq!(output, PathBuf::from("quant_output"));
+                    assert_eq!(threads, 16);
+                    assert_eq!(index, Some(PathBuf::from("index_output/index")));
+                    assert_eq!(reads1, Some(vec![PathBuf::from("reads1.fastq")]));
+                    assert_eq!(reads2, Some(vec![PathBuf::from("reads2.fastq")]));
+                    assert_eq!(use_selective_alignment, true);
+                    assert_eq!(use_piscem, true);
+                    assert_eq!(map_dir, None);
+                    assert_eq!(knee, false);
+                    assert_eq!(unfiltered_pl, Some(None));
+                    assert_eq!(forced_cells, None);
+                    assert_eq!(explicit_pl, None);
+                    assert_eq!(expect_cells, None);
+                    assert_eq!(expected_ori, Some(String::from("fw")));
+                    assert_eq!(min_reads, 10);
+                    assert_eq!(t2g_map, Some(PathBuf::from("t2g.tsv")));
+                    assert_eq!(resolution, String::from("cr-like"));
                 }
+                c => panic!("expected quant command, found {:?}", c),
             },
             e => panic!("expected SimpleafCommand, found {:?}", e),
         };

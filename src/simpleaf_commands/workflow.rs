@@ -47,8 +47,14 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
         } => {
             // generate a set of JSON patch files from the input
             // semicolon separated CSV file.
+            let target = if template.is_some() {
+                workflow_utils::PatchTargetType::Template
+            } else {
+                workflow_utils::PatchTargetType::Manifest
+            };
+
             let patches: workflow_utils::PatchCollection =
-                workflow_utils::template_patches_from_csv(patch)?;
+                workflow_utils::patches_from_csv(patch, target)?;
 
             let template_value = template.unwrap_or_else(|| manifest.unwrap());
 
@@ -357,10 +363,10 @@ pub fn run_workflow<T: AsRef<Path>>(
                 instantiated_manifest = serde_json::from_str(workflow_json_string.as_str())?;
                 output_path = workflow_utils::get_output_path(&instantiated_manifest)?;
 
-                // check if the output path we read from the instantiated template matches 
-                // the output path requested by the user (if the user passed one in). If 
+                // check if the output path we read from the instantiated template matches
+                // the output path requested by the user (if the user passed one in). If
                 // they do not match, issue an obnoxious warning.
-                // @DongzeHe : We should also probably log this warning to the output 
+                // @DongzeHe : We should also probably log this warning to the output
                 // log for subsequent inspection.
                 if let Some(requested_output_path) = output_opt {
                     if requested_output_path != output_path {
@@ -386,8 +392,8 @@ pub fn run_workflow<T: AsRef<Path>>(
                 ));
             }
 
-            // recursively make the output directory, which at this point 
-            // has been resolved as the one used in the template or manifest 
+            // recursively make the output directory, which at this point
+            // has been resolved as the one used in the template or manifest
             // (possibly as provided by the user in the former case).
             run_fun!(mkdir -p $output_path)?;
 
