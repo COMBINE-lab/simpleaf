@@ -54,6 +54,10 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
                 workflow_utils::PatchTargetType::Manifest
             };
 
+            if let Some(o) = &output {
+                fs::create_dir_all(o)?;
+            }
+
             let patches: workflow_utils::PatchCollection =
                 workflow_utils::patches_from_csv(patch, target)?;
 
