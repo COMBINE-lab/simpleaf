@@ -44,6 +44,7 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
             manifest,
             template,
             patch,
+            output,
         } => {
             // generate a set of JSON patch files from the input
             // semicolon separated CSV file.
@@ -80,7 +81,14 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
                         } else {
                             format!("{}.json", p.name)
                         };
-                        let path = template_value.with_file_name(patch_name);
+                        let path = match output {
+                            Some(ref o) => {
+                                let mut output_base = o.clone();
+                                output_base.push(patch_name);
+                                output_base
+                            },
+                            None => template_value.with_file_name(patch_name)
+                        };
                         let fw = std::fs::File::create(path)?;
                         serde_json::to_writer_pretty(fw, &v)?
                     }

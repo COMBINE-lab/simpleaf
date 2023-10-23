@@ -211,12 +211,14 @@ fn main() -> anyhow::Result<()> {
                     manifest: manifest_opt,
                     template: template_opt,
                     patch,
+                    output,
                 } => patch_manifest_or_template(
                     af_home_path.as_path(),
                     WorkflowCommands::Patch {
                         manifest: manifest_opt,
                         template: template_opt,
                         patch,
+                        output,
                     },
                 ),
 

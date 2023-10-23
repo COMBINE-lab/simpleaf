@@ -375,6 +375,12 @@ pub enum WorkflowCommands {
         /// declared as specified in the documentation.
         #[arg(short, long)]
         patch: PathBuf,
+        /// output directory where the patched manifest files (i.e. the output 
+        /// of applying the patching procedure) should be stored. If no directory
+        /// is provided, the patched manifests are stored in the same location
+        /// as the input template or manifest to which patching is applied.
+        #[arg(short, long)]
+        output: Option<PathBuf>
     },
 
     #[command(arg_required_else_help = true)]
