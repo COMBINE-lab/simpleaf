@@ -81,11 +81,6 @@ pub fn parse_jsonnet(
         })?
     );
 
-    let ext_output = if let Some(output) = output_opt {
-        format!(r#"__output='{}'"#, output.display())
-    } else {
-        String::new()
-    };
     let ext_utils_file_path = r#"__utils=import 'simpleaf_workflow_utils.libsonnet'"#;
     let ext_instantiated = format!(r#"__instantiated='{}'"#, instantiated);
 
@@ -109,14 +104,21 @@ pub fn parse_jsonnet(
         )
     })?;
 
+    // if we patch, output_opt will always be None
+    let ext_output = if let Some(output) = output_opt {
+        format!(r#"__output='{}'"#, output.display())
+    } else {
+        format!(r#"__output=null"#)
+    };
+
     // create command vector for clap parser
     let mut jrsonnet_cmd_vec = vec![
         "jrsonnet",
         main_jsonnet_file_str,
         "--ext-code",
-        &ext_output,
-        "--ext-code",
         ext_utils_file_path,
+        "--ext-code",
+        ext_output;
         "--ext-code",
         &ext_instantiated,
         "--jpath",

@@ -58,8 +58,6 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
                 match parse_jsonnet(
                         // af_home_path,
                         template_value.as_ref(),
-                        // @DongzeHe: Is this correct here, since there is no "output"
-                        // argument to patch?
                         None,
                         &protocol_estuary.utils_dir,
                         &None,
