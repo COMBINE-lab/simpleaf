@@ -197,7 +197,7 @@ fn main_catch(opts: Opts) -> anyhow::Result<String> {
                 let mut out = String::new();
                 trace.write_trace(&mut out, &e).expect("format error");
                 Err(anyhow!(
-                    "Error Occurred when evaluating a configuration file. Cannot proceed. {out}"
+                    "Jsonnet {out}"
                 ))
             } else {
                 Err(anyhow!(
