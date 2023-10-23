@@ -25,6 +25,18 @@ this row and write the resulting patched manifest out to a ``JSON`` file. Note t
 since the input being patched is a fully-instantiated manifest, the patch simply replaces the values 
 of the designated fields, but it will not affect the values of any fields that are not diretly patched.
 
+Finally, the ``workflow patch`` command accepts an *optional* argument ``--output``, which specifies the path 
+to a directory (which will be recursively created if it doesn't exist) where the patched manifests will be written.
+If this argument is not provided, then the patched manifests will be written to the same directory as the template 
+or manifest to which the patching process is being applied.  The name of each patched manifest is determined by 
+the name of the template or manifest being patched, and the corresponding value in the ``name`` column of the 
+patch file.  For example if you are patching a template named ``awesome_gene_expression.jsonnet``, and you have a
+parameter table with two (non-header) rows with the values in the name column being ``sample1`` and ``sample2`` respectively,
+then the patching process will result in two manifests named ``awesome_gene_expression_sample1.json`` and 
+``awesome_gene_expression_sample2.json``. If no ``--output`` was provided to the command, then these will be 
+written in the same directory where ``awesome_gene_expression.jsonnet`` resides, otherwise they will be written
+in the directory specified by the ``--output`` option.
+
 
 Patch file
 ~~~~~~~~~~
@@ -89,16 +101,19 @@ The relevant options (which you can obtain by running ``simpleaf workflow patch 
 
   Patch a workflow template or instantiated manifest with a subset of parameters to produce a series of workflow manifests
 
-  Usage: simpleaf workflow patch --patch <PATCH> <--manifest <MANIFEST>|--template <TEMPLATE>>
+  Usage: simpleaf workflow patch [OPTIONS] --patch <PATCH> <--manifest <MANIFEST>|--template <TEMPLATE>>
 
   Options:
-    -m, --manifest <MANIFEST>  fully-instantiated manifest (JSON file) to patch. If this argument is given, the patch is applied directly 
-                               to the JSON file in a manner akin to simple key-value replacement. Since the manifest is fully-instantiated, 
+    -m, --manifest <MANIFEST>  fully-instantiated manifest (JSON file) to patch. If this argument is given, the patch is applied directly
+                               to the JSON file in a manner akin to simple key-value replacement. Since the manifest is fully-instantiated,
                                no derived values will be affected
-    -t, --template <TEMPLATE>  partially-instantiated template (JSONNET file) to patch. If this argument is given, the patch is 
-                               applied *before* the template is instantiated (i.e. if you override a variable used elswhere in 
-                               the template, all derived values will be affected)
+    -t, --template <TEMPLATE>  partially-instantiated template (JSONNET file) to patch. If this argument is given, the patch is applied
+                               *before* the template is instantiated (i.e. if you override a variable used elswhere in the template, all
+                               derived values will be affected)
     -p, --patch <PATCH>        patch to apply as a ';' separated parameter table with headers declared as specified in the documentation
+    -o, --output <OUTPUT>      output directory where the patched manifest files (i.e. the output of applying the patching procedure)
+                               should be stored. If no directory is provided, the patched manifests are stored in the same location as the
+                               input template or manifest to which patching is applied
     -h, --help                 Print help
     -V, --version              Print version
 
