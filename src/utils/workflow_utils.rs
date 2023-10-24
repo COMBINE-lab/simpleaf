@@ -511,7 +511,7 @@ pub fn execute_commands_in_workflow<T: AsRef<Path>>(
                 } // invoke external cmd
             }
         }
-        info!("successfully ran {} command for step {}.", pn, step);
+        // info!("successfully ran {} command for step {}.", pn, step);
     } // for cmd_queue
     Ok(())
 }
