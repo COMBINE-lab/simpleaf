@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.15.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.14.1...v0.15.0) (2023-10-24)
+
+
+### Features
+
+* advanced params for piscem &gt;= 0.7 ([a19b492](https://github.com/COMBINE-lab/simpleaf/commit/a19b49221cc1d5b6f81135e64e9895326d5500e8))
+
+
+### Bug Fixes
+
+* accept boolean fields as simpleaf parameters ([64d8191](https://github.com/COMBINE-lab/simpleaf/commit/64d819192b6895683f0d2cabf9200f69549d2e52))
+* be able to parse all kinds of json value ([d2024f0](https://github.com/COMBINE-lab/simpleaf/commit/d2024f069665d9e9c1845f3519356aded717c8fe))
+* bump dependencies ([44a0681](https://github.com/COMBINE-lab/simpleaf/commit/44a068112795f4640ade84b2d8fda7988e6f8be0))
+* write workflow log when external command fails ([ab62f03](https://github.com/COMBINE-lab/simpleaf/commit/ab62f03c7bf3486d8a92a2b3bac0b2352a494e3a))
+
 ## [0.14.1](https://github.com/COMBINE-lab/simpleaf/compare/v0.14.0...v0.14.1) (2023-07-10)
 
 

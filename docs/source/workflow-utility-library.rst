@@ -36,9 +36,9 @@ Terminology
 - `Simpleaf command record <https://combine-lab.github.io/alevin-fry-tutorials/2023/build-simpleaf-workflow/#:~:text=Define%20a%20basic%20workflow%20template>`_: a sub-object in an object that has required identify fields, *Program Name* and *Step*, and the *Program Name* represents one of the simpleaf commands.
 - `Recommended main sections <https://combine-lab.github.io/alevin-fry-tutorials/2023/build-simpleaf-workflow/#:~:text=2.%20The%20recommended%20layout%20in%20a%20simpleaf%20workflow%20template>`_: the recommended sub-fields of a workflow object.
     - *meta_info*
-    - *Recommended Configuration*
-    - *Optional Configuration*
-    - *External Commands* 
+    - *minimal_config*
+    - *advanced_config*
+    - *external_commands* 
 - `Identity fields <https://combine-lab.github.io/alevin-fry-tutorials/2023/build-simpleaf-workflow/#:~:text=There%20are%20three%20identity%20fields.>`_: the fields used for identifying a command record.
 - A valid field or a valid meta-variable is a field or a meta-variable that exists and is not *null*. 
 - A simpleaf flag field is a field in a simpleaf command record that represents one of the `Simpleaf Program Arguments`_.
