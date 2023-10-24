@@ -20,7 +20,7 @@ use crate::utils::prog_utils;
 use crate::utils::prog_utils::CommandVerbosityLevel;
 use crate::{Cli, Commands};
 
-use super::jrsonnet_main::TemplateState;
+use super::jrsonnet_main::ParseAction;
 use super::prog_utils::shell;
 
 // fields that are not representing any simpleaf flag
@@ -328,7 +328,7 @@ pub fn get_template_version<T: AsRef<Path>>(
         &None,
         &None,
         &None,
-        TemplateState::Uninstantiated,
+        ParseAction::Inspect,
     ) {
         Ok(v) => v,
         Err(_) => return Ok(String::from("N/A*")),
@@ -1238,7 +1238,7 @@ pub fn instantiate_workflow_template<T: AsRef<Path>>(
         jpaths,
         ext_codes,
         &None,
-        TemplateState::Instantiated,
+        ParseAction::Instantiate,
     ) {
         Ok(js) => Ok(js),
         Err(e) => Err(anyhow!(

@@ -44,17 +44,20 @@ struct Opts {
     output: OutputOpts,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, PartialEq, Eq)]
-pub enum TemplateState {
-    Uninstantiated,
-    Instantiated,
+pub enum ParseAction {
+    Inspect,
+    Instantiate,
+    InstantiateWithoutValidation,
 }
 
-impl TemplateState {
-    pub fn is_instantiated(&self) -> bool {
+impl ParseAction {
+    pub fn requires_validation(&self) -> bool {
         match &self {
-            TemplateState::Uninstantiated => false,
-            TemplateState::Instantiated => true,
+            Self::Inspect => false,
+            Self::Instantiate => true,
+            Self::InstantiateWithoutValidation => false,
         }
     }
 }
@@ -66,11 +69,11 @@ pub fn parse_jsonnet(
     jpaths: &Option<Vec<PathBuf>>,
     ext_codes: &Option<Vec<String>>,
     patch: &Option<&JsonPatch>,
-    template_state: TemplateState,
+    template_state: ParseAction,
 ) -> anyhow::Result<String> {
     // define jrsonnet arguments
     // config file
-    let instantiated = template_state.is_instantiated();
+    let do_validate = template_state.requires_validation();
     let tla_config_file_path = format!(
         "workflow={}",
         config_file_path.to_str().with_context(|| {
@@ -82,7 +85,7 @@ pub fn parse_jsonnet(
     );
 
     let ext_utils_file_path = r#"__utils=import 'simpleaf_workflow_utils.libsonnet'"#;
-    let ext_instantiated = format!(r#"__instantiated='{}'"#, instantiated);
+    let ext_instantiated = format!(r#"__validate={}"#, do_validate);
 
     // af_home_dir
     let jpath_pe_utils = utils_dir.to_str().with_context(|| {

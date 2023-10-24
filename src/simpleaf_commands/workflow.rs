@@ -1,4 +1,4 @@
-use crate::utils::jrsonnet_main::{parse_jsonnet, TemplateState};
+use crate::utils::jrsonnet_main::{parse_jsonnet, ParseAction};
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::ReqProgs;
 use crate::utils::workflow_utils;
@@ -93,7 +93,7 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
                     &None,
                     &None,
                     &Some(p),
-                    TemplateState::Instantiated,
+                    ParseAction::Instantiate,
                 ) {
                     Ok(js) => {
                         let v: Value = serde_json::from_str(js.as_str())?;
@@ -215,6 +215,36 @@ pub fn get_wokflow<T: AsRef<Path>>(
             )?;
             // get the corresponding workflow directory path
             let workflow_path = protocol_estuary.protocols_dir.join(name.as_str());
+
+            let version_str = workflow_utils::get_template_version(
+                workflow_path.clone(),
+                &protocol_estuary.utils_dir,
+            )?;
+
+            /* NOTE: we can't check against this version for very old templates, because we can't
+             * even instantaite them any longer because of how the evaluation has changed. Only
+             * check the below if what we get back is not "N/A*" or "missing"
+             */
+            match version_str.as_ref() {
+                "N/A*" => {
+                    warn!("couldn't evaluate the requested template to fetch the version number, it may be a deprecated version; consider refreshing.");
+                }
+                "missing" => {
+                    warn!("the template that was requested to be fetched appeared to be missing a version number, but this field should be present; consider refreshing or further investigating the issue.");
+                }
+                ver => {
+                    const REQ_VER: &str = "0.1.0";
+                    match prog_utils::check_version_constraints(&name, REQ_VER, ver) {
+                        Ok(ver) => {
+                            info!("getting workflow {} version {}", name, ver);
+                        }
+                        Err(_) => {
+                            warn!("the version parsed from the workflow you are attempting to get is {}, but it should be at least {}.", version_str, REQ_VER);
+                        }
+                    }
+                }
+            };
+
             // make output dir
             let mut output_dir_name = name.clone();
             output_dir_name.push_str("_template");
