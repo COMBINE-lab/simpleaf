@@ -5,7 +5,6 @@
 use anyhow::{anyhow, bail, Context};
 use chrono::{DateTime, Local};
 use clap::Parser;
-use cmd_lib::log::info;
 use cmd_lib::run_cmd;
 use serde_json::{json, Map, Value};
 use std::boxed::Box;
@@ -14,7 +13,7 @@ use std::fs;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 use crate::utils::jrsonnet_main::parse_jsonnet;
 use crate::utils::prog_utils;
