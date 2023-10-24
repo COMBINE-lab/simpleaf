@@ -335,16 +335,10 @@ pub fn get_template_version<T: AsRef<Path>>(
     };
 
     let workflow_json_value: Value = serde_json::from_str(workflow_json_string.as_str())?;
-    let v = if let Some(meta_info) = workflow_json_value.get(SystemFields::MetaInfo.as_str()) {
-        if let Some(version_value) = meta_info.get("template_version") {
-            if let Some(v) = version_value.as_str() {
-                v.to_string()
-            } else {
-                String::from("missing")
-            }
-        } else {
-            String::from("missing")
-        }
+    const TEMPLATE_VERSION_KEY: &str = "template_version";
+    let version_field_ptr = format!("/{}/{}", SystemFields::MetaInfo.as_str(), TEMPLATE_VERSION_KEY);
+    let v = if let Some(version_value) = workflow_json_value.pointer(&version_field_ptr).and_then( |val| val.as_str() ) {
+        version_value.to_string()
     } else {
         String::from("missing")
     };
