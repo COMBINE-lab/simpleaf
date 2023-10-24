@@ -83,12 +83,8 @@ enum HeaderFieldAction {
 
 pub fn patches_from_csv(csv: PathBuf, target: PatchTargetType) -> anyhow::Result<PatchCollection> {
     // read the patch (CSV) file
-    let patch_file = File::open(&csv).with_context(|| {
-        format!(
-            "Could not open patch file {} for reading",
-            csv.display()
-        )
-    })?;
+    let patch_file = File::open(&csv)
+        .with_context(|| format!("Could not open patch file {} for reading", csv.display()))?;
     let csv_reader = std::io::BufReader::new(patch_file);
 
     // the collection of patches we will return
@@ -459,90 +455,13 @@ pub fn execute_commands_in_workflow<T: AsRef<Path>>(
         match cr.cmd {
             WFCommand::SimpleafCommand(cmd) => {
                 let exec_result = match *cmd {
-                    Commands::Index {
-                        ref_type,
-                        fasta,
-                        gtf,
-                        gff3_format,
-                        rlen,
-                        spliced,
-                        unspliced,
-                        dedup,
-                        keep_duplicates,
-                        ref_seq,
-                        output,
-                        use_piscem,
-                        kmer_length,
-                        minimizer_length,
-                        overwrite,
-                        sparse,
-                        threads,
-                    } => crate::indexing::build_ref_and_index(
-                        af_home_path.as_ref(),
-                        Commands::Index {
-                            ref_type,
-                            fasta,
-                            gtf,
-                            gff3_format,
-                            rlen,
-                            spliced,
-                            unspliced,
-                            dedup,
-                            keep_duplicates,
-                            ref_seq,
-                            output,
-                            use_piscem,
-                            kmer_length,
-                            minimizer_length,
-                            overwrite,
-                            sparse,
-                            threads,
-                        },
-                    ),
-
+                    Commands::Index(index_opts) => {
+                        crate::indexing::build_ref_and_index(af_home_path.as_ref(), index_opts)
+                    }
                     // if we are running mapping and quantification
-                    Commands::Quant {
-                        index,
-                        use_piscem,
-                        map_dir,
-                        reads1,
-                        reads2,
-                        threads,
-                        use_selective_alignment,
-                        expected_ori,
-                        knee,
-                        unfiltered_pl,
-                        explicit_pl,
-                        forced_cells,
-                        expect_cells,
-                        min_reads,
-                        resolution,
-                        t2g_map,
-                        chemistry,
-                        output,
-                    } => crate::quant::map_and_quant(
-                        af_home_path.as_ref(),
-                        Commands::Quant {
-                            index,
-                            use_piscem,
-                            map_dir,
-                            reads1,
-                            reads2,
-                            threads,
-                            use_selective_alignment,
-                            expected_ori,
-                            knee,
-                            unfiltered_pl,
-                            explicit_pl,
-                            forced_cells,
-                            expect_cells,
-                            min_reads,
-                            resolution,
-                            t2g_map,
-                            chemistry,
-                            output,
-                        },
-                    ),
+                    Commands::Quant(quant_opts) => {
+                        crate::quant::map_and_quant(af_home_path.as_ref(), quant_opts)
+                    }
                     _ => todo!(),
                 };
                 if let Err(e) = exec_result {
@@ -1729,44 +1648,25 @@ mod tests {
 
         match cmd.cmd {
             WFCommand::SimpleafCommand(v) => match *v {
-                Commands::Quant {
-                    chemistry,
-                    output,
-                    threads,
-                    index,
-                    reads1,
-                    reads2,
-                    use_selective_alignment,
-                    use_piscem,
-                    map_dir,
-                    knee,
-                    unfiltered_pl,
-                    forced_cells,
-                    explicit_pl,
-                    expect_cells,
-                    expected_ori,
-                    min_reads,
-                    t2g_map,
-                    resolution,
-                } => {
-                    assert_eq!(chemistry, String::from("10xv3"));
-                    assert_eq!(output, PathBuf::from("quant_output"));
-                    assert_eq!(threads, 16);
-                    assert_eq!(index, Some(PathBuf::from("index_output/index")));
-                    assert_eq!(reads1, Some(vec![PathBuf::from("reads1.fastq")]));
-                    assert_eq!(reads2, Some(vec![PathBuf::from("reads2.fastq")]));
-                    assert_eq!(use_selective_alignment, true);
-                    assert_eq!(use_piscem, true);
-                    assert_eq!(map_dir, None);
-                    assert_eq!(knee, false);
-                    assert_eq!(unfiltered_pl, Some(None));
-                    assert_eq!(forced_cells, None);
-                    assert_eq!(explicit_pl, None);
-                    assert_eq!(expect_cells, None);
-                    assert_eq!(expected_ori, Some(String::from("fw")));
-                    assert_eq!(min_reads, 10);
-                    assert_eq!(t2g_map, Some(PathBuf::from("t2g.tsv")));
-                    assert_eq!(resolution, String::from("cr-like"));
+                Commands::Quant(quant_opts) => {
+                    assert_eq!(quant_opts.chemistry, String::from("10xv3"));
+                    assert_eq!(quant_opts.output, PathBuf::from("quant_output"));
+                    assert_eq!(quant_opts.threads, 16);
+                    assert_eq!(quant_opts.index, Some(PathBuf::from("index_output/index")));
+                    assert_eq!(quant_opts.reads1, Some(vec![PathBuf::from("reads1.fastq")]));
+                    assert_eq!(quant_opts.reads2, Some(vec![PathBuf::from("reads2.fastq")]));
+                    assert_eq!(quant_opts.use_selective_alignment, true);
+                    assert_eq!(quant_opts.use_piscem, true);
+                    assert_eq!(quant_opts.map_dir, None);
+                    assert_eq!(quant_opts.knee, false);
+                    assert_eq!(quant_opts.unfiltered_pl, Some(None));
+                    assert_eq!(quant_opts.forced_cells, None);
+                    assert_eq!(quant_opts.explicit_pl, None);
+                    assert_eq!(quant_opts.expect_cells, None);
+                    assert_eq!(quant_opts.expected_ori, Some(String::from("fw")));
+                    assert_eq!(quant_opts.min_reads, 10);
+                    assert_eq!(quant_opts.t2g_map, Some(PathBuf::from("t2g.tsv")));
+                    assert_eq!(quant_opts.resolution, String::from("cr-like"));
                 }
                 c => panic!("expected quant command, found {:?}", c),
             },
