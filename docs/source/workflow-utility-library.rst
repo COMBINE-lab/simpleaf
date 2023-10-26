@@ -489,7 +489,7 @@ The resulting object will look like the following:
             program_name: "awk",
             arguments: ["'FNR==NR {dict[$1]=$2; next} {$1=($1 in dict) ? dict[$1] : $1}1'", "simpeaf_quant/af_quant/alevin/.barcode.txt", "simpeaf_quant/af_quant/alevin/quants_mat_rows.txt.bkp", ">", "simpeaf_quant/af_quant/alevin/quants_mat_rows.txt"],
         },  
-    },
+    }
 
 utils.get(o, f, use_default = false, default = null)
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -503,8 +503,8 @@ utils.get(o, f, use_default = false, default = null)
 
 **Output**: Return the target field *f* in the given object if the object has a sub-field called ``f``. Otherwise,
 
-  - if ``use_default`` is ``true``, return the value of the ``default`` argument.
-  - if ``use_default`` is false, raise an error.
+- if ``use_default`` is ``true``, return the value of the ``default`` argument.
+- if ``use_default`` is false, raise an error.
 
 This function tries to (non-recursively) get a sub-field in the provided object and return it. If the field doesn't exist, then it either returns a default value or raises an error.
 
