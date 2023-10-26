@@ -21,7 +21,7 @@ As the built-in variables are provided by *simpleaf* to its internal Jsonnet eng
 
 where ``--ext-code`` is the flag for passing an external variable, and ``--jpath`` specifies the library searching path.  
 
-Although *simpleaf* automatically provides the utility library as the external variable `__utils`, we must receive this external variable in our template before starting using the functions provided in this library. 
+Although *simpleaf* automatically provides the utility library as the external variable ``__utils``, we must receive this external variable in our template before starting using the functions provided in this library. 
 
 To do this, we recommend adding the following code at the beginning of your workflow template.
 
@@ -32,7 +32,7 @@ To do this, we recommend adding the following code at the beginning of your work
 utils.ref_type(o)
 """"""""""""""""""""""""""""""""""""""""""""""
 
-**Input**: `o`: an object with a *type* field and an object field with the name specified by the *type* field. Other fields will be ignored. For example, `{type: "spliceu", spliceu: {gtf: "genes.gtf", fasta: "genome.fa"}}`.
+**Input**: ``o``: an object with a *type* field and an object field with the name specified by the *type* field. Other fields will be ignored. For example, ``{type: "spliceu", spliceu: {gtf: "genes.gtf", fasta: "genome.fa"}}``.
 
 **Output**: An object with the *simpleaf index* arguments that are related to the specified reference type in the input object.
 
@@ -75,7 +75,7 @@ This function has four modes (reference types), triggered by the ``type`` field 
 
     local splici = utils.splici(splici_args);
 
-In the above example, the objects `ref_type` and `splici` are identical and look like the following:
+In the above example, the objects ``ref_type`` and ``splici`` are identical and look like the following:
 
 .. code-block:: jsonnet
 
@@ -97,12 +97,12 @@ utils.simpleaf_index(step, ref_type, arguments, output)
 
 **Input**:
 
-- *step*: An integer indicating the step number (execution order) of this simpleaf command record in the workflow.
-- *ref_type*: A ``ref_type`` object returned by calling ``utils.ref_type`` or any object with the same format.
-- *arguments*: An object in which each field represents a *simpleaf index* argument. Furthermore, there must be a field called ``active`` representing the active state of this simpleaf index command.
-- *output*: A string that will be passed to ``simpleaf index --output``.
+- ``step``: An integer indicating the step number (execution order) of this simpleaf command record in the workflow.
+- ``ref_type``: A ``ref_type`` object returned by calling ``utils.ref_type`` or any object with the same format.
+- ``arguments``: An object in which each field represents a *simpleaf index* argument. Furthermore, there must be a field called ``active`` representing the active state of this `simpleaf index` command.
+- ``output``: A string representing the output directory of the `simpleaf index` command.
 
-**Output**: A well-defined ``simpleaf index`` command record.
+**Output**: A well-defined *simpleaf index* command record.
 
 **Example Usage** 
 
@@ -132,7 +132,7 @@ utils.simpleaf_index(step, ref_type, arguments, output)
     );
 
 
-The `simpleaf_index` object in the above code chunk will be  
+The ``simpleaf_index`` object in the above code chunk will be  
 
 .. code-block:: jsonnet
 
@@ -161,23 +161,23 @@ utils.map_type(o, simpleaf_index = {})
 
 **Input**:
 
-- `o`: an object with
-    - a `type` field, and
-    - an object field with the name specified by the `type` field. Other fields will be ignored. For example, `{"type": "map_reads", "map_reads": {"reads1": null, "reads2": null}, "field_being_ignored": "ignore me"}`.
-- `simpleaf_index`: An empty object if in `existing_mappings` mode, or the output object of the `simpleaf_index` function if in `map_reads` mode. The default value is an empty object.
+- ``o``: an object with
+    - a ``type`` field, and
+    - an object field with the name specified by the ``type`` field. Other fields will be ignored. For example, ``{"type": "map_reads", "map_reads": {"reads1": null, "reads2": null}, "field_being_ignored": "ignore me"}``.
+- ``simpleaf_index``: An empty object if in `existing_mappings` mode, or the output object of the `simpleaf_index` function if in `map_reads` mode. The default value is an empty object.
 
 **Output**: An object with the `simpleaf quant` arguments that are related to the specified map type in the input object.
 
 This function has two modes (map types), triggered by the `type` field in the input object. When specifying a mode, the input object must contain an object field named by that mode and contain the required fields. Otherwise, an error will be raised. The two modes are:
 
 - `map_reads`: Map reads against the provided index or an index built from a previous step. The required fields are
-    - `reads1`: A string representing the path to a gene annotation GTF file,
-    - `reads2`: A string representing the path to a reference genome FASTA file.
+    - ``reads1``: A string representing the path to a gene annotation GTF file,
+    - ``reads2``: A string representing the path to a reference genome FASTA file.
 - `existing_mappings`: Skip mapping and use the existing mapping results. The required fields are
-    - `map_dir`: A string representing the path to the mapping result directory,
-    - `t2g_map`: A string representing the path to a transcript-to-gene mapping file.
+    - ``map_dir``: A string representing the path to the mapping result directory,
+    - ``t2g_map``: A string representing the path to a transcript-to-gene mapping file.
 
-**Wrapper functions**: We also provide separate functions for each of the two modes, `utils.map_reads` and `utils.existing_mappings`, which are thin wrappers of `map_type`. These two functions take an object containing their required fields introduced above.
+**Wrapper functions**: We also provide separate functions for each of the two modes, ``utils.map_reads`` and ``utils.existing_mappings``, which are thin wrappers of ``utils.map_type``. These two functions take an object containing their required fields introduced above.
 
 **Example Usage** 
 
@@ -200,7 +200,7 @@ This function has two modes (map types), triggered by the `type` field in the in
 
     local map_reads = utils.map_reads(map_reads_args);
 
-In the above example, the objects `map_type` and `map_reads` are identical and look like the following:
+In the above example, the objects ``map_type`` and ``map_reads`` are identical and look like the following:
 
 .. code-block:: jsonnet
 
@@ -222,7 +222,7 @@ utils.cell_filt_type(o)
 
 **Input**: 
 
-- `o`: an object with a `type` field, and an argument field with the name specified by the `type` field. Other fields will be ignored. For example, `{"type": "explicit_pl", "explicit_pl": "whitelist.txt"}`
+- ``o``: an object with a ``type`` field, and an argument field with the name specified by the ``type`` field. Other fields will be ignored. For example, ``{"type": "explicit_pl", "explicit_pl": "whitelist.txt"}``
 
 **Output**: An object with the `simpleaf quant` arguments that are related to the specified cell filtering type in the input object.
 
@@ -234,7 +234,7 @@ This function has five modes (cell filtering types), triggered by the `type` fie
 - `expect`: Use the expected number of cells. The corresponding argument field must be an integer representing the expected number of cells.
 - `explicit_pl`: Use a filtered, explicit permit list. The corresponding argument field must be a string representing the path to a cell barcode permit list file.
 
-**Wrapper functions**: We also provide a separate function for each mode, `utils.unfiltered_pl`, `utils.knee`, `utils.forced`, `utils.expect`, and `utils.explicit_pl`, which are thin wrappers of `utils.cell_filt_type`. These functions take an object containing their required fields introduced above.
+**Wrapper functions**: We also provide a separate function for each mode, ``utils.unfiltered_pl``, ``utils.knee``, ``utils.forced``, ``utils.expect``, and ``utils.explicit_pl``, which are thin wrappers of ``utils.cell_filt_type``. These functions take an object containing their required fields introduced above.
 
 **Example Usage** 
 
@@ -272,13 +272,13 @@ simpleaf_quant(step, map_type, cell_filt_type, output)
 
 **Input**: 
 
-- `step` : An integer indicating the step number (execution order) of this simpleaf command record in the workflow.
-- `map_type` : A ``map_type`` object returned by calling ``utils.map_type`` or any object with the same format. 
-- `cell_filt_type` : A ``cell_filt_type`` object returned by calling ``utils.cell_filt_type`` or any object with the same format. 
-- `arguments` : an object in which each field represents a ``simpleaf quant`` argument. Furthermore, there must be a field called ``active`` representing the active state of this simpleaf index command. 
-- `output` : A string that will be passed to ``simpleaf quant --output``.
+- ``step`` : An integer indicating the step number (execution order) of this simpleaf command record in the workflow.
+- ``map_type`` : A `map_type` object returned by calling `utils.map_type` or any object with the same format. 
+- ``cell_filt_type`` : A `cell_filt_type` object returned by calling `utils.cell_filt_type` or any object with the same format. 
+- ``arguments`` : an object in which each field represents a `simpleaf quant` argument. Furthermore, there must be a field called ``active`` representing the active state of this simpleaf index command. 
+- ``output`` : A string representing the output directory of this `simpleaf quant` command.
 
-**Output**: A well-defined ``simpleaf quant`` command record.
+**Output**: A well-defined `simpleaf quant` command record.
 
 **Example Usage** 
 
@@ -299,12 +299,12 @@ simpleaf_quant(step, map_type, cell_filt_type, output)
         cell_filt_type, # defined in the example usage of function `cell_filt_type`
         arguments,
         "./simpleaf_quant" # output directory
-    )};
+    );
 
 
-The `simpleaf_quant` object in the above code chunk will be  
+The ``simpleaf_quant`` object in the above code chunk will be  
 
-.. code-block:: JSON
+.. code-block:: jsonnet
 
     {
         # hidden, system fields
@@ -334,11 +334,11 @@ feature_barcode_ref(start_step, csv, name_col, barcode_col, output)
 
 **Input**:
 
-- `start_step`: An integer indicating the starting step number (execution order) of the series of command records in the workflow. This function will define three command records with incremental step numbers according to the provided step number.
-- `csv`: A string representing the path to the "feature_barcode.csv" file of the dataset.
-- `name_col`: An integer representing the column index of the feature name column in the feature barcode CSV file.
-- `barcode_col`: An integer representing the column index of the feature barcode sequence column in the feature barcode CSV file.
-- `output`: A string representing the parent output directory of the result files. It will be created if it doesn't exist.
+- ``start_step``: An integer indicating the starting step number (execution order) of the series of command records in the workflow. This function will define three command records with incremental step numbers according to the provided step number.
+- ``csv``: A string representing the path to the "feature_barcode.csv" file of the dataset.
+- ``name_col``: An integer representing the column index of the feature name column in the feature barcode CSV file.
+- ``barcode_col``: An integer representing the column index of the feature barcode sequence column in the feature barcode CSV file.
+- ``output``: A string representing the parent output directory of the result files. It will be created if it doesn't exist.
 
 **Output**: An object containing three external command records, including `mkdir`, `create_t2g`, and `create_fasta`, and a hidden object that follows the output format of `utils.ref_type` shown above. This `ref_type` object is of the `direct_ref` type. It can be used as the second argument of `utils.simpleaf_index`. In this `ref_type` object,
 
@@ -411,10 +411,10 @@ barcode_translation(start_step, url, quant_cb, output)
 
 **Input**:
 
-- `start_step`: An integer indicating the starting step number (execution order) of the series of command records in the workflow. This function will define five command records with incremental step numbers according to the provided step number.
-- `url`: A string representing the downloadable URL to the barcode mapping file. You can use `this URL <https://github.com/10XGenomics/cellranger/raw/master/lib/python/cellranger/barcodes/translation/3M-february-2018.txt.gz>`_ for 10xv3 data.
-- `quant_cb`: A string representing the path to the cell barcode file. Usually, this is at `af_quant/alevin/quants_mat_rows.txt` in the simpleaf quant command output directory.
-- `output`: A string representing the parent output directory of the result files. It will be created if it doesn't exist.
+- ``start_step``: An integer indicating the starting step number (execution order) of the series of command records in the workflow. This function will define five command records with incremental step numbers according to the provided step number.
+- ``url``: A string representing the downloadable URL to the barcode mapping file. You can use `this URL <https://github.com/10XGenomics/cellranger/raw/master/lib/python/cellranger/barcodes/translation/3M-february-2018.txt.gz>`_ for 10xv3 data.
+- ``quant_cb``: A string representing the path to the cell barcode file. Usually, this is at `af_quant/alevin/quants_mat_rows.txt` in the simpleaf quant command output directory.
+- ``output``: A string representing the parent output directory of the result files. It will be created if it doesn't exist.
 
 **Output**: An object containing five external command records, including `mkdir`, `fetch_cb_translation_file`, `unzip_cb_translation_file`, `backup_bc_file`, and `barcode_translation`.
 
@@ -494,12 +494,17 @@ The resulting object will look like the following:
 utils.get(o, f, use_default = false, default = null)
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
-**Input**: o: an object, f: the target field name, use_default: boolean, default: any valid type
+**Input**: 
 
-**Output**: Return the target field *f* in the given object if the object has a sub-field called *f*. Otherwise,
+- ``o``: an object,
+- ``f``: the target field name, 
+- ``use_default``: boolean, 
+- ``default``: a default value returned if the target field doesn't exist.
 
-  - if *use_default* is *true*, return the value of the *default* argument (defualtly *null*).
-  - if *use_default* is false, raise an error.
+**Output**: Return the target field *f* in the given object if the object has a sub-field called ``f``. Otherwise,
+
+  - if ``use_default`` is ``true``, return the value of the ``default`` argument.
+  - if ``use_default`` is false, raise an error.
 
 This function tries to (non-recursively) get a sub-field in the provided object and return it. If the field doesn't exist, then it either returns a default value or raises an error.
 
