@@ -123,14 +123,14 @@ utils.simpleaf_index(step, ref_type, arguments, output)
     local splici_args = {
         gtf : "genes.gtf",
         fasta : "genome.fa",
-        rlen : 91,
+        rlen : 91
     };
     
     local splici = utils.splici(splici_args);
 
     local arguments = {
         active : true,
-        "--use-piscem" : true,
+        "--use-piscem" : true
     };
         
     local simpleaf_index = utils.simpleaf_index(
@@ -173,7 +173,6 @@ utils.map_type(o, simpleaf_index = {})
 - ``o``: an object with
     - a ``type`` field, and
     - an object field with the name specified by the ``type`` field. Other fields will be ignored. 
-    
     For example, ``{"type": "map_reads", "map_reads": {"reads1": null, "reads2": null}, "field_being_ignored": "ignore me"}``.
 - ``simpleaf_index``: An empty object if in `existing_mappings` mode, or the output object of the `simpleaf_index` function if in `map_reads` mode. The default value is an empty object.
 
@@ -203,7 +202,7 @@ This function has two modes (map types), triggered by the `type` field in the in
 
     local map_reads_args = {
         reads1 : "reads1.fastq",
-        reads2 : "reads2.fastq",
+        reads2 : "reads2.fastq"
     };
 
     local map_type = utils.map_type({
@@ -238,7 +237,6 @@ utils.cell_filt_type(o)
 - ``o``: an object with 
     - a ``type`` field, and 
     - an argument field with the name specified by the ``type`` field. Other fields will be ignored. 
-    
     For example, ``{"type": "explicit_pl", "explicit_pl": "whitelist.txt", "field_being_ignored": "ignore me"}``
 
 **Output**: 
