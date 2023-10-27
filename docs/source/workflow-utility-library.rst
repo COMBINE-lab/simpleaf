@@ -32,9 +32,15 @@ To do this, we recommend adding the following code at the beginning of your work
 utils.ref_type(o)
 """"""""""""""""""""""""""""""""""""""""""""""
 
-**Input**: ``o``: an object with a *type* field and an object field with the name specified by the *type* field. Other fields will be ignored. For example, ``{type: "spliceu", spliceu: {gtf: "genes.gtf", fasta: "genome.fa"}}``.
+**Input**: 
 
-**Output**: An object with the *simpleaf index* arguments that are related to the specified reference type in the input object.
+- ``o``: an object with a *type* field and an object field with the name specified by the *type* field. Other fields will be ignored. 
+
+    For example, ``{type: "spliceu", spliceu: {gtf: "genes.gtf", fasta: "genome.fa", "field_being_ignored": "ignore me"}}``.
+
+**Output**: 
+
+- An object with the *simpleaf index* arguments that are related to the specified reference type in the input object.
 
 This function has four modes (reference types), triggered by the ``type`` field in the input object. When specifying a mode, the input object must contain an object field named by that mode and contain the required fields. Otherwise, an error will be raised. The four modes are:
 
@@ -102,7 +108,9 @@ utils.simpleaf_index(step, ref_type, arguments, output)
 - ``arguments``: An object in which each field represents a *simpleaf index* argument. Furthermore, there must be a field called ``active`` representing the active state of this `simpleaf index` command.
 - ``output``: A string representing the output directory of the `simpleaf index` command.
 
-**Output**: A well-defined *simpleaf index* command record.
+**Output**:
+
+- A well-defined *simpleaf index* command record.
 
 **Example Usage** 
 
@@ -163,10 +171,14 @@ utils.map_type(o, simpleaf_index = {})
 
 - ``o``: an object with
     - a ``type`` field, and
-    - an object field with the name specified by the ``type`` field. Other fields will be ignored. For example, ``{"type": "map_reads", "map_reads": {"reads1": null, "reads2": null}, "field_being_ignored": "ignore me"}``.
+    - an object field with the name specified by the ``type`` field. Other fields will be ignored. 
+    
+    For example, ``{"type": "map_reads", "map_reads": {"reads1": null, "reads2": null}, "field_being_ignored": "ignore me"}``.
 - ``simpleaf_index``: An empty object if in `existing_mappings` mode, or the output object of the `simpleaf_index` function if in `map_reads` mode. The default value is an empty object.
 
-**Output**: An object with the `simpleaf quant` arguments that are related to the specified map type in the input object.
+**Output**: 
+
+- An object with the `simpleaf quant` arguments that are related to the specified map type in the input object.
 
 This function has two modes (map types), triggered by the `type` field in the input object. When specifying a mode, the input object must contain an object field named by that mode and contain the required fields. Otherwise, an error will be raised. The two modes are:
 
@@ -222,9 +234,13 @@ utils.cell_filt_type(o)
 
 **Input**: 
 
-- ``o``: an object with a ``type`` field, and an argument field with the name specified by the ``type`` field. Other fields will be ignored. For example, ``{"type": "explicit_pl", "explicit_pl": "whitelist.txt"}``
+- ``o``: an object with a ``type`` field, and an argument field with the name specified by the ``type`` field. Other fields will be ignored. 
+    
+    For example, ``{"type": "explicit_pl", "explicit_pl": "whitelist.txt", "field_being_ignored": "ignore me"}``
 
-**Output**: An object with the `simpleaf quant` arguments that are related to the specified cell filtering type in the input object.
+**Output**: 
+
+- An object with the `simpleaf quant` arguments that are related to the specified cell filtering type in the input object.
 
 This function has five modes (cell filtering types), triggered by the `type` field in the input object. When specifying a mode, the input object must contain an object field named by that mode and contain the required fields. Otherwise, an error will be raised. For more details, please refer to the online documentation of `simpleaf quant <https://simpleaf.readthedocs.io/en/latest/quant-command.html>`_ and `alevin-fry <https://alevin-fry.readthedocs.io/en/latest/>`_. The five modes are:
 
@@ -267,7 +283,7 @@ In the above example, the objects `cell_filt_type` and `unfiltered_pl` are ident
         "--unfiltered-pl" : true
     } 
 
-simpleaf_quant(step, map_type, cell_filt_type, output)
+simpleaf_quant(step, map_type, cell_filt_type, arguments, output)
 """"""""""""""""""""""""""""""""""""""""""""""
 
 **Input**: 
@@ -278,7 +294,9 @@ simpleaf_quant(step, map_type, cell_filt_type, output)
 - ``arguments`` : an object in which each field represents a `simpleaf quant` argument. Furthermore, there must be a field called ``active`` representing the active state of this simpleaf index command. 
 - ``output`` : A string representing the output directory of this `simpleaf quant` command.
 
-**Output**: A well-defined `simpleaf quant` command record.
+**Output**: 
+
+- A well-defined `simpleaf quant` command record.
 
 **Example Usage** 
 
@@ -340,7 +358,9 @@ feature_barcode_ref(start_step, csv, name_col, barcode_col, output)
 - ``barcode_col``: An integer representing the column index of the feature barcode sequence column in the feature barcode CSV file.
 - ``output``: A string representing the parent output directory of the result files. It will be created if it doesn't exist.
 
-**Output**: An object containing three external command records, including `mkdir`, `create_t2g`, and `create_fasta`, and a hidden object that follows the output format of `utils.ref_type` shown above. This `ref_type` object is of the `direct_ref` type. It can be used as the second argument of `utils.simpleaf_index`. In this `ref_type` object,
+**Output**: 
+
+- An object containing three external command records, including `mkdir`, `create_t2g`, and `create_fasta`, and a hidden object that follows the output format of `utils.ref_type` shown above. This `ref_type` object is of the `direct_ref` type. It can be used as the second argument of `utils.simpleaf_index`. In this `ref_type` object,
 
 This function defines three external command records:
 
@@ -416,7 +436,9 @@ barcode_translation(start_step, url, quant_cb, output)
 - ``quant_cb``: A string representing the path to the cell barcode file. Usually, this is at `af_quant/alevin/quants_mat_rows.txt` in the simpleaf quant command output directory.
 - ``output``: A string representing the parent output directory of the result files. It will be created if it doesn't exist.
 
-**Output**: An object containing five external command records, including `mkdir`, `fetch_cb_translation_file`, `unzip_cb_translation_file`, `backup_bc_file`, and `barcode_translation`.
+**Output**: 
+
+- An object containing five external command records, including `mkdir`, `fetch_cb_translation_file`, `unzip_cb_translation_file`, `backup_bc_file`, and `barcode_translation`.
 
 This function defines five external command records:
 
@@ -501,7 +523,9 @@ utils.get(o, f, use_default = false, default = null)
 - ``use_default``: boolean, 
 - ``default``: a default value returned if the target field doesn't exist.
 
-**Output**: Return the target field *f* in the given object if the object has a sub-field called ``f``. Otherwise,
+**Output**: 
+
+- Return the target field *f* in the given object if the object has a sub-field called ``f``. Otherwise,
 
 - if ``use_default`` is ``true``, return the value of the ``default`` argument.
 - if ``use_default`` is false, raise an error.
