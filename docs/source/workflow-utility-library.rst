@@ -78,7 +78,7 @@ This function has four modes (reference types), triggered by the ``type`` field 
     local ref_type = utils.ref_type({
         type : "splici",
         splici : splici_args
-    })
+    });
 
     local splici = utils.splici(splici_args);
 
@@ -267,7 +267,7 @@ This function has five modes (cell filtering types), triggered by the `type` fie
     local cell_filt_type = utils.cell_filt_type({
         type : "unfiltered_pl",
         unfiltered_pl : unfiltered_pl_args
-    })
+    });
 
     local unfiltered_pl = utils.unfiltered_pl(unfiltered_pl_args);
 
