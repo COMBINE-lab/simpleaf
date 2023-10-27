@@ -34,8 +34,9 @@ utils.ref_type(o)
 
 **Input**: 
 
-- ``o``: an object with a *type* field and an object field with the name specified by the *type* field. Other fields will be ignored. 
-
+- ``o``: an object with 
+    - a *type* field and 
+    - an object field with the name specified by the *type* field. Other fields will be ignored. 
     For example, ``{type: "spliceu", spliceu: {gtf: "genes.gtf", fasta: "genome.fa", "field_being_ignored": "ignore me"}}``.
 
 **Output**: 
@@ -234,7 +235,9 @@ utils.cell_filt_type(o)
 
 **Input**: 
 
-- ``o``: an object with a ``type`` field, and an argument field with the name specified by the ``type`` field. Other fields will be ignored. 
+- ``o``: an object with 
+    - a ``type`` field, and 
+    - an argument field with the name specified by the ``type`` field. Other fields will be ignored. 
     
     For example, ``{"type": "explicit_pl", "explicit_pl": "whitelist.txt", "field_being_ignored": "ignore me"}``
 
