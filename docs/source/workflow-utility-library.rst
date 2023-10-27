@@ -208,8 +208,8 @@ This function has two modes (map types), triggered by the `type` field in the in
 
     local map_type = utils.map_type({
         type : "map_reads",
-        map_reads : map_reads_args,
-    })
+        map_reads : map_reads_args
+    });
 
     local map_reads = utils.map_reads(map_reads_args);
 
@@ -226,7 +226,7 @@ In the above example, the objects ``map_type`` and ``map_reads`` are identical a
         "--index" : "./workflow_output/simpleaf_index/index",
         "--t2g-map": "./workflow_output/simpleaf_index/index/t2g_3col.tsv",
         "--reads1" : "reads1.fastq",
-        "--reads2" : "reads2.fastq",
+        "--reads2" : "reads2.fastq"
     } 
 
 
@@ -263,12 +263,12 @@ This function has five modes (cell filtering types), triggered by the `type` fie
     local utils=std.extVar("__utils");
 
     local unfiltered_pl_args = {
-        unfiltered_pl : true,
+        unfiltered_pl : true
     };
 
     local cell_filt_type = utils.cell_filt_type({
         type : "unfiltered_pl",
-        unfiltered_pl : unfiltered_pl_args,
+        unfiltered_pl : unfiltered_pl_args
     })
 
     local unfiltered_pl = utils.unfiltered_pl(unfiltered_pl_args);
@@ -412,7 +412,7 @@ The resulting object will look like the following:
             active : true,
             step: step + 1,
             program_name: "awk",
-            arguments: ["-F","','","'NR>1 {sub(/ /,\"_\",$1);print $1\"\\t\"$1}'", csv, ">", "./feature_barcode_ref/.feature_barcode_ref_t2g.tsv"],
+            arguments: ["-F","','","'NR>1 {sub(/ /,\"_\",$1);print $1\"\\t\"$1}'", csv, ">", "./feature_barcode_ref/.feature_barcode_ref_t2g.tsv"]
         },
         
         create_fasta : {
@@ -424,7 +424,7 @@ The resulting object will look like the following:
         ref_type :: {
             type : "direct_ref",
             t2g_map :: "./feature_barcode_ref/.feature_barcode_ref_t2g.tsv",
-            "--ref-seq" : "./feature_barcode_ref/.feature_barcode_ref.fa",
+            "--ref-seq" : "./feature_barcode_ref/.feature_barcode_ref.fa"
         }
     }
 
@@ -490,21 +490,21 @@ The resulting object will look like the following:
             active : true,
             step : step + 1,
             program_name : "wget",
-            arguments : ["-O", "simpeaf_quant/af_quant/alevin/.barcode.txt.gz", "https://github.com/10XGenomics/cellranger/raw/master/lib/python/cellranger/barcodes/translation/3M-february-2018.txt.gz"],
+            arguments : ["-O", "simpeaf_quant/af_quant/alevin/.barcode.txt.gz", "https://github.com/10XGenomics/cellranger/raw/master/lib/python/cellranger/barcodes/translation/3M-february-2018.txt.gz"]
         },
 
         unzip_cb_translation_file : {
             active : true,
             step : step + 2,
             "program_name" : "gunzip",
-            "arguments": ["-c", "simpeaf_quant/af_quant/alevin/.barcode.txt.gz", ">", "simpeaf_quant/af_quant/alevin/.barcode.txt"],
+            "arguments": ["-c", "simpeaf_quant/af_quant/alevin/.barcode.txt.gz", ">", "simpeaf_quant/af_quant/alevin/.barcode.txt"]
         },
 
         backup_bc_file : {
             active : true,
             step: step + 3,
             program_name: "mv",
-            arguments: ["simpeaf_quant/af_quant/alevin/quants_mat_rows.txt", "simpeaf_quant/af_quant/alevin/quants_mat_rows.txt.bkp"],
+            arguments: ["simpeaf_quant/af_quant/alevin/quants_mat_rows.txt", "simpeaf_quant/af_quant/alevin/quants_mat_rows.txt.bkp"]
         },
 
         // Translate RNA barcode to feature barcode
@@ -512,7 +512,7 @@ The resulting object will look like the following:
             active : true,
             step: step + 4,
             program_name: "awk",
-            arguments: ["'FNR==NR {dict[$1]=$2; next} {$1=($1 in dict) ? dict[$1] : $1}1'", "simpeaf_quant/af_quant/alevin/.barcode.txt", "simpeaf_quant/af_quant/alevin/quants_mat_rows.txt.bkp", ">", "simpeaf_quant/af_quant/alevin/quants_mat_rows.txt"],
+            arguments: ["'FNR==NR {dict[$1]=$2; next} {$1=($1 in dict) ? dict[$1] : $1}1'", "simpeaf_quant/af_quant/alevin/.barcode.txt", "simpeaf_quant/af_quant/alevin/quants_mat_rows.txt.bkp", ">", "simpeaf_quant/af_quant/alevin/quants_mat_rows.txt"]
         },  
     }
 
@@ -544,13 +544,13 @@ This function tries to (non-recursively) get a sub-field in the provided object 
     local splici_args = {
         gtf : "genes.gtf",
         fasta : "genome.fa",
-        rlen : 91,
+        rlen : 91
     };
 
     {
-        default_behavior : utils.get(splici_args, "gtf") # this will return "genes.gtf",
+        default_behavior : utils.get(splici_args, "gtf"), # this will return "genes.gtf",
 
-        not_exist : utils.get(splici_args, "I do not exist") # raise error
+        not_exist : utils.get(splici_args, "I do not exist"), # raise error
         
         provide_default : utils.get(splici_args, "I do not exist", true, "but I have a default value") # this yields "but I have a default value"
 
