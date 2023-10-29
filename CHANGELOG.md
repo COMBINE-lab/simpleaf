@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.1](https://github.com/COMBINE-lab/simpleaf/compare/v0.15.0...v0.15.1) (2023-10-29)
+
+
+### Bug Fixes
+
+* bump other deps ([a80523b](https://github.com/COMBINE-lab/simpleaf/commit/a80523b3214820ffde25d7d035b36154ed3ef265))
+* bumped roers dep ([aae666e](https://github.com/COMBINE-lab/simpleaf/commit/aae666e8d0cdb2751fe32cb877317b69aae9dfd3))
+
 ## [0.15.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.14.1...v0.15.0) (2023-10-24)
 
 
