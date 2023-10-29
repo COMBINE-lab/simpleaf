@@ -34,14 +34,14 @@ categories = ["command-line-utilities", "science"]
 [dependencies]
 seq_geom_parser = { git = "https://github.com/COMBINE-lab/seq_geom_parser", branch = "dev", version = "0.3.0" }
 seq_geom_xform = { git = "https://github.com/COMBINE-lab/seq_geom_xform", branch = "dev", version = "0.4.0" }
-roers = { git = "https://github.com/COMBINE-lab/roers", branch = "main", version = "0.2.0" }
+roers = { git = "https://github.com/COMBINE-lab/roers", branch = "main", version = "0.3.0" }
 anyhow = "^1.0"
-clap = { version = "4.4.6", features = ["derive", "cargo", "deprecated", "wrap_help", "help", "usage", "error-context"] } 
+clap = { version = "4.4.7", features = ["derive", "cargo", "deprecated", "wrap_help", "help", "usage", "error-context"] } 
 cmd_lib = "^1.6.0"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.17", default-features = true, features = ["env-filter"] }
 semver = "^1.0.20"
-serde = {version = "1.0.189", features = ["derive"]}
+serde = {version = "1.0.190", features = ["derive"]}
 serde_json = "1.0.107"
 time = {version = "^0.3.30", features = ["macros", "formatting", "parsing", "serde", "serde-human-readable"]}
 which = "^5.0.0"
