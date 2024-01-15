@@ -13,6 +13,5 @@ The ``set-paths`` command is used to set the paths to the relevant executables a
     -s, --salmon <SALMON>          path to salmon to use
     -p, --piscem <PISCEM>          path to piscem to use
     -a, --alevin-fry <ALEVIN_FRY>  path to alein-fry to use
-    -r, --pyroe <PYROE>            path to pyroe to use
     -h, --help                     Print help information
     -V, --version                  Print version information
