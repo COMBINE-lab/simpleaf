@@ -4,6 +4,8 @@
 
 The `simpleaf` program can be installed from source, from [crates.io](https://crates.io/crates/simpleaf), or via [bioconda](https://bioconda.github.io/recipes/simpleaf/README.html). `simpleaf` requires, [`alevin-fry`](https://github.com/COMBINE-lab/alevin-fry), and either [`piscem`](https://github.com/COMBINE-lab/piscem) or [`salmon`](https://github.com/COMBINE-lab/salmon) (or both, if you prefer), as well as [`wget`](https://www.gnu.org/software/wget/).
 
+**Note**: We recommend using [`piscem`](https://github.com/COMBINE-lab/piscem) as the back-end mapper, rather than `salmon`, as it is substantially more resource-frugal, faster, and is a larger focus of current and future development.
+
 Check out the detailed documentation [here](https://simpleaf.readthedocs.io/en/latest/), and read on below to learn more about the background and motivation behind `simpleaf`.
 
 ## Introduction & motivation 
