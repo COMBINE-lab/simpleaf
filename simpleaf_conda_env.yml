@@ -10,6 +10,7 @@ dependencies:
   - bioconda::salmon>=1.10.0
   - bioconda::alevin-fry>=0.8.1
   - bioconda::pyroe>=0.9.1
+  - bioconda::piscem>=0.7.0
   - bioconda::bedtools>=2.30.0
   - bioconda::gffread>=0.12.7
 
