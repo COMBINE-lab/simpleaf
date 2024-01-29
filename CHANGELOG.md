@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.16.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.15.1...v0.16.0) (2024-01-29)
+
+
+### Features
+
+* make piscem default, add --no-piscem flag ([1642732](https://github.com/COMBINE-lab/simpleaf/commit/1642732235b1586bf5c24f8d761afe84d24dcdc5))
+
+
+### Bug Fixes
+
+* add piscem to conda env ([ab8b436](https://github.com/COMBINE-lab/simpleaf/commit/ab8b436f67cc1b1764b5396a6d51267c72311e73))
+* typo ([6844f13](https://github.com/COMBINE-lab/simpleaf/commit/6844f1320d9ab7ca91bc5d6eb1f702bbaecfb43a))
+
 ## [0.15.1](https://github.com/COMBINE-lab/simpleaf/compare/v0.15.0...v0.15.1) (2023-10-29)
 
 
