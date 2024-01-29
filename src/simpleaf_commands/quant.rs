@@ -396,7 +396,7 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
                 // if the user is requesting a mapping option that required
                 // piscem version >= 0.7.0, ensure we have that
                 if let Ok(_piscem_ver) = prog_utils::check_version_constraints(
-                    "alevin-fry",
+                    "piscem",
                     ">=0.7.0, <1.0.0",
                     &piscem_prog_info.version,
                 ) {
