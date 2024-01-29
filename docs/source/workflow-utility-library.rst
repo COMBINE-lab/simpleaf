@@ -36,8 +36,7 @@ utils.ref_type(o)
 
 - ``o``: an object with 
     - a *type* field and 
-    - an object field with the name specified by the *type* field. Other fields will be ignored. 
-    For example, ``{type: "spliceu", spliceu: {gtf: "genes.gtf", fasta: "genome.fa", "field_being_ignored": "ignore me"}}``.
+    - an object field with the name specified by the *type* field. Other fields will be ignored. For example, ``{type: "spliceu", spliceu: {gtf: "genes.gtf", fasta: "genome.fa", "field_being_ignored": "ignore me"}}``.
 
 **Output**: 
 
@@ -100,7 +99,7 @@ In the above example, the objects ``ref_type`` and ``splici`` are identical and 
 
 
 utils.simpleaf_index(step, ref_type, arguments, output)
-""""""""""""""""""""""""""""""""""""""""""""""
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 **Input**:
 
@@ -172,8 +171,7 @@ utils.map_type(o, simpleaf_index = {})
 
 - ``o``: an object with
     - a ``type`` field, and
-    - an object field with the name specified by the ``type`` field. Other fields will be ignored. 
-    For example, ``{"type": "map_reads", "map_reads": {"reads1": null, "reads2": null}, "field_being_ignored": "ignore me"}``.
+    - an object field with the name specified by the ``type`` field. Other fields will be ignored. For example, ``{"type": "map_reads", "map_reads": {"reads1": null, "reads2": null}, "field_being_ignored": "ignore me"}``.
 - ``simpleaf_index``: An empty object if in `existing_mappings` mode, or the output object of the `simpleaf_index` function if in `map_reads` mode. The default value is an empty object.
 
 **Output**: 
@@ -236,8 +234,7 @@ utils.cell_filt_type(o)
 
 - ``o``: an object with 
     - a ``type`` field, and 
-    - an argument field with the name specified by the ``type`` field. Other fields will be ignored. 
-    For example, ``{"type": "explicit_pl", "explicit_pl": "whitelist.txt", "field_being_ignored": "ignore me"}``
+    - an argument field with the name specified by the ``type`` field. Other fields will be ignored. For example, ``{"type": "explicit_pl", "explicit_pl": "whitelist.txt", "field_being_ignored": "ignore me"}``
 
 **Output**: 
 
@@ -285,7 +282,7 @@ In the above example, the objects `cell_filt_type` and `unfiltered_pl` are ident
     } 
 
 simpleaf_quant(step, map_type, cell_filt_type, arguments, output)
-""""""""""""""""""""""""""""""""""""""""""""""
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 **Input**: 
 
@@ -349,7 +346,7 @@ The ``simpleaf_quant`` object in the above code chunk will be
 
 
 feature_barcode_ref(start_step, csv, name_col, barcode_col, output)
-""""""""""""""""""""""""""""""""""""""""""""""
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 **Input**:
 
@@ -428,7 +425,7 @@ The resulting object will look like the following:
 
 
 barcode_translation(start_step, url, quant_cb, output)
-""""""""""""""""""""""""""""""""""""""""""""""
+""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 **Input**:
 

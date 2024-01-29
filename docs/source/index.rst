@@ -18,8 +18,8 @@ Important note
 --------------
 
 The ``simpleaf`` program runs tools uses in the ``alevin-fry`` pipeline.  Specifically, 
-to make use of all of the functionality of this tool, you will need to install 
-`pyroe <https://github.com/COMBINE-lab/pyroe>`_, `piscem <https://github.com/COMBINE-lab/piscem/>`_ (and / or `salmon <https://github.com/COMBINE-lab/salmon/>`_) and
+to make use of the core functionality of this tool, you will need to install 
+`piscem <https://github.com/COMBINE-lab/piscem/>`_ (and / or `salmon <https://github.com/COMBINE-lab/salmon/>`_) and
 `alevin-fry <https://github.com/COMBINE-lab/alevin-fry/>`_. Further, in order to operate properly, 
 ``simpleaf`` **requires that you set the environment variable** ``ALEVIN_FRY_HOME``. It will use the directory 
 pointed to by this variable to cache useful information (e.g. the paths to selected versions of 

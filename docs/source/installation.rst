@@ -2,7 +2,7 @@ Installation
 ============
 
 
-``Simpleaf`` can be installed from source, from `crates.io <https://crates.io/crates/simpleaf>`_, or installed via `bioconda <https://bioconda.github.io/recipes/simpleaf/README.html>`_. ``simpleaf`` requires `pyroe <https://github.com/COMBINE-lab/pyroe>`_, `alevin-fry <https://github.com/COMBINE-lab/alevin-fry>`_, and either `piscem <https://github.com/COMBINE-lab/piscem>`_ or `salmon <https://github.com/COMBINE-lab/salmon>`_ (or both if you prefer), as well as ``wget``.
+``Simpleaf`` can be installed from source, from `crates.io <https://crates.io/crates/simpleaf>`_, or installed via `bioconda <https://bioconda.github.io/recipes/simpleaf/README.html>`_. ``simpleaf`` `alevin-fry <https://github.com/COMBINE-lab/alevin-fry>`_, and either `piscem <https://github.com/COMBINE-lab/piscem>`_ or `salmon <https://github.com/COMBINE-lab/salmon>`_ (or both if you prefer), as well as ``wget``.
 
 
 

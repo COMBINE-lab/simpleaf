@@ -11,7 +11,7 @@ use serde_json::Value;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use super::MapQuantOpts;
 
@@ -60,7 +60,23 @@ fn push_advanced_piscem_options(
     Ok(())
 }
 
+fn validate_map_and_quant_opts(opts: &MapQuantOpts) -> anyhow::Result<()> {
+    if opts.use_piscem && opts.use_selective_alignment {
+        error!(concat!(
+            "The `--use-selective-alignment` flag cannot be used with the ",
+            "default `piscem` mapper. If you wish to use `--selective-alignment` ",
+            "then please pass the `--no-piscem` flag as well (and ensure that ",
+            "you are passing a `salmon` index and not a `piscem` index)."
+        ));
+        bail!("conflicting command line arguments");
+    }
+
+    Ok(())
+}
+
 pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<()> {
+    validate_map_and_quant_opts(&opts)?;
+
     let mut t2g_map = opts.t2g_map.clone();
     // Read the JSON contents of the file as an instance of `User`.
     let v: Value = prog_utils::inspect_af_home(af_home_path)?;
@@ -380,7 +396,7 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
                 // if the user is requesting a mapping option that required
                 // piscem version >= 0.7.0, ensure we have that
                 if let Ok(_piscem_ver) = prog_utils::check_version_constraints(
-                    "alevin-fry",
+                    "piscem",
                     ">=0.7.0, <1.0.0",
                     &piscem_prog_info.version,
                 ) {

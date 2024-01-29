@@ -18,7 +18,7 @@ pub use self::workflow::{
     get_wokflow, list_workflows, patch_manifest_or_template, refresh_protocol_estuary, run_workflow,
 };
 
-use clap::{builder::ArgPredicate, ArgGroup, Args, Subcommand};
+use clap::{builder::ArgPredicate, ArgAction, ArgGroup, Args, Subcommand};
 use std::path::PathBuf;
 
 /// The type of references we might create
@@ -117,17 +117,45 @@ pub struct MapQuantOpts {
     )]
     pub reads2: Option<Vec<PathBuf>>,
 
-    /// use selective-alignment for mapping (only if using salmon alevin
-    /// as the underlying mapper).
-    #[arg(short = 's', long, help_heading = "Mapping Options")]
-    pub use_selective_alignment: bool,
-
-    /// use piscem for mapping (requires that index points to the piscem index)
-    #[arg(long, requires = "index", help_heading = "Mapping Options")]
+    // It's currently very confusing to have both `--foo` and
+    // `--no-foo` fields in derive mode with `--foo` as the default.
+    // The following hack was taken from: https://jwodder.github.io/kbits/posts/clap-bool-negate
+    // NOTE: tracking issue https://github.com/clap-rs/clap/issues/815 to clean this
+    // up when it's fixed.
+    // NOTE: yes, the field names and option names are swapped below, because that's
+    // what's required to make this work ...
+    /// don't use the default piscem mapper, instead use salmon-alevin
+    #[arg(long="no-piscem", requires = "index", help_heading = "Mapping Options", action = ArgAction::SetFalse)]
     pub use_piscem: bool,
 
+    /// use piscem for mapping (requires that index points to the piscem index)
+    #[arg(
+        long = "use-piscem",
+        requires = "index",
+        help_heading = "Mapping Options",
+        overrides_with = "use_piscem"
+    )]
+    pub _no_piscem: bool,
+
+    // NOTE: Because of the reversal of `use_piscem` and `_no_piscem` in the parser
+    // due to the parsing quirk, the *meaning* of `conflicts_with = "use_piscem"`
+    // below is actually that it conflicts with the option `--no-piscem` being passed.
+    /// use selective-alignment for mapping (only if using salmon alevin
+    /// as the underlying mapper).
+    #[arg(
+        short = 's',
+        long,
+        help_heading = "Mapping Options",
+        requires = "use_piscem"
+    )]
+    pub use_selective_alignment: bool,
+
     /// if using piscem >= 0.7.0, enable structural constraints
-    #[arg(long, help_heading = "Piscem Mapping Options")]
+    #[arg(
+        long,
+        help_heading = "Piscem Mapping Options",
+        conflicts_with = "use_piscem"
+    )]
     pub struct_constraints: bool,
 
     /// skip checking of the equivalence classes of k-mers that were too ambiguous to be otherwise
@@ -135,18 +163,27 @@ pub struct MapQuantOpts {
     #[arg(
         long,
         conflicts_with = "max_ec_card",
-        help_heading = "Piscem Mapping Options"
+        help_heading = "Piscem Mapping Options",
+        conflicts_with = "use_piscem"
     )]
     pub ignore_ambig_hits: bool,
 
     /// do not consider poison k-mers, even if the underlying index contains them. In this case,
     /// the mapping results will be identical to those obtained as if no poison table was added to
     /// the index.
-    #[arg(long, help_heading = "Piscem Mapping Options")]
+    #[arg(
+        long,
+        help_heading = "Piscem Mapping Options",
+        conflicts_with = "use_piscem"
+    )]
     pub no_poison: bool,
 
     /// the skipping strategy to use for k-mer collection
-    #[arg(long, default_value = &DefaultParams::SKIPPING_STRATEGY, value_parser = clap::builder::PossibleValuesParser::new(["permissive", "strict"]), help_heading = "Piscem Mapping Options")]
+    #[arg(long,
+        default_value = &DefaultParams::SKIPPING_STRATEGY,
+        value_parser = clap::builder::PossibleValuesParser::new(["permissive", "strict"]), 
+        help_heading = "Piscem Mapping Options",
+        conflicts_with = "use_piscem")]
     pub skipping_strategy: String,
 
     /// determines the maximum cardinality equivalence class
@@ -156,22 +193,31 @@ pub struct MapQuantOpts {
         long,
         default_value_t = DefaultParams::MAX_EC_CARD,
         conflicts_with = "ignore_ambig_hits",
-        help_heading = "Piscem Mapping Options"
-    )]
+        help_heading = "Piscem Mapping Options",
+        conflicts_with = "use_piscem")]
     pub max_ec_card: u32,
 
     /// in the first pass, consider only k-mers having <= --max-hit-occ hits.
-    #[arg(long, default_value_t = DefaultParams::MAX_HIT_OCC, help_heading = "Piscem Mapping Options")]
+    #[arg(long,
+        default_value_t = DefaultParams::MAX_HIT_OCC,
+        help_heading = "Piscem Mapping Options",
+        conflicts_with = "use_piscem")]
     pub max_hit_occ: u32,
 
     /// if all k-mers have > --max-hit-occ hits, then make a second pass and consider k-mers
     /// having <= --max-hit-occ-recover hits.
-    #[arg(long, default_value_t = DefaultParams::MAX_HIT_OCC_RECOVER, help_heading = "Piscem Mapping Options")]
+    #[arg(long,
+        default_value_t = DefaultParams::MAX_HIT_OCC_RECOVER,
+        help_heading = "Piscem Mapping Options",
+        conflicts_with = "use_piscem")]
     pub max_hit_occ_recover: u32,
 
     /// reads with more than this number of mappings will not have
     /// their mappings reported.
-    #[arg(long, default_value_t = DefaultParams::MAX_READ_OCC, help_heading = "Piscem Mapping Options")]
+    #[arg(long,
+        default_value_t = DefaultParams::MAX_READ_OCC,
+        help_heading = "Piscem Mapping Options",
+        conflicts_with = "use_piscem")]
     pub max_read_occ: u32,
 
     /// path to a mapped output directory containing a RAD file to skip mapping
@@ -308,8 +354,23 @@ pub struct IndexOpts {
     )]
     pub unspliced: Option<PathBuf>,
 
-    /// use piscem instead of salmon for indexing and mapping
-    #[arg(long, help_heading = "Piscem Index Options", display_order = 1)]
+    // It's currently very confusing to have both `--foo` and
+    // `--no-foo` fields in derive mode with `--foo` as the default.
+    // The following hack was taken from: https://jwodder.github.io/kbits/posts/clap-bool-negate
+    // NOTE: tracking issue https://github.com/clap-rs/clap/issues/815 to clean this
+    // up when it's fixed.
+    // NOTE: yes, the field names and option names are swapped below, because that's
+    // what's required to make this work ...
+    /// use piscem instead of salmon for indexing and mapping (default)
+    #[arg(
+        long = "use-piscem",
+        help_heading = "Piscem Index Options",
+        overrides_with = "use_piscem"
+    )]
+    pub _no_piscem: bool,
+
+    /// don't use the default piscem mapper, instead use salmon-alevin
+    #[arg(long="no-piscem", help_heading = "Alternative salmon-alevin Index Options", action = ArgAction::SetFalse)]
     pub use_piscem: bool,
 
     /// the value of m to be used to construct the piscem index (must be < k)
@@ -317,7 +378,7 @@ pub struct IndexOpts {
         short = 'm',
         long = "minimizer-length",
         default_value_t = 19,
-        requires = "use_piscem",
+        conflicts_with = "use_piscem",
         help_heading = "Piscem Index Options",
         display_order = 2
     )]
@@ -327,8 +388,9 @@ pub struct IndexOpts {
     /// k-mer information into the index (only if using piscem >= 0.7).
     #[arg(
         long,
-        requires = "use_piscem",
+        conflicts_with = "use_piscem",
         help_heading = "Piscem Index Options",
+        value_delimiter = ',',
         display_order = 3
     )]
     pub decoy_paths: Option<Vec<PathBuf>>,
@@ -360,10 +422,12 @@ pub struct IndexOpts {
 
     /// if this flag is passed, build the sparse rather than dense index for mapping
     #[arg(
+        long,
         short = 'p',
+        help_heading = "Alternative salmon-alevin Index Options",
         long = "sparse",
-        conflicts_with = "use_piscem",
-        display_order = 5
+        requires = "use_piscem",
+        display_order = 2
     )]
     pub sparse: bool,
 }

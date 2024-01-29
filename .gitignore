@@ -12,3 +12,13 @@ Cargo.lock
 # vscode files
 **/.vscode
 /docs/build/
+BLARG
+DELME
+TEST_QUANT
+TEST_QUANT_FROM_MAP
+TEST_QUANT_RAW
+TEST_QUANT_ROERS
+TEST_REF
+TEST_REF_CLAPV4
+TEST_REF_ROERS
+blarg

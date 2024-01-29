@@ -8,11 +8,29 @@ use serde_json::json;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use super::{IndexOpts, ReferenceType};
 
+fn validate_index_type_opts(opts: &IndexOpts) -> anyhow::Result<()> {
+    let mut bail = false;
+    if opts.use_piscem && opts.sparse {
+        let msg = concat!(
+            "The `--sparse` flag implies the salmon index, and is incompatible with `--use-piscem` (the default). ",
+            "If you wish to use the salmon index, and the `--sparse` option, please pass both ",
+            "`--no-piscem` and `--sparse` to the `index` command."
+        );
+        error!(msg);
+        bail = true;
+    }
+    if bail {
+        bail!("conflicting command line arguments");
+    }
+    Ok(())
+}
+
 pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Result<()> {
+    validate_index_type_opts(&opts)?;
     let mut threads = opts.threads;
     let output = opts.output;
     let v: Value = prog_utils::inspect_af_home(af_home_path)?;
@@ -268,7 +286,7 @@ simpleaf"#,
     } else {
         // ensure we have piscem
         if rp.salmon.is_none() {
-            bail!("The construction of a salmon index was requested, but a valid piscem executable was not available. \n\
+            bail!("The construction of a salmon index was requested, but a valid salmon executable was not available. \n\
                             Please either set a path using the `simpleaf set-paths` command, or ensure the `SALMON` environment variable is set properly.");
         }
 

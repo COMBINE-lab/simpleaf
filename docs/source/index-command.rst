@@ -1,9 +1,9 @@
 ``index`` command
 =================
 
-The ``index`` command has two forms of input; either it will take a reference genome FASTA and GTF as input, from which it can build a spliced+intronic (splici) reference or a spliced+unspliced (spliceu) reference using ``pyroe``, or it will take a single reference sequence file (i.e. FASTA file) as input (direct-ref mode).  
+The ``index`` command has two forms of input; either it will take a reference genome FASTA and GTF as input, from which it can build a spliced+intronic (splici) reference or a spliced+unspliced (spliceu) reference using `roers <https://github.com/COMBINE-lab/roers>`_  (which is used as a library directly from ``simpleaf``, and so need not be installed independently), or it will take a single reference sequence file (i.e. FASTA file) as input (direct-ref mode).  
 
-In expanded reference mode, after the expanded reference is made with ``pyroe``, the resulting reference will be indexed with ``piscem build`` or ``salmon index`` command (depending on the mapper you choose to use), and a copy of the 3-column transcript-to-gene file will be placed in the index directory for subsequent use. The output directory will contain both a ``ref`` and ``index`` subdirectoy, with the first containing the splici reference that was extracted from the provided genome and GTF, and the latter containing the index built on this reference. 
+In expanded reference mode, after the expanded reference is constructed, the resulting reference will be indexed with ``piscem build`` or ``salmon index`` command (depending on the mapper you choose to use), and a copy of the 3-column transcript-to-gene file will be placed in the index directory for subsequent use. The output directory will contain both a ``ref`` and ``index`` subdirectoy, with the first containing the splici reference that was extracted from the provided genome and GTF, and the latter containing the index built on this reference. 
 
 In direct-ref mode, the provided fasta file (passed in with ``--refseq``) will be provided to ``piscem build`` or ``salmon index`` directly.  The output diretory will contain an ``index`` subdirectory that contains the index built on this reference.
 
@@ -29,7 +29,7 @@ The relevant options (which you can obtain by running ``simpleaf index -h``) are
       -f, --fasta <FASTA>          reference genome to be used for the expanded reference construction
       -g, --gtf <GTF>              reference GTF file to be used for the expanded reference construction
       -r, --rlen <RLEN>            the target read length the splici index will be built for
-          --dedup                  deduplicate identical sequences in pyroe when building an expanded reference  reference
+          --dedup                  deduplicate identical sequences in roers when building an expanded reference  reference
           --spliced <SPLICED>      path to FASTA file with extra spliced sequence to add to the index
           --unspliced <UNSPLICED>  path to FASTA file with extra unspliced sequence to add to the index
     
