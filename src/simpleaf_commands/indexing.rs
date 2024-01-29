@@ -12,13 +12,13 @@ use tracing::{error, info, warn};
 
 use super::{IndexOpts, ReferenceType};
 
-fn check_index_type_opts(opts: &IndexOpts) -> anyhow::Result<()> {
+fn validate_index_type_opts(opts: &IndexOpts) -> anyhow::Result<()> {
     let mut bail = false;
     if opts.use_piscem && opts.sparse {
         let msg = concat!(
             "The `--sparse` flag implies the salmon index, and is incompatible with `--use-piscem` (the default). ",
             "If you wish to use the salmon index, and the `--sparse` option, please pass both ",
-            "`--no-piscem` and `--sparse` to the `index` command"
+            "`--no-piscem` and `--sparse` to the `index` command."
         );
         error!(msg);
         bail = true;
@@ -30,7 +30,7 @@ fn check_index_type_opts(opts: &IndexOpts) -> anyhow::Result<()> {
 }
 
 pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Result<()> {
-    check_index_type_opts(&opts)?;
+    validate_index_type_opts(&opts)?;
     let mut threads = opts.threads;
     let output = opts.output;
     let v: Value = prog_utils::inspect_af_home(af_home_path)?;
