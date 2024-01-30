@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/COMBINE-lab/simpleaf/compare/v0.16.0...v0.16.1) (2024-01-30)
+
+
+### Bug Fixes
+
+* update 10xv3 permit list location ([b3adcf3](https://github.com/COMBINE-lab/simpleaf/commit/b3adcf3ca87b09fc5adf2a1293f1787638fdc2d4))
+
 ## [0.16.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.15.1...v0.16.0) (2024-01-29)
 
 
