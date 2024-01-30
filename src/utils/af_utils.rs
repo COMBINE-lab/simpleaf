@@ -5,6 +5,7 @@ use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonS
 use seq_geom_xform::{FifoXFormData, FragmentGeomDescExt};
 use std::path::{Path, PathBuf};
 use tracing::error;
+use ureq;
 
 /// The map from pre-specified chemistry types that salmon knows
 /// to the corresponding command line flag that salmon should be passed
@@ -163,16 +164,24 @@ pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Comm
 }
 
 pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitListResult> {
+    let permit_dict_url = "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/permit_list_info.json";
+    let permit_dict : serde_json::Value = ureq::get(permit_dict_url)
+        .call()?
+        .into_json()?;
     let chem_file;
     let dl_url;
     match chem {
         Chemistry::TenxV2 => {
-            chem_file = "10x_v2_permit.txt";
-            dl_url = "https://umd.box.com/shared/static/jbs2wszgbj7k4ic2hass9ts6nhqkwq1p";
+            let d : serde_json::Value = permit_dict.get("10xv2").unwrap().clone();
+            chem_file = d.get("filename").unwrap().to_string();//10x_v2_permit.txt
+            dl_url = d.get("url").unwrap().to_string();//https://umd.box.com/shared/static/jbs2wszgbj7k4ic2hass9ts6nhqkwq1p");
         }
         Chemistry::TenxV3 => {
-            chem_file = "10x_v3_permit.txt";
-            dl_url = "https://umd.box.com/shared/static/vc9zd4qyjj581gvtolw5kj638wmg4f3s";
+            let d : serde_json::Value = permit_dict.get("10xv3").unwrap().clone();
+            chem_file = d.get("filename").unwrap().to_string();//10x_v2_permit.txt
+            dl_url = d.get("url").unwrap().to_string();//https://umd.box.com/shared/static/jbs2wszgbj7k4ic2hass9ts6nhqkwq1p");
+            //chem_file = "10x_v3_permit.txt";
+            //dl_url = "https://umd.box.com/shared/static/vc9zd4qyjj581gvtolw5kj638wmg4f3s";
         }
         _ => {
             return Ok(PermitListResult::UnregisteredChemistry);
@@ -180,15 +189,15 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
     }
 
     let odir = af_home.join("plist");
-    if odir.join(chem_file).exists() {
-        Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)))
+    if odir.join(chem_file.clone()).exists() {
+        Ok(PermitListResult::AlreadyPresent(odir.join(chem_file.clone())))
     } else {
         run_fun!(mkdir -p $odir)?;
         let mut dl_cmd = std::process::Command::new("wget");
         dl_cmd
             .arg("-v")
             .arg("-O")
-            .arg(odir.join(chem_file).to_string_lossy().to_string())
+            .arg(odir.join(chem_file.clone()).to_string_lossy().to_string())
             .arg("-L")
             .arg(dl_url);
         let r = dl_cmd.output()?;
