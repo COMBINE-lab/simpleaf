@@ -239,6 +239,22 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
             Ok(PermitListResult::AlreadyPresent(odir.join(&chem_file)))
         } else {
             run_fun!(mkdir -p $odir)?;
+
+            let permit_request = minreq::get(dl_url).with_timeout(120).send()?;
+            match permit_request.status_code {
+                200..=299 => { 
+                    // success
+                },
+                x =>  {
+                    bail!("could not obtain the permit list; HTTP status code {}, reason {}", x, permit_request.reason_phrase);
+                }
+            }
+
+            let mut permit_file = std::fs::File::create(odir.join(&chem_file).to_string_lossy().to_string())?;
+            use std::io::Write;
+            permit_file.write_all(permit_request.as_bytes())?;
+
+            /*
             let mut dl_cmd = std::process::Command::new("wget");
             dl_cmd
                 .arg("-v")
@@ -250,6 +266,7 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
             if !r.status.success() {
                 return Err(anyhow!("failed to download permit list {:?}", r.status));
             }
+            */
             Ok(PermitListResult::DownloadSuccessful(odir.join(&chem_file)))
         }
     } else {
