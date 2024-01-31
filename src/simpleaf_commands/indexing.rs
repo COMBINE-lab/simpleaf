@@ -224,7 +224,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
         // piscem version is at least 0.7.0
         if let Some(decoy_paths) = opts.decoy_paths {
             if let Ok(_piscem_ver) = prog_utils::check_version_constraints(
-                "alevin-fry",
+                "piscem",
                 ">=0.7.0, <1.0.0",
                 &piscem_prog_info.version,
             ) {

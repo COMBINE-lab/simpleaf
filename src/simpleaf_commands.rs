@@ -395,8 +395,8 @@ pub struct IndexOpts {
     )]
     pub decoy_paths: Option<Vec<PathBuf>>,
 
-    /// path to (optional) decoy sequence used to insert poison
-    /// k-mer information into the index (only if using piscem >= 0.7).
+    /// seed value to use in SSHash index construction 
+    /// (try changing this in the rare event index build fails).
     #[arg(
         long = "seed",
         conflicts_with = "use_piscem",
