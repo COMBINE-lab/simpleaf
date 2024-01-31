@@ -90,11 +90,11 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
         run_fun!(mkdir -p $outref)?;
 
         let roers_opts = roers::AugRefOpts {
-            /// The path to a genome fasta file.
+            // The path to a genome fasta file.
             genome: fasta.clone(),
-            /// The path to a gene annotation gtf/gff3 file.
+            // The path to a gene annotation gtf/gff3 file.
             genes: gtf.clone(),
-            /// The path to the output directory (will be created if it doesn't exist).
+            // The path to the output directory (will be created if it doesn't exist).
             out_dir: outref.clone(),
             aug_type,
             no_transcript: false,

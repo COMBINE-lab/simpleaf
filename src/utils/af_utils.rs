@@ -165,46 +165,80 @@ pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Comm
 
 pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitListResult> {
     let permit_dict_url = "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/permit_list_info.json";
-    let permit_dict : serde_json::Value = ureq::get(permit_dict_url)
-        .call()?
-        .into_json()?;
-    let chem_file;
-    let dl_url;
+    let permit_dict: serde_json::Value = ureq::get(permit_dict_url).call()?.into_json()?;
+    let opt_chem_file: Option<String>;
+    let opt_dl_url: Option<String>;
     match chem {
         Chemistry::TenxV2 => {
-            let d : serde_json::Value = permit_dict.get("10xv2").unwrap().clone();
-            chem_file = d.get("filename").unwrap().to_string();//10x_v2_permit.txt
-            dl_url = d.get("url").unwrap().to_string();//https://umd.box.com/shared/static/jbs2wszgbj7k4ic2hass9ts6nhqkwq1p");
+            if let Some(ref d) = permit_dict.get("10xv2") {
+                opt_chem_file = if let Some(cf) = d.get("filename") {
+                    Some(cf.to_string())
+                } else {
+                    None
+                };
+                opt_dl_url = if let Some(url) = d.get("url") {
+                    Some(url.to_string())
+                } else {
+                    None
+                };
+            } else {
+                bail!(
+                    "could not obtain \"10xv2\" key from the fetched permit_dict at {} = {:?}",
+                    permit_dict_url,
+                    permit_dict
+                )
+            }
         }
         Chemistry::TenxV3 => {
-            let d : serde_json::Value = permit_dict.get("10xv3").unwrap().clone();
-            chem_file = d.get("filename").unwrap().to_string();//10x_v2_permit.txt
-            dl_url = d.get("url").unwrap().to_string();//https://umd.box.com/shared/static/jbs2wszgbj7k4ic2hass9ts6nhqkwq1p");
-            //chem_file = "10x_v3_permit.txt";
-            //dl_url = "https://umd.box.com/shared/static/vc9zd4qyjj581gvtolw5kj638wmg4f3s";
+            if let Some(ref d) = permit_dict.get("10xv3") {
+                opt_chem_file = if let Some(cf) = d.get("filename") {
+                    Some(cf.to_string())
+                } else {
+                    None
+                };
+                opt_dl_url = if let Some(url) = d.get("url") {
+                    Some(url.to_string())
+                } else {
+                    None
+                };
+            } else {
+                bail!(
+                    "could not obtain \"10xv3\" key from the fetched permit_dict at {} = {:?}",
+                    permit_dict_url,
+                    permit_dict
+                )
+            }
         }
         _ => {
             return Ok(PermitListResult::UnregisteredChemistry);
         }
     }
 
-    let odir = af_home.join("plist");
-    if odir.join(chem_file.clone()).exists() {
-        Ok(PermitListResult::AlreadyPresent(odir.join(chem_file.clone())))
-    } else {
-        run_fun!(mkdir -p $odir)?;
-        let mut dl_cmd = std::process::Command::new("wget");
-        dl_cmd
-            .arg("-v")
-            .arg("-O")
-            .arg(odir.join(chem_file.clone()).to_string_lossy().to_string())
-            .arg("-L")
-            .arg(dl_url);
-        let r = dl_cmd.output()?;
-        if !r.status.success() {
-            return Err(anyhow!("failed to download permit list {:?}", r.status));
+    if let (Some(chem_file), Some(dl_url)) = (opt_chem_file, opt_dl_url) {
+        let odir = af_home.join("plist");
+        if odir.join(&chem_file).exists() {
+            Ok(PermitListResult::AlreadyPresent(odir.join(&chem_file)))
+        } else {
+            run_fun!(mkdir -p $odir)?;
+            let mut dl_cmd = std::process::Command::new("wget");
+            dl_cmd
+                .arg("-v")
+                .arg("-O")
+                .arg(odir.join(&chem_file).to_string_lossy().to_string())
+                .arg("-L")
+                .arg(dl_url);
+            let r = dl_cmd.output()?;
+            if !r.status.success() {
+                return Err(anyhow!("failed to download permit list {:?}", r.status));
+            }
+            Ok(PermitListResult::DownloadSuccessful(odir.join(&chem_file)))
         }
-        Ok(PermitListResult::DownloadSuccessful(odir.join(chem_file)))
+    } else {
+        bail!(
+            "could not properly parse the permit dictionary obtained from {} = {:?}",
+            permit_dict_url,
+            permit_dict
+        );
     }
 }
 
