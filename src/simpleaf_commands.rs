@@ -395,6 +395,17 @@ pub struct IndexOpts {
     )]
     pub decoy_paths: Option<Vec<PathBuf>>,
 
+    /// path to (optional) decoy sequence used to insert poison
+    /// k-mer information into the index (only if using piscem >= 0.7).
+    #[arg(
+        long = "seed",
+        conflicts_with = "use_piscem",
+        help_heading = "Piscem Index Options",
+        default_value_t = 1,
+        display_order = 4
+    )]
+    pub hash_seed: u64,
+
     /// path to output directory (will be created if it doesn't exist)
     #[arg(short, long, display_order = 1)]
     pub output: PathBuf,
