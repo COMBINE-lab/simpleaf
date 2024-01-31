@@ -5,7 +5,8 @@ use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonS
 use seq_geom_xform::{FifoXFormData, FragmentGeomDescExt};
 use std::path::{Path, PathBuf};
 use tracing::error;
-use ureq;
+//use ureq;
+//use minreq::Response;
 
 /// The map from pre-specified chemistry types that salmon knows
 /// to the corresponding command line flag that salmon should be passed
@@ -165,18 +166,28 @@ pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Comm
 
 pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitListResult> {
     let permit_dict_url = "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/permit_list_info.json";
-    let permit_dict: serde_json::Value = ureq::get(permit_dict_url).call()?.into_json()?;
+    let permit_dict: serde_json::Value = minreq::get(permit_dict_url)
+        .send()?
+        .json::<serde_json::Value>()?;
     let opt_chem_file: Option<String>;
     let opt_dl_url: Option<String>;
     match chem {
         Chemistry::TenxV2 => {
             if let Some(ref d) = permit_dict.get("10xv2") {
-                opt_chem_file = if let Some(cf) = d.get("filename") {
+                opt_chem_file = if let Some(cf) = d
+                    .get("filename")
+                    .expect("value for filename field should be a string")
+                    .as_str()
+                {
                     Some(cf.to_string())
                 } else {
                     None
                 };
-                opt_dl_url = if let Some(url) = d.get("url") {
+                opt_dl_url = if let Some(url) = d
+                    .get("url")
+                    .expect("value for url field should be a string")
+                    .as_str()
+                {
                     Some(url.to_string())
                 } else {
                     None
@@ -191,12 +202,20 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
         }
         Chemistry::TenxV3 => {
             if let Some(ref d) = permit_dict.get("10xv3") {
-                opt_chem_file = if let Some(cf) = d.get("filename") {
+                opt_chem_file = if let Some(cf) = d
+                    .get("filename")
+                    .expect("value for filename field should be a string")
+                    .as_str()
+                {
                     Some(cf.to_string())
                 } else {
                     None
                 };
-                opt_dl_url = if let Some(url) = d.get("url") {
+                opt_dl_url = if let Some(url) = d
+                    .get("url")
+                    .expect("value for url field should be a string")
+                    .as_str()
+                {
                     Some(url.to_string())
                 } else {
                     None

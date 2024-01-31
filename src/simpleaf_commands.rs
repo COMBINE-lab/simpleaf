@@ -395,7 +395,7 @@ pub struct IndexOpts {
     )]
     pub decoy_paths: Option<Vec<PathBuf>>,
 
-    /// seed value to use in SSHash index construction 
+    /// seed value to use in SSHash index construction
     /// (try changing this in the rare event index build fails).
     #[arg(
         long = "seed",
