@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.2](https://github.com/COMBINE-lab/simpleaf/compare/v0.16.1...v0.16.2) (2024-02-01)
+
+
+### Bug Fixes
+
+* add seed parameter to piscem-based index build ([7420657](https://github.com/COMBINE-lab/simpleaf/commit/74206570fa057cfbc8643166fb135da5e579ea02))
+* improve doc string, fix error typo ([8eb7302](https://github.com/COMBINE-lab/simpleaf/commit/8eb730299743da022ee7d091f16afc319a132909))
+
 ## [0.16.1](https://github.com/COMBINE-lab/simpleaf/compare/v0.16.0...v0.16.1) (2024-01-30)
 
 
