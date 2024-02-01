@@ -167,12 +167,35 @@ pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Comm
 }
 
 pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitListResult> {
+    // check if the file already exists
+    let odir = af_home.join("plist");
+    match chem {
+        Chemistry::TenxV2 => {
+            let chem_file = "10x_v2_permit.txt";
+            if odir.join(chem_file).exists() {
+                return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+            }
+        }
+        Chemistry::TenxV3 => {
+            let chem_file = "10x_v3_permit.txt";
+            if odir.join(chem_file).exists() {
+                return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+            }
+        }
+        _ => {
+            return Ok(PermitListResult::UnregisteredChemistry);
+        }
+    }
+
+    // the file doesn't exist, so get the json file that gives us
+    // the chemistry name to permit list URL mapping.
     let permit_dict_url = "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/permit_list_info.json";
     let permit_dict: serde_json::Value = minreq::get(permit_dict_url)
         .send()?
         .json::<serde_json::Value>()?;
     let opt_chem_file: Option<String>;
     let opt_dl_url: Option<String>;
+    // parse the JSON appropriately based on the chemistry we have
     match chem {
         Chemistry::TenxV2 => {
             if let Some(d) = permit_dict.get("10xv2") {
@@ -219,8 +242,8 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
         }
     }
 
+    // actually download the permit list if we need it and don't have it.
     if let (Some(chem_file), Some(dl_url)) = (opt_chem_file, opt_dl_url) {
-        let odir = af_home.join("plist");
         if odir.join(&chem_file).exists() {
             Ok(PermitListResult::AlreadyPresent(odir.join(&chem_file)))
         } else {

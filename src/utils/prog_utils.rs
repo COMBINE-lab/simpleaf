@@ -7,7 +7,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Once;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use which::which;
 
 // The below functions are taken from the [`execute`](https://crates.io/crates/execute)
@@ -50,10 +50,20 @@ pub fn shell<S: AsRef<OsStr>>(cmd: S) -> Command {
 
 pub fn download_to_file<T: AsRef<str>>(url: T, filename: &str) -> Result<()> {
     let url = url.as_ref();
+
+    debug!(
+        "Downloading file from {} and writing to file {}",
+        url, filename
+    );
+
     let request = minreq::get(url).with_timeout(120).send()?;
     match request.status_code {
         200..=299 => {
             // success
+            debug!(
+                "Obtained status code {} from final url {}",
+                request.status_code, request.url
+            );
         }
         x => {
             bail!(
