@@ -1291,23 +1291,8 @@ pub fn get_protocol_estuary<T: AsRef<Path>>(
             run_cmd!(mkdir -p $pe_dir)?;
         }
 
-        // download github repo as a zip file
-        let mut dl_cmd = std::process::Command::new("wget");
-        dl_cmd
-            .arg("-v")
-            .arg("-O")
-            .arg(pe_zip_file.to_string_lossy().to_string())
-            .arg("-L")
-            .arg(dl_url);
-        match prog_utils::execute_command(&mut dl_cmd, CommandVerbosityLevel::Quiet) {
-            Ok(_output) => {}
-            Err(e) => {
-                return Err(anyhow!(
-                    "failed to download protocol-estuary GitHub repository; error: {:?}",
-                    e
-                ));
-            }
-        }
+        let out_fname = pe_zip_file.to_string_lossy().to_string();
+        prog_utils::download_to_file(dl_url, &out_fname)?;
 
         // unzip
         let mut unzip_cmd = std::process::Command::new("unzip");

@@ -90,11 +90,11 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
         run_fun!(mkdir -p $outref)?;
 
         let roers_opts = roers::AugRefOpts {
-            /// The path to a genome fasta file.
+            // The path to a genome fasta file.
             genome: fasta.clone(),
-            /// The path to a gene annotation gtf/gff3 file.
+            // The path to a gene annotation gtf/gff3 file.
             genes: gtf.clone(),
-            /// The path to the output directory (will be created if it doesn't exist).
+            // The path to the output directory (will be created if it doesn't exist).
             out_dir: outref.clone(),
             aug_type,
             no_transcript: false,
@@ -193,7 +193,9 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
             .arg("-o")
             .arg(&output_index_stem)
             .arg("-s")
-            .arg(&ref_seq);
+            .arg(&ref_seq)
+            .arg("--seed")
+            .arg(opts.hash_seed.to_string());
 
         // if the user requested to overwrite, then pass this option
         if opts.overwrite {
@@ -222,7 +224,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
         // piscem version is at least 0.7.0
         if let Some(decoy_paths) = opts.decoy_paths {
             if let Ok(_piscem_ver) = prog_utils::check_version_constraints(
-                "alevin-fry",
+                "piscem",
                 ">=0.7.0, <1.0.0",
                 &piscem_prog_info.version,
             ) {

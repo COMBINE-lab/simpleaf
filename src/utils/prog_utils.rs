@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use cmd_lib::run_fun;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
@@ -7,7 +7,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Once;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use which::which;
 
 // The below functions are taken from the [`execute`](https://crates.io/crates/execute)
@@ -46,6 +46,38 @@ pub fn shell<S: AsRef<OsStr>>(cmd: S) -> Command {
     command.arg(cmd);
 
     command
+}
+
+pub fn download_to_file<T: AsRef<str>>(url: T, filename: &str) -> Result<()> {
+    let url = url.as_ref();
+
+    debug!(
+        "Downloading file from {} and writing to file {}",
+        url, filename
+    );
+
+    let request = minreq::get(url).with_timeout(120).send()?;
+    match request.status_code {
+        200..=299 => {
+            // success
+            debug!(
+                "Obtained status code {} from final url {}",
+                request.status_code, request.url
+            );
+        }
+        x => {
+            bail!(
+                "could not obtain the permit list; HTTP status code {}, reason {}",
+                x,
+                request.reason_phrase
+            );
+        }
+    }
+
+    let mut out_file = std::fs::File::create(filename)?;
+    use std::io::Write;
+    out_file.write_all(request.as_bytes())?;
+    Ok(())
 }
 
 pub fn get_cmd_line_string(prog: &std::process::Command) -> String {

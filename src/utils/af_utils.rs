@@ -1,10 +1,14 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use cmd_lib::run_fun;
 use phf::phf_map;
 use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonSeparateGeomDesc};
 use seq_geom_xform::{FifoXFormData, FragmentGeomDescExt};
 use std::path::{Path, PathBuf};
 use tracing::error;
+
+use crate::utils::prog_utils;
+//use ureq;
+//use minreq::Response;
 
 /// The map from pre-specified chemistry types that salmon knows
 /// to the corresponding command line flag that salmon should be passed
@@ -163,39 +167,99 @@ pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Comm
 }
 
 pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitListResult> {
-    let chem_file;
-    let dl_url;
+    // check if the file already exists
+    let odir = af_home.join("plist");
     match chem {
         Chemistry::TenxV2 => {
-            chem_file = "10x_v2_permit.txt";
-            dl_url = "https://umd.box.com/shared/static/jbs2wszgbj7k4ic2hass9ts6nhqkwq1p";
+            let chem_file = "10x_v2_permit.txt";
+            if odir.join(chem_file).exists() {
+                return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+            }
         }
         Chemistry::TenxV3 => {
-            chem_file = "10x_v3_permit.txt";
-            dl_url = "https://umd.box.com/shared/static/vc9zd4qyjj581gvtolw5kj638wmg4f3s";
+            let chem_file = "10x_v3_permit.txt";
+            if odir.join(chem_file).exists() {
+                return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+            }
         }
         _ => {
             return Ok(PermitListResult::UnregisteredChemistry);
         }
     }
 
-    let odir = af_home.join("plist");
-    if odir.join(chem_file).exists() {
-        Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)))
-    } else {
-        run_fun!(mkdir -p $odir)?;
-        let mut dl_cmd = std::process::Command::new("wget");
-        dl_cmd
-            .arg("-v")
-            .arg("-O")
-            .arg(odir.join(chem_file).to_string_lossy().to_string())
-            .arg("-L")
-            .arg(dl_url);
-        let r = dl_cmd.output()?;
-        if !r.status.success() {
-            return Err(anyhow!("failed to download permit list {:?}", r.status));
+    // the file doesn't exist, so get the json file that gives us
+    // the chemistry name to permit list URL mapping.
+    let permit_dict_url = "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/permit_list_info.json";
+    let permit_dict: serde_json::Value = minreq::get(permit_dict_url)
+        .send()?
+        .json::<serde_json::Value>()?;
+    let opt_chem_file: Option<String>;
+    let opt_dl_url: Option<String>;
+    // parse the JSON appropriately based on the chemistry we have
+    match chem {
+        Chemistry::TenxV2 => {
+            if let Some(d) = permit_dict.get("10xv2") {
+                opt_chem_file = d
+                    .get("filename")
+                    .expect("value for filename field should be a string")
+                    .as_str()
+                    .map(|cf| cf.to_string());
+                opt_dl_url = d
+                    .get("url")
+                    .expect("value for url field should be a string")
+                    .as_str()
+                    .map(|url| url.to_string());
+            } else {
+                bail!(
+                    "could not obtain \"10xv2\" key from the fetched permit_dict at {} = {:?}",
+                    permit_dict_url,
+                    permit_dict
+                )
+            }
         }
-        Ok(PermitListResult::DownloadSuccessful(odir.join(chem_file)))
+        Chemistry::TenxV3 => {
+            if let Some(d) = permit_dict.get("10xv3") {
+                opt_chem_file = d
+                    .get("filename")
+                    .expect("value for filename field should be a string")
+                    .as_str()
+                    .map(|cf| cf.to_string());
+                opt_dl_url = d
+                    .get("url")
+                    .expect("value for url field should be a string")
+                    .as_str()
+                    .map(|url| url.to_string());
+            } else {
+                bail!(
+                    "could not obtain \"10xv3\" key from the fetched permit_dict at {} = {:?}",
+                    permit_dict_url,
+                    permit_dict
+                )
+            }
+        }
+        _ => {
+            return Ok(PermitListResult::UnregisteredChemistry);
+        }
+    }
+
+    // actually download the permit list if we need it and don't have it.
+    if let (Some(chem_file), Some(dl_url)) = (opt_chem_file, opt_dl_url) {
+        if odir.join(&chem_file).exists() {
+            Ok(PermitListResult::AlreadyPresent(odir.join(&chem_file)))
+        } else {
+            run_fun!(mkdir -p $odir)?;
+
+            let output_file = odir.join(&chem_file).to_string_lossy().to_string();
+            prog_utils::download_to_file(dl_url, &output_file)?;
+
+            Ok(PermitListResult::DownloadSuccessful(odir.join(&chem_file)))
+        }
+    } else {
+        bail!(
+            "could not properly parse the permit dictionary obtained from {} = {:?}",
+            permit_dict_url,
+            permit_dict
+        );
     }
 }
 
