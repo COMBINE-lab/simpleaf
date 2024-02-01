@@ -1,10 +1,12 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use cmd_lib::run_fun;
 use phf::phf_map;
 use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonSeparateGeomDesc};
 use seq_geom_xform::{FifoXFormData, FragmentGeomDescExt};
 use std::path::{Path, PathBuf};
 use tracing::error;
+
+use crate::utils::prog_utils;
 //use ureq;
 //use minreq::Response;
 
@@ -173,25 +175,17 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
     let opt_dl_url: Option<String>;
     match chem {
         Chemistry::TenxV2 => {
-            if let Some(ref d) = permit_dict.get("10xv2") {
-                opt_chem_file = if let Some(cf) = d
+            if let Some(d) = permit_dict.get("10xv2") {
+                opt_chem_file = d
                     .get("filename")
                     .expect("value for filename field should be a string")
                     .as_str()
-                {
-                    Some(cf.to_string())
-                } else {
-                    None
-                };
-                opt_dl_url = if let Some(url) = d
+                    .map(|cf| cf.to_string());
+                opt_dl_url = d
                     .get("url")
                     .expect("value for url field should be a string")
                     .as_str()
-                {
-                    Some(url.to_string())
-                } else {
-                    None
-                };
+                    .map(|url| url.to_string());
             } else {
                 bail!(
                     "could not obtain \"10xv2\" key from the fetched permit_dict at {} = {:?}",
@@ -201,25 +195,17 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
             }
         }
         Chemistry::TenxV3 => {
-            if let Some(ref d) = permit_dict.get("10xv3") {
-                opt_chem_file = if let Some(cf) = d
+            if let Some(d) = permit_dict.get("10xv3") {
+                opt_chem_file = d
                     .get("filename")
                     .expect("value for filename field should be a string")
                     .as_str()
-                {
-                    Some(cf.to_string())
-                } else {
-                    None
-                };
-                opt_dl_url = if let Some(url) = d
+                    .map(|cf| cf.to_string());
+                opt_dl_url = d
                     .get("url")
                     .expect("value for url field should be a string")
                     .as_str()
-                {
-                    Some(url.to_string())
-                } else {
-                    None
-                };
+                    .map(|url| url.to_string());
             } else {
                 bail!(
                     "could not obtain \"10xv3\" key from the fetched permit_dict at {} = {:?}",
@@ -240,33 +226,9 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
         } else {
             run_fun!(mkdir -p $odir)?;
 
-            let permit_request = minreq::get(dl_url).with_timeout(120).send()?;
-            match permit_request.status_code {
-                200..=299 => { 
-                    // success
-                },
-                x =>  {
-                    bail!("could not obtain the permit list; HTTP status code {}, reason {}", x, permit_request.reason_phrase);
-                }
-            }
+            let output_file = odir.join(&chem_file).to_string_lossy().to_string();
+            prog_utils::download_to_file(dl_url, &output_file)?;
 
-            let mut permit_file = std::fs::File::create(odir.join(&chem_file).to_string_lossy().to_string())?;
-            use std::io::Write;
-            permit_file.write_all(permit_request.as_bytes())?;
-
-            /*
-            let mut dl_cmd = std::process::Command::new("wget");
-            dl_cmd
-                .arg("-v")
-                .arg("-O")
-                .arg(odir.join(&chem_file).to_string_lossy().to_string())
-                .arg("-L")
-                .arg(dl_url);
-            let r = dl_cmd.output()?;
-            if !r.status.success() {
-                return Err(anyhow!("failed to download permit list {:?}", r.status));
-            }
-            */
             Ok(PermitListResult::DownloadSuccessful(odir.join(&chem_file)))
         }
     } else {
