@@ -212,6 +212,7 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
     let chem = match opts.chemistry.as_str() {
         "10xv2" => Chemistry::TenxV2,
         "10xv3" => Chemistry::TenxV3,
+        "10xv4-3p" => Chemistry::TenxV43P,
         s => {
             if custom_chem_exists {
                 // parse the custom chemistry json file
@@ -247,10 +248,10 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
         ori = o;
     } else {
         // otherwise, this was not set explicitly. In that case
-        // if we have 10xv2 or 10xv3 chemistry, set ori = "fw"
+        // if we have 10xv2, 10xv3, or 10xv4 chemistry, set ori = "fw"
         // otherwise set ori = "both"
         match chem {
-            Chemistry::TenxV2 | Chemistry::TenxV3 => {
+            Chemistry::TenxV2 | Chemistry::TenxV3 | Chemistry::TenxV43P => {
                 ori = "fw".to_string();
             }
             _ => {
@@ -287,7 +288,7 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
             // here, the -u flag is provided
             // but no file is provided, then the
             // inner option is None and we will try to get the permit list automatically if
-            // using 10xv2 or 10xv3
+            // using 10xv2, 10xv3, or 10xv4
 
             // check the chemistry
             let pl_res = af_utils::get_permit_if_absent(af_home_path, &chem)?;

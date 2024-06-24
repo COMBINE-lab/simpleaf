@@ -16,6 +16,12 @@ use crate::utils::prog_utils;
 static KNOWN_CHEM_MAP_SALMON: phf::Map<&'static str, &'static str> = phf_map! {
         "10xv2" => "--chromium",
         "10xv3" => "--chromiumV3",
+        // NOTE:: This is not a typo, the geometry for
+        // the v3 and v4 chemistry are identical. Nonetheless,
+        // we likely want to still add an explicit flag to
+        // piscem and change this when we bump the minimum
+        // required version.
+        "10xv4-3p" => "--chromiumV3",
         "dropseq" => "--dropseq",
         "indropv2" => "--indropV2",
         "citeseq" => "--citeseq",
@@ -32,7 +38,13 @@ static KNOWN_CHEM_MAP_SALMON: phf::Map<&'static str, &'static str> = phf_map! {
 /// should be passed to use this chemistry.
 static KNOWN_CHEM_MAP_PISCEM: phf::Map<&'static str, &'static str> = phf_map! {
     "10xv2" => "chromium_v2",
-    "10xv3" => "chromium_v3"
+    "10xv3" => "chromium_v3",
+    // NOTE:: This is not a typo, the geometry for
+    // the v3 and v4 chemistry are identical. Nonetheless,
+    // we likely want to still add an explicit flag to
+    // piscem and change this when we bump the minimum
+    // required version.
+    "10xv4-3p" => "chromium_v3"
 };
 
 /// The types of "mappers" we know about
@@ -101,6 +113,7 @@ pub fn add_to_args(fm: &CellFilterMethod, cmd: &mut std::process::Command) {
 pub enum Chemistry {
     TenxV2,
     TenxV3,
+    TenxV43P,
     Other(String),
 }
 
@@ -109,6 +122,7 @@ impl Chemistry {
         match self {
             Chemistry::TenxV2 => "10xv2",
             Chemistry::TenxV3 => "10xv3",
+            Chemistry::TenxV43P => "10xv4-3p",
             Chemistry::Other(s) => s.as_str(),
         }
     }
@@ -182,6 +196,12 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
                 return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
             }
         }
+        Chemistry::TenxV43P => {
+            let chem_file = "10x_v4_3p_permit.txt";
+            if odir.join(chem_file).exists() {
+                return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+            }
+        }
         _ => {
             return Ok(PermitListResult::UnregisteredChemistry);
         }
@@ -197,8 +217,9 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
     let opt_dl_url: Option<String>;
     // parse the JSON appropriately based on the chemistry we have
     match chem {
-        Chemistry::TenxV2 => {
-            if let Some(d) = permit_dict.get("10xv2") {
+        Chemistry::TenxV2 | Chemistry::TenxV3 | Chemistry::TenxV43P => {
+            let chem_key = chem.as_str();
+            if let Some(d) = permit_dict.get(chem_key) {
                 opt_chem_file = d
                     .get("filename")
                     .expect("value for filename field should be a string")
@@ -211,27 +232,8 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
                     .map(|url| url.to_string());
             } else {
                 bail!(
-                    "could not obtain \"10xv2\" key from the fetched permit_dict at {} = {:?}",
-                    permit_dict_url,
-                    permit_dict
-                )
-            }
-        }
-        Chemistry::TenxV3 => {
-            if let Some(d) = permit_dict.get("10xv3") {
-                opt_chem_file = d
-                    .get("filename")
-                    .expect("value for filename field should be a string")
-                    .as_str()
-                    .map(|cf| cf.to_string());
-                opt_dl_url = d
-                    .get("url")
-                    .expect("value for url field should be a string")
-                    .as_str()
-                    .map(|url| url.to_string());
-            } else {
-                bail!(
-                    "could not obtain \"10xv3\" key from the fetched permit_dict at {} = {:?}",
+                    "could not obtain \"{}\" key from the fetched permit_dict at {} = {:?}",
+                    chem_key,
                     permit_dict_url,
                     permit_dict
                 )
