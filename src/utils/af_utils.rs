@@ -3,7 +3,10 @@ use cmd_lib::run_fun;
 use phf::phf_map;
 use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonSeparateGeomDesc};
 use seq_geom_xform::{FifoXFormData, FragmentGeomDescExt};
+use std::fmt;
 use std::path::{Path, PathBuf};
+
+use strum_macros::EnumIter;
 use tracing::error;
 
 use crate::utils::prog_utils;
@@ -107,6 +110,7 @@ pub fn add_to_args(fm: &CellFilterMethod, cmd: &mut std::process::Command) {
     }
 }
 
+#[derive(EnumIter, PartialEq)]
 pub enum Chemistry {
     TenxV2,
     TenxV25P,
@@ -125,6 +129,19 @@ impl Chemistry {
             Chemistry::TenxV35P => "10xv3-5p",
             Chemistry::TenxV43P => "10xv4-3p",
             Chemistry::Other(s) => s.as_str(),
+        }
+    }
+}
+
+impl fmt::Debug for Chemistry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Chemistry::TenxV2 => write!(f, "10xv2"),
+            Chemistry::TenxV25P => write!(f, "10xv2-5p"),
+            Chemistry::TenxV3 => write!(f, "10xv3"),
+            Chemistry::TenxV35P => write!(f, "10xv3-5p"),
+            Chemistry::TenxV43P => write!(f, "10xv4-3p"),
+            Chemistry::Other(s) => write!(f, "custom({})", s.as_str()),
         }
     }
 }

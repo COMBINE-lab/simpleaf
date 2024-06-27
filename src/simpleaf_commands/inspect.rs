@@ -1,4 +1,5 @@
-use crate::utils::prog_utils::*;
+use crate::utils::{af_utils::Chemistry, prog_utils::*};
+use strum::IntoEnumIterator;
 
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -33,5 +34,12 @@ pub fn inspect_simpleaf(af_home_path: PathBuf) -> Result<()> {
         let v: Value = serde_json::from_reader(custom_chem_reader)?;
         println!("{}", serde_json::to_string_pretty(&v).unwrap());
     }
+
+    println!("\nKnown chemistry flags\n");
+
+    for c in Chemistry::iter() {
+        println!("{:?}", c);
+    }
+
     Ok(())
 }
