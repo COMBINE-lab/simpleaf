@@ -18,8 +18,8 @@ static KNOWN_CHEM_MAP_SALMON: phf::Map<&'static str, &'static str> = phf_map! {
         "10xv3" => "--chromiumV3",
         // NOTE:: This is not a typo, the geometry for
         // the v3 and v4 chemistry are identical. Nonetheless,
-        // we likely want to still add an explicit flag to
-        // piscem and change this when we bump the minimum
+        // we may want to still add an explicit flag to
+        // salmon and change this when we bump the minimum
         // required version.
         "10xv4-3p" => "--chromiumV3",
         "dropseq" => "--dropseq",
@@ -38,13 +38,10 @@ static KNOWN_CHEM_MAP_SALMON: phf::Map<&'static str, &'static str> = phf_map! {
 /// should be passed to use this chemistry.
 static KNOWN_CHEM_MAP_PISCEM: phf::Map<&'static str, &'static str> = phf_map! {
     "10xv2" => "chromium_v2",
+    "10xv2-5p" => "chromium_v2_5p",
     "10xv3" => "chromium_v3",
-    // NOTE:: This is not a typo, the geometry for
-    // the v3 and v4 chemistry are identical. Nonetheless,
-    // we likely want to still add an explicit flag to
-    // piscem and change this when we bump the minimum
-    // required version.
-    "10xv4-3p" => "chromium_v3"
+    "10xv3-5p" => "chromium_v3_5p",
+    "10xv4-3p" => "chromium_v4_3p"
 };
 
 /// The types of "mappers" we know about
@@ -112,7 +109,9 @@ pub fn add_to_args(fm: &CellFilterMethod, cmd: &mut std::process::Command) {
 
 pub enum Chemistry {
     TenxV2,
+    TenxV25P,
     TenxV3,
+    TenxV35P,
     TenxV43P,
     Other(String),
 }
@@ -121,7 +120,9 @@ impl Chemistry {
     pub fn as_str(&self) -> &str {
         match self {
             Chemistry::TenxV2 => "10xv2",
+            Chemistry::TenxV25P => "10xv2-5p",
             Chemistry::TenxV3 => "10xv3",
+            Chemistry::TenxV35P => "10xv3-5p",
             Chemistry::TenxV43P => "10xv4-3p",
             Chemistry::Other(s) => s.as_str(),
         }
@@ -190,8 +191,21 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
                 return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
             }
         }
+        Chemistry::TenxV25P => {
+            // v2 and v2-5' use the same permit list
+            let chem_file = "10x_v2_permit.txt";
+            if odir.join(chem_file).exists() {
+                return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+            }
+        }
         Chemistry::TenxV3 => {
             let chem_file = "10x_v3_permit.txt";
+            if odir.join(chem_file).exists() {
+                return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+            }
+        }
+        Chemistry::TenxV35P => {
+            let chem_file = "10x_v3_5p_permit.txt";
             if odir.join(chem_file).exists() {
                 return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
             }
@@ -217,7 +231,11 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
     let opt_dl_url: Option<String>;
     // parse the JSON appropriately based on the chemistry we have
     match chem {
-        Chemistry::TenxV2 | Chemistry::TenxV3 | Chemistry::TenxV43P => {
+        Chemistry::TenxV2
+        | Chemistry::TenxV25P
+        | Chemistry::TenxV3
+        | Chemistry::TenxV35P
+        | Chemistry::TenxV43P => {
             let chem_key = chem.as_str();
             if let Some(d) = permit_dict.get(chem_key) {
                 opt_chem_file = d

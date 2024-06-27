@@ -211,7 +211,9 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
 
     let chem = match opts.chemistry.as_str() {
         "10xv2" => Chemistry::TenxV2,
+        "10xv2-5p" => Chemistry::TenxV25P,
         "10xv3" => Chemistry::TenxV3,
+        "10xv3-5p" => Chemistry::TenxV35P,
         "10xv4-3p" => Chemistry::TenxV43P,
         s => {
             if custom_chem_exists {
@@ -248,11 +250,20 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
         ori = o;
     } else {
         // otherwise, this was not set explicitly. In that case
-        // if we have 10xv2, 10xv3, or 10xv4 chemistry, set ori = "fw"
+        // if we have 10xv2, 10xv3, or 10xv4 (3') chemistry, set ori = "fw"
+        // if we have 10xv2-5p or 10xv3-5p chemistry, set ori = "rc"
         // otherwise set ori = "both"
         match chem {
             Chemistry::TenxV2 | Chemistry::TenxV3 | Chemistry::TenxV43P => {
                 ori = "fw".to_string();
+            }
+            Chemistry::TenxV25P | Chemistry::TenxV35P => {
+                // NOTE: This is because we assume the piscem encoding
+                // that is, these are treated as potentially paired-end protocols and
+                // we infer the orientation of the fragment = orientation of read 1.
+                // Think about changing this or making it more robust if and when we
+                // propagate more information about paired-end mappings.
+                ori = "rc".to_string();
             }
             _ => {
                 ori = "both".to_string();
