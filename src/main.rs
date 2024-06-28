@@ -1,7 +1,7 @@
 use tracing_subscriber::{filter::LevelFilter, fmt, prelude::*, EnvFilter};
 
 use anyhow::bail;
-use clap::Parser;
+use clap::{crate_version, Parser};
 
 use std::env;
 use std::path::PathBuf;
@@ -75,7 +75,7 @@ fn main() -> anyhow::Result<()> {
         Commands::AddChemistry { name, geometry } => {
             add_chemistry(af_home_path, Commands::AddChemistry { name, geometry })
         }
-        Commands::Inspect {} => inspect_simpleaf(af_home_path),
+        Commands::Inspect {} => inspect_simpleaf(crate_version!(), af_home_path),
 
         // if we are building the reference and indexing
         Commands::Index(index_opts) => build_ref_and_index(af_home_path.as_path(), index_opts),

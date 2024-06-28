@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use std::io::BufReader;
 use std::path::PathBuf;
 
-pub fn inspect_simpleaf(af_home_path: PathBuf) -> Result<()> {
+pub fn inspect_simpleaf(version: &str, af_home_path: PathBuf) -> Result<()> {
     // Read the JSON contents of the file as an instance of `User`.
     let v: Value = inspect_af_home(af_home_path.as_path())?;
     // do we have a custom chemistry file
@@ -37,6 +37,7 @@ pub fn inspect_simpleaf(af_home_path: PathBuf) -> Result<()> {
         .join(", ");
 
     let inspect_v = json!({
+        "simpleaf_version" : version,
         "simpleaf_info" : v,
         "custom_chem_info" : chem_info_value,
         "builtin_chemistries" : chem_list
