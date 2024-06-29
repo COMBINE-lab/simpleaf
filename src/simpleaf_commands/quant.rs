@@ -261,9 +261,11 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
                 // NOTE: This is because we assume the piscem encoding
                 // that is, these are treated as potentially paired-end protocols and
                 // we infer the orientation of the fragment = orientation of read 1.
-                // Think about changing this or making it more robust if and when we
-                // propagate more information about paired-end mappings.
-                ori = "rc".to_string();
+                // So, while the direction we want is the same as the 3' protocols
+                // above, we separate out the case statement here for clarity.
+                // Further, we may consider changing this or making it more robust if
+                // and when we propagate more information about paired-end mappings.
+                ori = "fw".to_string();
             }
             _ => {
                 ori = "both".to_string();
