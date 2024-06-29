@@ -1,22 +1,27 @@
 {
   "10xv2" : {
     "filename" : "10x_v2_permit.txt",
+    "cr_filename" : "737k-august-2016.txt",
     "url" : "https://umd.box.com/shared/static/jbs2wszgbj7k4ic2hass9ts6nhqkwq1p"
   },
   "10xv2-5p" : {
     "filename" : "10x_v2_permit.txt",
+    "cr_filename" : "737k-august-2016.txt",
     "url" : "https://umd.box.com/shared/static/jbs2wszgbj7k4ic2hass9ts6nhqkwq1p"
   },
   "10xv3" : {
     "filename" : "10x_v3_permit.txt",
+    "cr_filename" : "3M-febrary-2018.txt.gz",
     "url" : "https://umd.box.com/shared/static/vc9zd4qyjj581gvtolw5kj638wmg4f3s"
   },
   "10xv3-5p" : {
     "filename" : "10x_v3_5p_permit.txt",
+    "cr_filename" : "3M-5pgex-jan-2023.txt.gz",
     "url" : "https://umd.box.com/shared/static/cbpv1c4zi6ty81nvcgy3pyta2oj7vea1.txt"
   },
   "10xv4-3p" : {
     "filename" : "10x_v4_3p_permit.txt",
+    "cr_filename": "3M-3pgex-may-2023.txt.gz",
     "url" : "https://umd.box.com/shared/static/4a2q2lxngogaq4vkniptpu2gts5a38fb.txt"
   }
 }
