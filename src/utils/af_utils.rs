@@ -65,6 +65,8 @@ pub enum FragmentTransformationType {
     TransformedIntoFifo(FifoXFormData),
 }
 
+/// The different alevin-fry supported methods for
+/// permit-list generation.
 #[derive(Debug, Clone)]
 pub enum CellFilterMethod {
     // cut off at this cell in
@@ -87,29 +89,36 @@ pub enum CellFilterMethod {
     KneeFinding,
 }
 
-pub fn add_to_args(fm: &CellFilterMethod, cmd: &mut std::process::Command) {
-    match fm {
-        CellFilterMethod::ForceCells(nc) => {
-            cmd.arg("--force-cells").arg(format!("{}", nc));
-        }
-        CellFilterMethod::ExpectCells(nc) => {
-            cmd.arg("--expect-cells").arg(format!("{}", nc));
-        }
-        CellFilterMethod::ExplicitList(l) => {
-            cmd.arg("--valid-bc").arg(l);
-        }
-        CellFilterMethod::UnfilteredExternalList(l, m) => {
-            cmd.arg("--unfiltered-pl")
-                .arg(l)
-                .arg("--min-reads")
-                .arg(format!("{}", m));
-        }
-        CellFilterMethod::KneeFinding => {
-            cmd.arg("--knee-distance");
+impl CellFilterMethod {
+    /// How a [CellFilterMethod] should add itself to an
+    /// `alevin-fry` command.
+    pub fn add_to_args(&self, cmd: &mut std::process::Command) {
+        match self {
+            CellFilterMethod::ForceCells(nc) => {
+                cmd.arg("--force-cells").arg(format!("{}", nc));
+            }
+            CellFilterMethod::ExpectCells(nc) => {
+                cmd.arg("--expect-cells").arg(format!("{}", nc));
+            }
+            CellFilterMethod::ExplicitList(l) => {
+                cmd.arg("--valid-bc").arg(l);
+            }
+            CellFilterMethod::UnfilteredExternalList(l, m) => {
+                cmd.arg("--unfiltered-pl")
+                    .arg(l)
+                    .arg("--min-reads")
+                    .arg(format!("{}", m));
+            }
+            CellFilterMethod::KneeFinding => {
+                cmd.arg("--knee-distance");
+            }
         }
     }
 }
 
+/// The builtin geometry types that have special handling to
+/// reduce necessary options in the common case, as well as the
+/// `Other` varant that covers custom geometries.
 #[derive(EnumIter, PartialEq)]
 pub enum Chemistry {
     TenxV2,
@@ -120,6 +129,7 @@ pub enum Chemistry {
     Other(String),
 }
 
+/// `&str` representations of the different geometries.
 impl Chemistry {
     pub fn as_str(&self) -> &str {
         match self {
@@ -133,6 +143,7 @@ impl Chemistry {
     }
 }
 
+/// [Debug] representations of the different geometries.
 impl fmt::Debug for Chemistry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -146,6 +157,7 @@ impl fmt::Debug for Chemistry {
     }
 }
 
+/// The result of requesting a permit list
 pub enum PermitListResult {
     DownloadSuccessful(PathBuf),
     AlreadyPresent(PathBuf),
@@ -241,9 +253,13 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
     // the file doesn't exist, so get the json file that gives us
     // the chemistry name to permit list URL mapping.
     let permit_dict_url = "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/permit_list_info.json";
-    let permit_dict: serde_json::Value = minreq::get(permit_dict_url)
-        .send()?
-        .json::<serde_json::Value>()?;
+    let request_result = minreq::get(permit_dict_url).send().inspect_err( |err| {
+        error!("Could not obtain the permit list metadata from {}; encountered {:?}.", &permit_dict_url, &err);
+        error!("This may be a transient failure, or could be because the client is lacking a network connection. \
+        In the latter case, please consider manually providing the appropriate permit list file directly \
+        via the command line to avoid an attempt by simpleaf to automatically obtain it.");
+    })?;
+    let permit_dict: serde_json::Value = request_result.json::<serde_json::Value>()?;
     let opt_chem_file: Option<String>;
     let opt_dl_url: Option<String>;
     // parse the JSON appropriately based on the chemistry we have

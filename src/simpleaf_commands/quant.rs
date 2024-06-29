@@ -603,7 +603,7 @@ being used by simpleaf"#,
     alevin_gpl_cmd.arg("-d").arg(&ori);
 
     // add the filter mode
-    af_utils::add_to_args(&filter_meth, &mut alevin_gpl_cmd);
+    filter_meth.add_to_args(&mut alevin_gpl_cmd);
 
     let gpl_output = opts.output.join("af_quant");
     alevin_gpl_cmd.arg("-o").arg(&gpl_output);
