@@ -36,7 +36,7 @@ seq_geom_parser = { git = "https://github.com/COMBINE-lab/seq_geom_parser", bran
 seq_geom_xform = { git = "https://github.com/COMBINE-lab/seq_geom_xform", branch = "dev", version = "0.4.0" }
 roers = { git = "https://github.com/COMBINE-lab/roers", branch = "main", version = "0.3.0" }
 anyhow = "^1.0"
-clap = { version = "4.5.7", features = ["derive", "cargo", "deprecated", "wrap_help", "help", "usage", "error-context"] } 
+clap = { version = "4.5.8", features = ["derive", "cargo", "deprecated", "wrap_help", "help", "usage", "error-context"] } 
 cmd_lib = "^1.9.4"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", default-features = true, features = ["env-filter"] }
