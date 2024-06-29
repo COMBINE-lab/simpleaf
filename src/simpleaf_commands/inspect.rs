@@ -33,8 +33,7 @@ pub fn inspect_simpleaf(version: &str, af_home_path: PathBuf) -> Result<()> {
 
     let chem_list = Chemistry::iter()
         .map(|c| format!("{:?}", c))
-        .collect::<Vec<String>>()
-        .join(", ");
+        .collect::<Vec<String>>();
 
     let inspect_v = json!({
         "simpleaf_version" : version,
