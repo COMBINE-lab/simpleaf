@@ -82,6 +82,8 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
     let v: Value = prog_utils::inspect_af_home(af_home_path)?;
     let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
+    let mut gene_id_to_name_opt: Option<PathBuf> = None;
+
     // figure out what type of index we expect
     let index_type;
 
@@ -152,6 +154,17 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
                         let t2g_loc = index.join(t2g_val);
                         info!("found local t2g file at {}, will attempt to use this since none was provided explicitly", t2g_loc.display());
                         t2g_map = Some(t2g_loc);
+                    }
+                }
+
+                // if the user used simpleaf for index construction, then we also built the
+                // reference and populated the gene_id_to_name.tsv file.  See if we can grab
+                // that as well.
+                if let Some(index_parent) = index.parent() {
+                    // we are doing index_dir/../ref/gene_id_to_name.tsv
+                    let gene_name_path = index_parent.join("ref").join("gene_id_to_name.tsv");
+                    if gene_name_path.exists() && gene_name_path.is_file() {
+                        gene_id_to_name_opt = Some(gene_name_path);
                     }
                 }
             }
@@ -675,7 +688,7 @@ being used by simpleaf"#,
 
     info!("cmd : {:?}", alevin_quant_cmd);
 
-    let input_files = vec![gpl_output, t2g_map_file];
+    let input_files = vec![gpl_output.clone(), t2g_map_file];
     prog_utils::check_files_exist(&input_files)?;
 
     let quant_start = Instant::now();
@@ -708,6 +721,22 @@ being used by simpleaf"#,
         "map_outdir": map_output_string
     }
     });
+
+    // If we had a gene_id_to_name.tsv file handy, copy it over into the
+    // quantification directory.
+    if let Some(gene_name_path) = gene_id_to_name_opt {
+        let target_path = gpl_output.join("gene_id_to_name.tsv");
+        match std::fs::copy(&gene_name_path, &target_path) {
+            Ok(_) => {
+                info!("successfully copied the gene_name_to_id.tsv file into the quantification directory.");
+            }
+            Err(err) => {
+                warn!("could not successfully copy gene_id_to_name file from {:?} to {:?} because of {:?}",
+                gene_name_path, target_path, err
+            );
+            }
+        }
+    }
 
     // write the relevant info about
     // our run to file.
