@@ -44,7 +44,6 @@ jobs:
       - name: Test simpleaf
         shell: bash -l {0}
         run: |
-          ls /usr/share/miniconda/envs/anaconda-client-env/lib
           cd scripts
           chmod +x test_simpleaf.sh
           ./test_simpleaf.sh
