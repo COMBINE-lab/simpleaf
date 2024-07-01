@@ -77,6 +77,8 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::Inspect {} => inspect_simpleaf(crate_version!(), af_home_path),
 
+        Commands::RefreshProgInfo {} => refresh_prog_info(af_home_path),
+
         // if we are building the reference and indexing
         Commands::Index(index_opts) => build_ref_and_index(af_home_path.as_path(), index_opts),
 

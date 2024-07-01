@@ -82,6 +82,8 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
     let v: Value = prog_utils::inspect_af_home(af_home_path)?;
     let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
+    rp.issue_recommended_version_messages();
+
     let mut gene_id_to_name_opt: Option<PathBuf> = None;
 
     // figure out what type of index we expect

@@ -1,6 +1,9 @@
 pub mod inspect;
 pub use self::inspect::inspect_simpleaf;
 
+pub mod refresh;
+pub use self::refresh::refresh_prog_info;
+
 pub mod chemistry;
 pub use self::chemistry::add_chemistry;
 
@@ -473,6 +476,8 @@ pub enum Commands {
         #[arg(short, long)]
         alevin_fry: Option<PathBuf>,
     },
+    /// refreshes version information associated with programs used by simpleaf
+    RefreshProgInfo {},
     /// simpleaf workflow related command set
     Workflow(WorkflowOpts),
 }

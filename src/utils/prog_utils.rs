@@ -7,7 +7,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Once;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use which::which;
 
 // The below functions are taken from the [`execute`](https://crates.io/crates/execute)
@@ -168,6 +168,23 @@ pub struct ReqProgs {
     pub salmon: Option<ProgInfo>,
     pub piscem: Option<ProgInfo>,
     pub alevin_fry: Option<ProgInfo>,
+}
+
+impl ReqProgs {
+    pub fn issue_recommended_version_messages(&self) {
+        // Currently (07/01/2024) want to recommend piscem >= 0.9.0
+        if let Some(ref piscem_info) = self.piscem {
+            let desired_ver = VersionReq::parse(">=0.9.0").unwrap();
+            let current_ver = Version::parse(&piscem_info.version).unwrap();
+            if desired_ver.matches(&current_ver) {
+                // nothing to do here
+            } else {
+                warn!("It is recommended to use piscem version {}, but currently version {} is being used. \
+                       Please consider installing the latest version of piscem and setting simpleaf to use this \
+                       new version by running the `refresh-prog-info` command.", &desired_ver, &current_ver);
+            }
+        }
+    }
 }
 
 #[allow(dead_code)]
