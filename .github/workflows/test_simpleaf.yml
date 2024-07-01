@@ -36,7 +36,6 @@ jobs:
       - name: Install conda env
         uses: conda-incubator/setup-miniconda@v3
         with:
-          python-version: "3.10"
           mamba-version: "*"
           channels: conda-forge,default,bioconda
           channel-priority: true
