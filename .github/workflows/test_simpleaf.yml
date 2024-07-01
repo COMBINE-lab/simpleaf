@@ -44,10 +44,7 @@ jobs:
       - name: Test simpleaf
         shell: bash -l {0}
         run: |
-          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/share/miniconda/envs/anaconda-client-env/lib:/usr/share/miniconda/envs/anaconda-client-env/lib64
           ls /usr/share/miniconda/envs/anaconda-client-env/lib
-          conda activate anaconda-client-env
-          salmon -v
           cd scripts
           chmod +x test_simpleaf.sh
           ./test_simpleaf.sh
