@@ -44,7 +44,7 @@ jobs:
       - name: Test simpleaf
         shell: bash -l {0}
         run: |
-          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib:$CONDA_PREFIX/lib64
+          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/share/miniconda/envs/anaconda-client-env/lib:/usr/share/miniconda/envs/anaconda-client-env/lib64
           cd scripts
           chmod +x test_simpleaf.sh
           ./test_simpleaf.sh
