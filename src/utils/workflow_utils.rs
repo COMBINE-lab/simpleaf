@@ -171,7 +171,7 @@ be certain you intend to do this.",
     }
 
     // loop over every row (but the headers)
-    for (_i, row) in rdr.records().enumerate() {
+    for row in rdr.records() {
         let mut output_json = json!({});
         let mut patch_name = String::new();
         // for each key that we need to replace
@@ -856,7 +856,7 @@ impl WorkflowLog {
                 .to_owned();
 
             // push the latest run in the log into previous run, as we will update it
-            pr[latest_run_time_stamp] = latest_run.to_owned();
+            latest_run.clone_into(&mut pr[latest_run_time_stamp]);
             pr
         } else {
             json!({})

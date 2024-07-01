@@ -37,6 +37,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     // Read the JSON contents of the file as an instance of `User`.
     let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
+    rp.issue_recommended_version_messages();
     // we are building a custom spliced+intronic reference
     // make sure that a read length is available / was provided.
     // if fasta.is_some() && matches!(ref_type, ReferenceType::SplicedIntronic) && rlen.is_none() {

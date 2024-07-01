@@ -23,6 +23,7 @@ pub fn add_chemistry(af_home_path: PathBuf, add_chem_cmd: Commands) -> Result<()
                 .read(true)
                 .write(true)
                 .create(true)
+                .truncate(false) // can't truncate because we've not read it yet
                 .open(&custom_chem_p)
                 .with_context({
                     || {

@@ -82,6 +82,10 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
     let v: Value = prog_utils::inspect_af_home(af_home_path)?;
     let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
+    rp.issue_recommended_version_messages();
+
+    let mut gene_id_to_name_opt: Option<PathBuf> = None;
+
     // figure out what type of index we expect
     let index_type;
 
@@ -154,6 +158,17 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
                         t2g_map = Some(t2g_loc);
                     }
                 }
+
+                // if the user used simpleaf for index construction, then we also built the
+                // reference and populated the gene_id_to_name.tsv file.  See if we can grab
+                // that as well.
+                if let Some(index_parent) = index.parent() {
+                    // we are doing index_dir/../ref/gene_id_to_name.tsv
+                    let gene_name_path = index_parent.join("ref").join("gene_id_to_name.tsv");
+                    if gene_name_path.exists() && gene_name_path.is_file() {
+                        gene_id_to_name_opt = Some(gene_name_path);
+                    }
+                }
             }
             Ok(false) => {
                 // at this point, we have inferred that simpleaf wasn't
@@ -211,7 +226,10 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
 
     let chem = match opts.chemistry.as_str() {
         "10xv2" => Chemistry::TenxV2,
+        "10xv2-5p" => Chemistry::TenxV25P,
         "10xv3" => Chemistry::TenxV3,
+        "10xv3-5p" => Chemistry::TenxV35P,
+        "10xv4-3p" => Chemistry::TenxV43P,
         s => {
             if custom_chem_exists {
                 // parse the custom chemistry json file
@@ -247,10 +265,21 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
         ori = o;
     } else {
         // otherwise, this was not set explicitly. In that case
-        // if we have 10xv2 or 10xv3 chemistry, set ori = "fw"
+        // if we have 10xv2, 10xv3, or 10xv4 (3') chemistry, set ori = "fw"
+        // if we have 10xv2-5p or 10xv3-5p chemistry, set ori = "rc"
         // otherwise set ori = "both"
         match chem {
-            Chemistry::TenxV2 | Chemistry::TenxV3 => {
+            Chemistry::TenxV2 | Chemistry::TenxV3 | Chemistry::TenxV43P => {
+                ori = "fw".to_string();
+            }
+            Chemistry::TenxV25P | Chemistry::TenxV35P => {
+                // NOTE: This is because we assume the piscem encoding
+                // that is, these are treated as potentially paired-end protocols and
+                // we infer the orientation of the fragment = orientation of read 1.
+                // So, while the direction we want is the same as the 3' protocols
+                // above, we separate out the case statement here for clarity.
+                // Further, we may consider changing this or making it more robust if
+                // and when we propagate more information about paired-end mappings.
                 ori = "fw".to_string();
             }
             _ => {
@@ -287,7 +316,7 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
             // here, the -u flag is provided
             // but no file is provided, then the
             // inner option is None and we will try to get the permit list automatically if
-            // using 10xv2 or 10xv3
+            // using 10xv2, 10xv3, or 10xv4
 
             // check the chemistry
             let pl_res = af_utils::get_permit_if_absent(af_home_path, &chem)?;
@@ -589,7 +618,7 @@ being used by simpleaf"#,
     alevin_gpl_cmd.arg("-d").arg(&ori);
 
     // add the filter mode
-    af_utils::add_to_args(&filter_meth, &mut alevin_gpl_cmd);
+    filter_meth.add_to_args(&mut alevin_gpl_cmd);
 
     let gpl_output = opts.output.join("af_quant");
     alevin_gpl_cmd.arg("-o").arg(&gpl_output);
@@ -661,7 +690,7 @@ being used by simpleaf"#,
 
     info!("cmd : {:?}", alevin_quant_cmd);
 
-    let input_files = vec![gpl_output, t2g_map_file];
+    let input_files = vec![gpl_output.clone(), t2g_map_file];
     prog_utils::check_files_exist(&input_files)?;
 
     let quant_start = Instant::now();
@@ -694,6 +723,22 @@ being used by simpleaf"#,
         "map_outdir": map_output_string
     }
     });
+
+    // If we had a gene_id_to_name.tsv file handy, copy it over into the
+    // quantification directory.
+    if let Some(gene_name_path) = gene_id_to_name_opt {
+        let target_path = gpl_output.join("gene_id_to_name.tsv");
+        match std::fs::copy(&gene_name_path, &target_path) {
+            Ok(_) => {
+                info!("successfully copied the gene_name_to_id.tsv file into the quantification directory.");
+            }
+            Err(err) => {
+                warn!("could not successfully copy gene_id_to_name file from {:?} to {:?} because of {:?}",
+                gene_name_path, target_path, err
+            );
+            }
+        }
+    }
 
     // write the relevant info about
     // our run to file.

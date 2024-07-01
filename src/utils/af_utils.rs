@@ -3,7 +3,10 @@ use cmd_lib::run_fun;
 use phf::phf_map;
 use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonSeparateGeomDesc};
 use seq_geom_xform::{FifoXFormData, FragmentGeomDescExt};
+use std::fmt;
 use std::path::{Path, PathBuf};
+
+use strum_macros::EnumIter;
 use tracing::error;
 
 use crate::utils::prog_utils;
@@ -16,6 +19,12 @@ use crate::utils::prog_utils;
 static KNOWN_CHEM_MAP_SALMON: phf::Map<&'static str, &'static str> = phf_map! {
         "10xv2" => "--chromium",
         "10xv3" => "--chromiumV3",
+        // NOTE:: This is not a typo, the geometry for
+        // the v3 and v4 chemistry are identical. Nonetheless,
+        // we may want to still add an explicit flag to
+        // salmon and change this when we bump the minimum
+        // required version.
+        "10xv4-3p" => "--chromiumV3",
         "dropseq" => "--dropseq",
         "indropv2" => "--indropV2",
         "citeseq" => "--citeseq",
@@ -32,7 +41,10 @@ static KNOWN_CHEM_MAP_SALMON: phf::Map<&'static str, &'static str> = phf_map! {
 /// should be passed to use this chemistry.
 static KNOWN_CHEM_MAP_PISCEM: phf::Map<&'static str, &'static str> = phf_map! {
     "10xv2" => "chromium_v2",
-    "10xv3" => "chromium_v3"
+    "10xv2-5p" => "chromium_v2_5p",
+    "10xv3" => "chromium_v3",
+    "10xv3-5p" => "chromium_v3_5p",
+    "10xv4-3p" => "chromium_v4_3p"
 };
 
 /// The types of "mappers" we know about
@@ -53,6 +65,8 @@ pub enum FragmentTransformationType {
     TransformedIntoFifo(FifoXFormData),
 }
 
+/// The different alevin-fry supported methods for
+/// permit-list generation.
 #[derive(Debug, Clone)]
 pub enum CellFilterMethod {
     // cut off at this cell in
@@ -75,45 +89,75 @@ pub enum CellFilterMethod {
     KneeFinding,
 }
 
-pub fn add_to_args(fm: &CellFilterMethod, cmd: &mut std::process::Command) {
-    match fm {
-        CellFilterMethod::ForceCells(nc) => {
-            cmd.arg("--force-cells").arg(format!("{}", nc));
-        }
-        CellFilterMethod::ExpectCells(nc) => {
-            cmd.arg("--expect-cells").arg(format!("{}", nc));
-        }
-        CellFilterMethod::ExplicitList(l) => {
-            cmd.arg("--valid-bc").arg(l);
-        }
-        CellFilterMethod::UnfilteredExternalList(l, m) => {
-            cmd.arg("--unfiltered-pl")
-                .arg(l)
-                .arg("--min-reads")
-                .arg(format!("{}", m));
-        }
-        CellFilterMethod::KneeFinding => {
-            cmd.arg("--knee-distance");
+impl CellFilterMethod {
+    /// How a [CellFilterMethod] should add itself to an
+    /// `alevin-fry` command.
+    pub fn add_to_args(&self, cmd: &mut std::process::Command) {
+        match self {
+            CellFilterMethod::ForceCells(nc) => {
+                cmd.arg("--force-cells").arg(format!("{}", nc));
+            }
+            CellFilterMethod::ExpectCells(nc) => {
+                cmd.arg("--expect-cells").arg(format!("{}", nc));
+            }
+            CellFilterMethod::ExplicitList(l) => {
+                cmd.arg("--valid-bc").arg(l);
+            }
+            CellFilterMethod::UnfilteredExternalList(l, m) => {
+                cmd.arg("--unfiltered-pl")
+                    .arg(l)
+                    .arg("--min-reads")
+                    .arg(format!("{}", m));
+            }
+            CellFilterMethod::KneeFinding => {
+                cmd.arg("--knee-distance");
+            }
         }
     }
 }
 
+/// The builtin geometry types that have special handling to
+/// reduce necessary options in the common case, as well as the
+/// `Other` varant that covers custom geometries.
+#[derive(EnumIter, PartialEq)]
 pub enum Chemistry {
     TenxV2,
+    TenxV25P,
     TenxV3,
+    TenxV35P,
+    TenxV43P,
     Other(String),
 }
 
+/// `&str` representations of the different geometries.
 impl Chemistry {
     pub fn as_str(&self) -> &str {
         match self {
             Chemistry::TenxV2 => "10xv2",
+            Chemistry::TenxV25P => "10xv2-5p",
             Chemistry::TenxV3 => "10xv3",
+            Chemistry::TenxV35P => "10xv3-5p",
+            Chemistry::TenxV43P => "10xv4-3p",
             Chemistry::Other(s) => s.as_str(),
         }
     }
 }
 
+/// [Debug] representations of the different geometries.
+impl fmt::Debug for Chemistry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Chemistry::TenxV2 => write!(f, "10xv2"),
+            Chemistry::TenxV25P => write!(f, "10xv2-5p"),
+            Chemistry::TenxV3 => write!(f, "10xv3"),
+            Chemistry::TenxV35P => write!(f, "10xv3-5p"),
+            Chemistry::TenxV43P => write!(f, "10xv4-3p"),
+            Chemistry::Other(s) => write!(f, "custom({})", s.as_str()),
+        }
+    }
+}
+
+/// The result of requesting a permit list
 pub enum PermitListResult {
     DownloadSuccessful(PathBuf),
     AlreadyPresent(PathBuf),
@@ -176,8 +220,27 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
                 return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
             }
         }
+        Chemistry::TenxV25P => {
+            // v2 and v2-5' use the same permit list
+            let chem_file = "10x_v2_permit.txt";
+            if odir.join(chem_file).exists() {
+                return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+            }
+        }
         Chemistry::TenxV3 => {
             let chem_file = "10x_v3_permit.txt";
+            if odir.join(chem_file).exists() {
+                return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+            }
+        }
+        Chemistry::TenxV35P => {
+            let chem_file = "10x_v3_5p_permit.txt";
+            if odir.join(chem_file).exists() {
+                return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+            }
+        }
+        Chemistry::TenxV43P => {
+            let chem_file = "10x_v4_3p_permit.txt";
             if odir.join(chem_file).exists() {
                 return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
             }
@@ -190,15 +253,24 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
     // the file doesn't exist, so get the json file that gives us
     // the chemistry name to permit list URL mapping.
     let permit_dict_url = "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/permit_list_info.json";
-    let permit_dict: serde_json::Value = minreq::get(permit_dict_url)
-        .send()?
-        .json::<serde_json::Value>()?;
+    let request_result = minreq::get(permit_dict_url).send().inspect_err( |err| {
+        error!("Could not obtain the permit list metadata from {}; encountered {:?}.", &permit_dict_url, &err);
+        error!("This may be a transient failure, or could be because the client is lacking a network connection. \
+        In the latter case, please consider manually providing the appropriate permit list file directly \
+        via the command line to avoid an attempt by simpleaf to automatically obtain it.");
+    })?;
+    let permit_dict: serde_json::Value = request_result.json::<serde_json::Value>()?;
     let opt_chem_file: Option<String>;
     let opt_dl_url: Option<String>;
     // parse the JSON appropriately based on the chemistry we have
     match chem {
-        Chemistry::TenxV2 => {
-            if let Some(d) = permit_dict.get("10xv2") {
+        Chemistry::TenxV2
+        | Chemistry::TenxV25P
+        | Chemistry::TenxV3
+        | Chemistry::TenxV35P
+        | Chemistry::TenxV43P => {
+            let chem_key = chem.as_str();
+            if let Some(d) = permit_dict.get(chem_key) {
                 opt_chem_file = d
                     .get("filename")
                     .expect("value for filename field should be a string")
@@ -211,27 +283,8 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
                     .map(|url| url.to_string());
             } else {
                 bail!(
-                    "could not obtain \"10xv2\" key from the fetched permit_dict at {} = {:?}",
-                    permit_dict_url,
-                    permit_dict
-                )
-            }
-        }
-        Chemistry::TenxV3 => {
-            if let Some(d) = permit_dict.get("10xv3") {
-                opt_chem_file = d
-                    .get("filename")
-                    .expect("value for filename field should be a string")
-                    .as_str()
-                    .map(|cf| cf.to_string());
-                opt_dl_url = d
-                    .get("url")
-                    .expect("value for url field should be a string")
-                    .as_str()
-                    .map(|url| url.to_string());
-            } else {
-                bail!(
-                    "could not obtain \"10xv3\" key from the fetched permit_dict at {} = {:?}",
+                    "could not obtain \"{}\" key from the fetched permit_dict at {} = {:?}",
+                    chem_key,
                     permit_dict_url,
                     permit_dict
                 )
