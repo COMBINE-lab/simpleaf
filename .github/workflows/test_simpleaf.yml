@@ -34,7 +34,7 @@ jobs:
         run: cargo build --verbose --release
 
       - name: Install conda env
-        uses: conda-incubator/setup-miniconda@v2.2.0
+        uses: conda-incubator/setup-miniconda@v3
         with:
           python-version: "3.10"
           mamba-version: "*"
