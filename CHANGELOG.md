@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.16.2...v0.17.0) (2024-07-01)
+
+
+### Features
+
+* Add refresh-prog-info subcommand ([8597635](https://github.com/COMBINE-lab/simpleaf/commit/8597635edde981f3afab367d008e39d157858ba3))
+* copy over gene_id_to_names.tsv to quant directory ([8597635](https://github.com/COMBINE-lab/simpleaf/commit/8597635edde981f3afab367d008e39d157858ba3))
+* support new piscem geometry flags ([8597635](https://github.com/COMBINE-lab/simpleaf/commit/8597635edde981f3afab367d008e39d157858ba3))
+
 ## [0.16.2](https://github.com/COMBINE-lab/simpleaf/compare/v0.16.1...v0.16.2) (2024-02-01)
 
 
