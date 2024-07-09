@@ -9,4 +9,4 @@ dependencies:
   - libboost>=1.85.0
   - salmon>=1.10.3
   - alevin-fry>=0.8.2
-  - piscem>=0.9.0
+  - piscem>=0.10.0

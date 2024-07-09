@@ -45,6 +45,7 @@ That's it for initial notes.  Use the menu below to learn more about the `simple
    inspect-command.rst
    index-command.rst
    quant-command.rst
+   refresh-prog-info.rst
    workflow.rst
    LICENSE.rst
 
