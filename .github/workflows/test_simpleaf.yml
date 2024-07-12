@@ -46,6 +46,7 @@ jobs:
         run: |
           cd scripts
           chmod +x test_simpleaf.sh
+          ulimit -n 2048
           ./test_simpleaf.sh
       - name: Check job status
         run: echo "This job's status is ${{ job.status }}."
