@@ -1,6 +1,6 @@
 [package]
 name = "simpleaf"
-version = "0.17.1"
+version = "0.17.2"
 edition = "2021"
 authors = [
   "Rob Patro <rob@cs.umd.edu>",
@@ -36,13 +36,13 @@ seq_geom_parser = { git = "https://github.com/COMBINE-lab/seq_geom_parser", bran
 seq_geom_xform = { git = "https://github.com/COMBINE-lab/seq_geom_xform", branch = "dev", version = "0.4.0" }
 roers = { git = "https://github.com/COMBINE-lab/roers", branch = "main", version = "0.3.0" }
 anyhow = "^1.0"
-clap = { version = "4.5.8", features = ["derive", "cargo", "deprecated", "wrap_help", "help", "usage", "error-context"] } 
+clap = { version = "4.5.9", features = ["derive", "cargo", "deprecated", "wrap_help", "help", "usage", "error-context"] } 
 cmd_lib = "^1.9.4"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", default-features = true, features = ["env-filter"] }
 semver = "^1.0.23"
-serde = {version = "1.0.203", features = ["derive"]}
-serde_json = "1.0.119"
+serde = {version = "1.0.204", features = ["derive"]}
+serde_json = "1.0.120"
 time = {version = "^0.3.36", features = ["macros", "formatting", "parsing", "serde", "serde-human-readable"]}
 which = "^6.0.1"
 jrsonnet-evaluator = "0.5.0-pre95"
