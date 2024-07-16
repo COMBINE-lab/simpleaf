@@ -8,6 +8,16 @@ The `simpleaf` program can be installed from source, from [crates.io](https://cr
 
 Check out the detailed documentation [here](https://simpleaf.readthedocs.io/en/latest/), and read on below to learn more about the background and motivation behind `simpleaf`.
 
+## Note
+
+- **Please ensure that the user file handle limit is set to 2048**.  This may already be set (and should be fine already on OSX), but you can accomplish this by executing:
+
+```
+$ ulimit -n 2048
+```
+
+before running `simpleaf`.
+
 ## Introduction & motivation 
 
  * **Q(s)** : What is the purpose of `simpleaf`? Isn't its functionality covered by the constituent programs (e.g. `salmon`, `alevin-fry`, `piscem`, etc.)? Can't I make those tools do the same things `simpleaf` does?
