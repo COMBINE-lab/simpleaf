@@ -18,6 +18,8 @@ $ ulimit -n 2048
 
 before running `simpleaf`.
 
+- **The pre-compiled executables (including those installed via bioconda)** require that the underlying processor support [the BMI2 instruction set](https://en.wikipedia.org/wiki/X86_Bit_manipulation_instruction_set). If you are running on a CPU from ~2012 or earlier, these instructions may not be available and the pre-compiled executable may not work. In that case, you should compile from source using the `NO_BMI2` environement variable (i.e. `NO_BMI2=TRUE cargo build --release`).
+
 ## Introduction & motivation 
 
  * **Q(s)** : What is the purpose of `simpleaf`? Isn't its functionality covered by the constituent programs (e.g. `salmon`, `alevin-fry`, `piscem`, etc.)? Can't I make those tools do the same things `simpleaf` does?
