@@ -196,7 +196,9 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
             .arg("-s")
             .arg(&ref_seq)
             .arg("--seed")
-            .arg(opts.hash_seed.to_string());
+            .arg(opts.hash_seed.to_string())
+            .arg("-w")
+            .arg(opts.work_dir);
 
         // if the user requested to overwrite, then pass this option
         if opts.overwrite {
