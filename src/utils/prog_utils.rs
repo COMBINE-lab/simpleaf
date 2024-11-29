@@ -6,7 +6,7 @@ use std::env;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Once;
+use std::sync::LazyLock;
 use tracing::{debug, error, info, warn};
 use which::which;
 
@@ -17,17 +17,10 @@ use which::which;
 #[cfg(unix)]
 #[inline]
 pub fn shell<S: AsRef<OsStr>>(cmd: S) -> Command {
-    static START: Once = Once::new();
-    static mut SHELL: Option<OsString> = None;
-
-    let shell = unsafe {
-        START.call_once(|| {
-            SHELL = Some(env::var_os("SHELL").unwrap_or_else(|| OsString::from(String::from("sh"))))
-        });
-
-        SHELL.as_ref().unwrap()
-    };
-
+    static SHELL: LazyLock<OsString> = LazyLock::new(|| {
+        env::var_os("SHELL").unwrap_or_else(|| OsString::from(String::from("sh")))
+    });
+    let shell = &*SHELL;
     let mut command = Command::new(shell);
 
     command.arg("-c");
