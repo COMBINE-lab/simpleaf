@@ -8,6 +8,16 @@ The `simpleaf` program can be installed from source, from [crates.io](https://cr
 
 Check out the detailed documentation [here](https://simpleaf.readthedocs.io/en/latest/), and read on below to learn more about the background and motivation behind `simpleaf`.
 
+## Note(s)
+
+- **Please ensure that the user file handle limit is set to 2048**.  This may already be set (and should be fine already on OSX), but you can accomplish this by executing:
+
+```
+$ ulimit -n 2048
+```
+
+- **If you are using `simpleaf` to build an index on a compute cluster or a machine with a networked file system** (NFS), be sure to set the **output** directory and the **working** directory to be on a **local** disk (e.g. a scratch or temp disk not mounted via the networked file system). The index construction creates many small files to control memory usage, this represents an adversarial scenario for networked file systems, and running the index construction using an NSF attached location as the working directory may slow the process down incredibly (by an order of magnitude or more).  In such a scenario, it is recommended to set the working and output directories to be on local disk, and then to simply copy the resulting index over to the desired location on the NFS if you will be accessing it from multiple nodes.
+
 ## Introduction & motivation 
 
  * **Q(s)** : What is the purpose of `simpleaf`? Isn't its functionality covered by the constituent programs (e.g. `salmon`, `alevin-fry`, `piscem`, etc.)? Can't I make those tools do the same things `simpleaf` does?
