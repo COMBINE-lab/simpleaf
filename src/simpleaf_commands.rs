@@ -418,7 +418,7 @@ pub struct IndexOpts {
         display_order = 5
     )]
     pub work_dir: PathBuf,
-    
+
     /// path to output directory (will be created if it doesn't exist)
     #[arg(short, long, display_order = 1)]
     pub output: PathBuf,
