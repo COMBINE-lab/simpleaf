@@ -1,6 +1,6 @@
 [package]
 name = "simpleaf"
-version = "0.17.2"
+version = "0.17.3"
 edition = "2021"
 authors = ["Rob Patro <rob@cs.umd.edu>", "Dongze He <dhe17@umd.edu>"]
 description = "A rust framework to make using alevin-fry even simpler."
