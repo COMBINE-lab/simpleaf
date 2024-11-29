@@ -327,18 +327,18 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
 /// description.
 ///
 /// * If the `fragment_geometry_str` representes a "complex" geometry (i.e. a description with
-/// an anchor or one or more bounded range parts), then the provided reads are passed through
-/// the transformation function, and the fragment library is "normalized" to one with fixed
-/// length geometry.  The new reads are written to a pair of fifos, and the mapper is provided
-/// with the corresponding simplified geometry description.  In this case, the function returns
-/// Ok(FragmentTransformationType::TransformedIntoFifo(FifoXFormData)), where the FifoXFormData
-/// contains the names of the fifos being populated and a `JoinHandle` for the thread performing
-/// the transformation.
+///   an anchor or one or more bounded range parts), then the provided reads are passed through
+///   the transformation function, and the fragment library is "normalized" to one with fixed
+///   length geometry.  The new reads are written to a pair of fifos, and the mapper is provided
+///   with the corresponding simplified geometry description.  In this case, the function returns
+///   Ok(FragmentTransformationType::TransformedIntoFifo(FifoXFormData)), where the FifoXFormData
+///   contains the names of the fifos being populated and a `JoinHandle` for the thread performing
+///   the transformation.
 ///
 /// * If the `fragment_geometry_str` represents a "simple" geometry, then the provided reads are
-/// given directly to the underlying mapper and `fragment_geometry_str` is transformed into the
-/// appropriate argument format for `mapper_type`.  In this case, the function returns
-/// Ok(FragmentTransformationType::Identity).
+///   given directly to the underlying mapper and `fragment_geometry_str` is transformed into the
+///   appropriate argument format for `mapper_type`.  In this case, the function returns
+///   Ok(FragmentTransformationType::Identity).
 ///
 /// In any case, if an error occurs, this function returns an anyhow::Error.
 pub fn add_or_transform_fragment_library(

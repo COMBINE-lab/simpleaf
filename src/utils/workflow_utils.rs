@@ -1641,10 +1641,10 @@ mod tests {
                     assert_eq!(quant_opts.index, Some(PathBuf::from("index_output/index")));
                     assert_eq!(quant_opts.reads1, Some(vec![PathBuf::from("reads1.fastq")]));
                     assert_eq!(quant_opts.reads2, Some(vec![PathBuf::from("reads2.fastq")]));
-                    assert_eq!(quant_opts.use_selective_alignment, true);
-                    assert_eq!(quant_opts.use_piscem, true);
+                    assert!(quant_opts.use_selective_alignment);
+                    assert!(quant_opts.use_piscem);
                     assert_eq!(quant_opts.map_dir, None);
-                    assert_eq!(quant_opts.knee, false);
+                    assert!(!quant_opts.knee);
                     assert_eq!(quant_opts.unfiltered_pl, Some(None));
                     assert_eq!(quant_opts.forced_cells, None);
                     assert_eq!(quant_opts.explicit_pl, None);
