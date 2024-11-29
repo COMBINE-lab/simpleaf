@@ -172,9 +172,9 @@ pub struct ReqProgs {
 
 impl ReqProgs {
     pub fn issue_recommended_version_messages(&self) {
-        // Currently (07/08/2024) want to recommend piscem >= 0.10.0
+        // Currently (11/29/2024) want to recommend piscem >= 0.11.0
         if let Some(ref piscem_info) = self.piscem {
-            let desired_ver = VersionReq::parse(">=0.10.0").unwrap();
+            let desired_ver = VersionReq::parse(">=0.11.0").unwrap();
             let current_ver = Version::parse(&piscem_info.version).unwrap();
             if desired_ver.matches(&current_ver) {
                 // nothing to do here

@@ -409,6 +409,16 @@ pub struct IndexOpts {
     )]
     pub hash_seed: u64,
 
+    /// working directory where temporary files should be placed
+    #[arg(
+        long = "work-dir",
+        conflicts_with = "use_piscem",
+        help_heading = "Piscem Index Options",
+        default_value = "./workdir.noindex",
+        display_order = 5
+    )]
+    pub work_dir: PathBuf,
+    
     /// path to output directory (will be created if it doesn't exist)
     #[arg(short, long, display_order = 1)]
     pub output: PathBuf,

@@ -2,10 +2,7 @@
 name = "simpleaf"
 version = "0.17.2"
 edition = "2021"
-authors = [
-  "Rob Patro <rob@cs.umd.edu>",
-  "Dongze He <dhe17@umd.edu>",
-]
+authors = ["Rob Patro <rob@cs.umd.edu>", "Dongze He <dhe17@umd.edu>"]
 description = "A rust framework to make using alevin-fry even simpler."
 license-file = "LICENSE"
 readme = "README.md"
@@ -36,15 +33,31 @@ seq_geom_parser = { git = "https://github.com/COMBINE-lab/seq_geom_parser", bran
 seq_geom_xform = { git = "https://github.com/COMBINE-lab/seq_geom_xform", branch = "dev", version = "0.4.0" }
 roers = { git = "https://github.com/COMBINE-lab/roers", branch = "main", version = "0.3.0" }
 anyhow = "^1.0"
-clap = { version = "4.5.9", features = ["derive", "cargo", "deprecated", "wrap_help", "help", "usage", "error-context"] } 
-cmd_lib = "^1.9.4"
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", default-features = true, features = ["env-filter"] }
+clap = { version = "4.5.21", features = [
+  "derive",
+  "cargo",
+  "deprecated",
+  "wrap_help",
+  "help",
+  "usage",
+  "error-context",
+] }
+cmd_lib = "^1.9.5"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.18", default-features = true, features = [
+  "env-filter",
+] }
 semver = "^1.0.23"
-serde = {version = "1.0.204", features = ["derive"]}
-serde_json = "1.0.120"
-time = {version = "^0.3.36", features = ["macros", "formatting", "parsing", "serde", "serde-human-readable"]}
-which = "^6.0.1"
+serde = { version = "1.0.215", features = ["derive"] }
+serde_json = "1.0.133"
+time = { version = "^0.3.36", features = [
+  "macros",
+  "formatting",
+  "parsing",
+  "serde",
+  "serde-human-readable",
+] }
+which = "^6.0.3"
 jrsonnet-evaluator = "0.5.0-pre95"
 jrsonnet-cli = "0.5.0-pre95"
 jrsonnet-parser = "0.5.0-pre95"
@@ -52,8 +65,13 @@ thiserror = "1.0"
 phf = { version = "0.11.2", features = ["macros"] }
 chrono = "0.4.38"
 tabled = "0.15.0"
-csv = "1.3.0"
-minreq = { version = "2.11.2", features = ["serde", "serde_json", "https", "json-using-serde"] }
+csv = "1.3.1"
+minreq = { version = "2.12.0", features = [
+  "serde",
+  "serde_json",
+  "https",
+  "json-using-serde",
+] }
 strum = { version = "0.26.3", features = ["derive", "phf"] }
 strum_macros = "0.26.4"
 
@@ -69,17 +87,23 @@ lto = "thin"
 # Config for 'cargo dist'
 [workspace.metadata.dist]
 # The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
-cargo-dist-version = "0.18.0"
+cargo-dist-version = "0.21.1"
 # CI backends to support
 ci = "github"
 # The installers to generate for each app
 installers = ["shell"]
 # Target platforms to build apps for (Rust target-triple syntax)
-targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
-# Publish jobs to run in CI
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+]
+# Which actions to run on pull requests
 pr-run-mode = "plan"
 # Whether to install an updater program
 install-updater = true
+# Path that installers should place binaries in
+install-path = "CARGO_HOME"
 
 [workspace.metadata.dist.github-custom-runners]
 aarch64-apple-darwin = "macos-14"
