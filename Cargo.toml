@@ -12,6 +12,7 @@ homepage = "https://github.com/COMBINE-lab/simpleaf"
 include = [
   "/src/*.rs",
   "/src/utils/*.rs",
+  "/src/atac/*.rs",
   "/src/simpleaf_commands/*.rs",
   "/Cargo.toml",
   "/Cargo.lock",
