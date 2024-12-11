@@ -492,7 +492,7 @@ pub enum Commands {
     RefreshProgInfo {},
     /// run a sub-command dealing with atac-seq data
     #[command(subcommand)]
-    Atac(crate::atac::commands::AtacCommand),
+    Atac(AtacCommand),
     /// simpleaf workflow related command set
     Workflow(WorkflowOpts),
 }
