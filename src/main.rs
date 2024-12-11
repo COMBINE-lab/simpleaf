@@ -12,6 +12,7 @@ mod utils;
 // live in this module.
 mod simpleaf_commands;
 use simpleaf_commands::*;
+mod atac;
 
 /// simplifying alevin-fry workflows
 #[derive(Debug, Parser)]
@@ -84,6 +85,8 @@ fn main() -> anyhow::Result<()> {
 
         // if we are running mapping and quantification
         Commands::Quant(map_quant_opts) => map_and_quant(af_home_path.as_path(), map_quant_opts),
+
+        Commands::Atac(_) => todo!(),
 
         Commands::Workflow(workflow_args) => {
             let workflow_cmd = workflow_args.command;

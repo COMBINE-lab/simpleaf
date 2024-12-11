@@ -21,6 +21,8 @@ pub use self::workflow::{
     get_wokflow, list_workflows, patch_manifest_or_template, refresh_protocol_estuary, run_workflow,
 };
 
+pub use crate::atac::commands::AtacCommand;
+
 use clap::{builder::ArgPredicate, ArgAction, ArgGroup, Args, Subcommand};
 use std::path::PathBuf;
 
@@ -488,6 +490,9 @@ pub enum Commands {
     },
     /// refreshes version information associated with programs used by simpleaf
     RefreshProgInfo {},
+    /// run a sub-command dealing with atac-seq data
+    #[command(subcommand)]
+    Atac(crate::atac::commands::AtacCommand),
     /// simpleaf workflow related command set
     Workflow(WorkflowOpts),
 }
