@@ -8,30 +8,38 @@ use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
 fn push_advanced_piscem_options(
-    piscem_quant_cmd: &mut std::process::Command,
+    piscem_map_cmd: &mut std::process::Command,
     opts: &ProcessOpts,
 ) -> anyhow::Result<()> {
     if opts.ignore_ambig_hits {
-        piscem_quant_cmd.arg("--ignore-ambig-hits");
+        piscem_map_cmd.arg("--ignore-ambig-hits");
     } else {
-        piscem_quant_cmd
+        piscem_map_cmd
             .arg("--max-ec-card")
             .arg(format!("{}", opts.max_ec_card));
     }
 
     if opts.no_poison {
-        piscem_quant_cmd.arg("--no-poison");
+        piscem_map_cmd.arg("--no-poison");
     }
 
-    piscem_quant_cmd
+    if opts.no_tn5_shift {
+        piscem_map_cmd.arg("--no-tn5-shift");
+    }
+
+    if opts.check_kmer_orphan {
+        piscem_map_cmd.arg("--check-kmer-orphan");
+    }
+
+    piscem_map_cmd
         .arg("--max-hit-occ")
         .arg(format!("{}", opts.max_hit_occ));
 
-    piscem_quant_cmd
+    piscem_map_cmd
         .arg("--max-hit-occ-recover")
         .arg(format!("{}", opts.max_hit_occ_recover));
 
-    piscem_quant_cmd
+    piscem_map_cmd
         .arg("--max-read-occ")
         .arg(format!("{}", opts.max_read_occ));
 
@@ -123,6 +131,14 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
         .as_ref()
         .expect("piscem program info should be properly set.");
 
+    match prog_utils::check_version_constraints(
+        "piscem",
+        ">=0.11.0, <1.0.0",
+        &piscem_prog_info.version,
+    ) {
+        Ok(piscem_ver) => info!("found piscem version {:#?}, proceeding", piscem_ver),
+        Err(e) => return Err(e),
+    }
     // figure out what type of index we expect
     let index_base;
 
@@ -203,6 +219,12 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
         .arg("--index")
         .arg(index_path);
 
+    piscem_map_cmd
+        .arg("--bin-size")
+        .arg(format!("{}", opts.bin_size))
+        .arg("--bin-overlap")
+        .arg(format!("{}", opts.bin_overlap));
+
     // if the user requested more threads than can be used
     let mut threads = opts.threads;
     if let Ok(max_threads_usize) = std::thread::available_parallelism() {
@@ -226,7 +248,7 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
         .arg(&map_output);
 
     // add either the paired-end or single-end read arguments
-    add_read_args(&mut piscem_map_cmd, &opts)?;
+    add_read_args(&mut piscem_map_cmd, opts)?;
 
     // if the user is requesting a mapping option that required
     // piscem version >= 0.7.0, ensure we have that
@@ -246,5 +268,7 @@ being used by simpleaf"#,
             &piscem_prog_info.version
         );
     }
+
+    info!("map command : {:#?}", piscem_map_cmd);
     Ok(())
 }
