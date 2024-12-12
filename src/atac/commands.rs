@@ -208,6 +208,14 @@ pub struct ProcessOpts {
     #[arg(short, long, help_heading = "Permit List Generation Options")]
     pub unfiltered_pl: Option<Option<PathBuf>>,
 
+    /// minimum read count threshold for a cell to be retained/processed; only used with --unfiltered-pl
+    #[arg(
+        long,
+        help_heading = "Permit List Generation Options",
+        default_value_t = 10
+    )]
+    pub min_reads: usize,
+
     /// skip checking of the equivalence classes of k-mers that were too
     /// ambiguous to be otherwise considered (passing this flag can speed
     /// up mapping slightly, but may reduce specificity)
