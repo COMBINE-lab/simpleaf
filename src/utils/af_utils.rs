@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use strum_macros::EnumIter;
 use tracing::error;
 
+use crate::atac::commands::AtacChemistry;
 use crate::utils::prog_utils;
 //use ureq;
 //use minreq::Response;
@@ -119,8 +120,17 @@ impl CellFilterMethod {
 /// The builtin geometry types that have special handling to
 /// reduce necessary options in the common case, as well as the
 /// `Other` varant that covers custom geometries.
-#[derive(EnumIter, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Chemistry {
+    Rna(RnaChemistry),
+    Atac(AtacChemistry),
+}
+
+/// The builtin geometry types that have special handling to
+/// reduce necessary options in the common case, as well as the
+/// `Other` varant that covers custom geometries.
+#[derive(EnumIter, Clone, PartialEq)]
+pub enum RnaChemistry {
     TenxV2,
     TenxV25P,
     TenxV3,
@@ -133,26 +143,35 @@ pub enum Chemistry {
 impl Chemistry {
     pub fn as_str(&self) -> &str {
         match self {
-            Chemistry::TenxV2 => "10xv2",
-            Chemistry::TenxV25P => "10xv2-5p",
-            Chemistry::TenxV3 => "10xv3",
-            Chemistry::TenxV35P => "10xv3-5p",
-            Chemistry::TenxV43P => "10xv4-3p",
-            Chemistry::Other(s) => s.as_str(),
+            Chemistry::Rna(rna_chem) => rna_chem.as_str(),
+            Chemistry::Atac(atac_chem) => atac_chem.as_str(),
+        }
+    }
+}
+
+impl RnaChemistry {
+    pub fn as_str(&self) -> &str {
+        match self {
+            RnaChemistry::TenxV2 => "10xv2",
+            RnaChemistry::TenxV25P => "10xv2-5p",
+            RnaChemistry::TenxV3 => "10xv3",
+            RnaChemistry::TenxV35P => "10xv3-5p",
+            RnaChemistry::TenxV43P => "10xv4-3p",
+            RnaChemistry::Other(s) => s.as_str(),
         }
     }
 }
 
 /// [Debug] representations of the different geometries.
-impl fmt::Debug for Chemistry {
+impl fmt::Debug for RnaChemistry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Chemistry::TenxV2 => write!(f, "10xv2"),
-            Chemistry::TenxV25P => write!(f, "10xv2-5p"),
-            Chemistry::TenxV3 => write!(f, "10xv3"),
-            Chemistry::TenxV35P => write!(f, "10xv3-5p"),
-            Chemistry::TenxV43P => write!(f, "10xv4-3p"),
-            Chemistry::Other(s) => write!(f, "custom({})", s.as_str()),
+            RnaChemistry::TenxV2 => write!(f, "10xv2"),
+            RnaChemistry::TenxV25P => write!(f, "10xv2-5p"),
+            RnaChemistry::TenxV3 => write!(f, "10xv3"),
+            RnaChemistry::TenxV35P => write!(f, "10xv3-5p"),
+            RnaChemistry::TenxV43P => write!(f, "10xv4-3p"),
+            RnaChemistry::Other(s) => write!(f, "custom({})", s.as_str()),
         }
     }
 }
@@ -214,40 +233,56 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
     // check if the file already exists
     let odir = af_home.join("plist");
     match chem {
-        Chemistry::TenxV2 => {
-            let chem_file = "10x_v2_permit.txt";
-            if odir.join(chem_file).exists() {
-                return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+        Chemistry::Rna(rna_chem) => match rna_chem {
+            RnaChemistry::TenxV2 => {
+                let chem_file = "10x_v2_permit.txt";
+                if odir.join(chem_file).exists() {
+                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+                }
             }
-        }
-        Chemistry::TenxV25P => {
-            // v2 and v2-5' use the same permit list
-            let chem_file = "10x_v2_permit.txt";
-            if odir.join(chem_file).exists() {
-                return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+            RnaChemistry::TenxV25P => {
+                // v2 and v2-5' use the same permit list
+                let chem_file = "10x_v2_permit.txt";
+                if odir.join(chem_file).exists() {
+                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+                }
             }
-        }
-        Chemistry::TenxV3 => {
-            let chem_file = "10x_v3_permit.txt";
-            if odir.join(chem_file).exists() {
-                return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+            RnaChemistry::TenxV3 => {
+                let chem_file = "10x_v3_permit.txt";
+                if odir.join(chem_file).exists() {
+                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+                }
             }
-        }
-        Chemistry::TenxV35P => {
-            let chem_file = "10x_v3_5p_permit.txt";
-            if odir.join(chem_file).exists() {
-                return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+            RnaChemistry::TenxV35P => {
+                let chem_file = "10x_v3_5p_permit.txt";
+                if odir.join(chem_file).exists() {
+                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+                }
             }
-        }
-        Chemistry::TenxV43P => {
-            let chem_file = "10x_v4_3p_permit.txt";
-            if odir.join(chem_file).exists() {
-                return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+            RnaChemistry::TenxV43P => {
+                let chem_file = "10x_v4_3p_permit.txt";
+                if odir.join(chem_file).exists() {
+                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+                }
             }
-        }
-        _ => {
-            return Ok(PermitListResult::UnregisteredChemistry);
-        }
+            _ => {
+                return Ok(PermitListResult::UnregisteredChemistry);
+            }
+        },
+        Chemistry::Atac(atac_chem) => match atac_chem {
+            AtacChemistry::TenxV11 | AtacChemistry::TenxV2 => {
+                let chem_file = "10x_atac_v1_v11_v2.txt";
+                if odir.join(chem_file).exists() {
+                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+                }
+            }
+            AtacChemistry::TenxMulti => {
+                let chem_file = "10x_arc_atac_v1.txt";
+                if odir.join(chem_file).exists() {
+                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
+                }
+            }
+        },
     }
 
     // the file doesn't exist, so get the json file that gives us
@@ -264,35 +299,61 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
     let opt_dl_url: Option<String>;
     // parse the JSON appropriately based on the chemistry we have
     match chem {
-        Chemistry::TenxV2
-        | Chemistry::TenxV25P
-        | Chemistry::TenxV3
-        | Chemistry::TenxV35P
-        | Chemistry::TenxV43P => {
-            let chem_key = chem.as_str();
-            if let Some(d) = permit_dict.get(chem_key) {
-                opt_chem_file = d
-                    .get("filename")
-                    .expect("value for filename field should be a string")
-                    .as_str()
-                    .map(|cf| cf.to_string());
-                opt_dl_url = d
-                    .get("url")
-                    .expect("value for url field should be a string")
-                    .as_str()
-                    .map(|url| url.to_string());
-            } else {
-                bail!(
-                    "could not obtain \"{}\" key from the fetched permit_dict at {} = {:?}",
-                    chem_key,
-                    permit_dict_url,
-                    permit_dict
-                )
+        Chemistry::Rna(rna_chem) => match rna_chem {
+            RnaChemistry::TenxV2
+            | RnaChemistry::TenxV25P
+            | RnaChemistry::TenxV3
+            | RnaChemistry::TenxV35P
+            | RnaChemistry::TenxV43P => {
+                let chem_key = chem.as_str();
+                if let Some(d) = permit_dict.get(chem_key) {
+                    opt_chem_file = d
+                        .get("filename")
+                        .expect("value for filename field should be a string")
+                        .as_str()
+                        .map(|cf| cf.to_string());
+                    opt_dl_url = d
+                        .get("url")
+                        .expect("value for url field should be a string")
+                        .as_str()
+                        .map(|url| url.to_string());
+                } else {
+                    bail!(
+                        "could not obtain \"{}\" key from the fetched permit_dict at {} = {:?}",
+                        chem_key,
+                        permit_dict_url,
+                        permit_dict
+                    )
+                }
             }
-        }
-        _ => {
-            return Ok(PermitListResult::UnregisteredChemistry);
-        }
+            _ => {
+                return Ok(PermitListResult::UnregisteredChemistry);
+            }
+        },
+        Chemistry::Atac(atac_chem) => match atac_chem {
+            AtacChemistry::TenxV11 | AtacChemistry::TenxV2 | AtacChemistry::TenxMulti => {
+                let chem_key = atac_chem.resource_key();
+                if let Some(d) = permit_dict.get(&chem_key) {
+                    opt_chem_file = d
+                        .get("filename")
+                        .expect("value for filename field should be a string")
+                        .as_str()
+                        .map(|cf| cf.to_string());
+                    opt_dl_url = d
+                        .get("url")
+                        .expect("value for url field should be a string")
+                        .as_str()
+                        .map(|url| url.to_string());
+                } else {
+                    bail!(
+                        "could not obtain \"{}\" key from the fetched permit_dict at {} = {:?}",
+                        chem_key,
+                        permit_dict_url,
+                        permit_dict
+                    )
+                }
+            }
+        },
     }
 
     // actually download the permit list if we need it and don't have it.

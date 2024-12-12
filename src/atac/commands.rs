@@ -1,7 +1,83 @@
 use crate::atac::defaults::DefaultAtacParams;
 use crate::defaults::{DefaultMappingParams, DefaultParams};
-use clap::{builder::ArgPredicate, Args, Subcommand};
+use clap::{
+    builder::{ArgPredicate, PossibleValue},
+    Args, Subcommand, ValueEnum,
+};
+use std::fmt;
 use std::path::PathBuf;
+use strum_macros::EnumIter;
+
+#[derive(EnumIter, Copy, Clone, Eq, PartialEq)]
+pub enum AtacChemistry {
+    TenxV11,
+    TenxV2,
+    TenxMulti,
+}
+
+/// [Debug] representations of the different geometries.
+impl fmt::Debug for AtacChemistry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AtacChemistry::TenxV11 => write!(f, "10xv1"),
+            AtacChemistry::TenxV2 => write!(f, "10xv2"),
+            AtacChemistry::TenxMulti => write!(f, "10xmulti"),
+        }
+    }
+}
+
+impl AtacChemistry {
+    #[allow(dead_code)]
+    pub fn possible_values() -> impl Iterator<Item = PossibleValue> {
+        Self::value_variants()
+            .iter()
+            .filter_map(clap::ValueEnum::to_possible_value)
+    }
+
+    pub fn resource_key(&self) -> String {
+        match self {
+            Self::TenxV11 => String::from("10x-atac-v1"),
+            Self::TenxV2 => String::from("10x-atac-v1"),
+            Self::TenxMulti => String::from("10x-arc-atac-v1"),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            AtacChemistry::TenxV11 => "10x-atac-v1",
+            AtacChemistry::TenxV2 => "10x-atac-v2",
+            AtacChemistry::TenxMulti => "10x-arc-atac-v1",
+        }
+    }
+}
+
+impl std::str::FromStr for AtacChemistry {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "10xv1" => Ok(AtacChemistry::TenxV11),
+            "10xv11" => Ok(AtacChemistry::TenxV11),
+            "10xv2" => Ok(AtacChemistry::TenxV2),
+            "10xmulti" => Ok(AtacChemistry::TenxMulti),
+            t => Err(format!("invalid atac chemistry : {t}")),
+        }
+    }
+}
+
+impl clap::ValueEnum for AtacChemistry {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::TenxV11, Self::TenxV2, Self::TenxMulti]
+    }
+
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(match self {
+            Self::TenxV11 => PossibleValue::new("10x-v1"),
+            Self::TenxV2 => PossibleValue::new("10x-v2"),
+            Self::TenxMulti => PossibleValue::new("10x-multi"),
+        })
+    }
+}
 
 #[derive(Debug, Subcommand)]
 pub enum AtacCommand {
@@ -106,6 +182,10 @@ pub struct ProcessOpts {
     )]
     pub barcode_reads: Vec<PathBuf>,
 
+    /// chemistry
+    #[arg(short, long)]
+    pub chemistry: AtacChemistry,
+
     /// the length of the barcode read from which to extract the barcode
     /// (usually this is the length of the entire read, and reads shorter
     /// than this will be discarded)
@@ -124,10 +204,18 @@ pub struct ProcessOpts {
     #[arg(short, long, default_value_t = 16, display_order = 5)]
     pub threads: u32,
 
+    /// use unfiltered permit list
+    #[arg(short, long, help_heading = "Permit List Generation Options")]
+    pub unfiltered_pl: Option<Option<PathBuf>>,
+
     /// skip checking of the equivalence classes of k-mers that were too
     /// ambiguous to be otherwise considered (passing this flag can speed
     /// up mapping slightly, but may reduce specificity)
-    #[arg(long, help_heading = "Advanced Options")]
+    #[arg(
+        long,
+        conflicts_with = "max_ec_card",
+        help_heading = "Advanced Options"
+    )]
     pub ignore_ambig_hits: bool,
 
     /// do not consider poison k-mers, even if the underlying index
@@ -165,7 +253,7 @@ pub struct ProcessOpts {
     /// determines the maximum cardinality equivalence class (number of
     /// (txp, orientation status) pairs) to examine (cannot be used with
     /// --ignore-ambig-hits)
-    #[arg(long, default_value_t = DefaultParams::MAX_EC_CARD, help_heading = "Advanced Options")]
+    #[arg(long, default_value_t = DefaultParams::MAX_EC_CARD, conflicts_with = "ignore_ambig_hits", help_heading = "Advanced Options")]
     pub max_ec_card: u32,
 
     /// in the first pass, consider only k-mers having <= --max-hit-occ

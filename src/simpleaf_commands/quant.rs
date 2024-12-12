@@ -1,6 +1,7 @@
 use crate::utils::af_utils;
 use crate::utils::af_utils::{
     CellFilterMethod, Chemistry, FragmentTransformationType, MapperType, PermitListResult,
+    RnaChemistry,
 };
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::{CommandVerbosityLevel, ReqProgs};
@@ -225,11 +226,11 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
     let custom_chem_exists = custom_chem_p.is_file();
 
     let chem = match opts.chemistry.as_str() {
-        "10xv2" => Chemistry::TenxV2,
-        "10xv2-5p" => Chemistry::TenxV25P,
-        "10xv3" => Chemistry::TenxV3,
-        "10xv3-5p" => Chemistry::TenxV35P,
-        "10xv4-3p" => Chemistry::TenxV43P,
+        "10xv2" => RnaChemistry::TenxV2,
+        "10xv2-5p" => RnaChemistry::TenxV25P,
+        "10xv3" => RnaChemistry::TenxV3,
+        "10xv3-5p" => RnaChemistry::TenxV35P,
+        "10xv4-3p" => RnaChemistry::TenxV43P,
         s => {
             if custom_chem_exists {
                 // parse the custom chemistry json file
@@ -246,14 +247,14 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
                 let rchem = match v[s.to_string()].as_str() {
                     Some(chem_str) => {
                         info!("custom chemistry {} maps to geometry {}", s, &chem_str);
-                        Chemistry::Other(chem_str.to_string())
+                        RnaChemistry::Other(chem_str.to_string())
                     }
-                    None => Chemistry::Other(s.to_string()),
+                    None => RnaChemistry::Other(s.to_string()),
                 };
                 rchem
             } else {
                 // pass along whatever the user gave us
-                Chemistry::Other(s.to_string())
+                RnaChemistry::Other(s.to_string())
             }
         }
     };
@@ -269,10 +270,10 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
         // if we have 10xv2-5p or 10xv3-5p chemistry, set ori = "rc"
         // otherwise set ori = "both"
         match chem {
-            Chemistry::TenxV2 | Chemistry::TenxV3 | Chemistry::TenxV43P => {
+            RnaChemistry::TenxV2 | RnaChemistry::TenxV3 | RnaChemistry::TenxV43P => {
                 ori = "fw".to_string();
             }
-            Chemistry::TenxV25P | Chemistry::TenxV35P => {
+            RnaChemistry::TenxV25P | RnaChemistry::TenxV35P => {
                 // NOTE: This is because we assume the piscem encoding
                 // that is, these are treated as potentially paired-end protocols and
                 // we infer the orientation of the fragment = orientation of read 1.
@@ -319,7 +320,8 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
             // using 10xv2, 10xv3, or 10xv4
 
             // check the chemistry
-            let pl_res = af_utils::get_permit_if_absent(af_home_path, &chem)?;
+            let rc = Chemistry::Rna(chem.clone());
+            let pl_res = af_utils::get_permit_if_absent(af_home_path, &rc)?;
             let min_cells = opts.min_reads;
             match pl_res {
                 PermitListResult::DownloadSuccessful(p) | PermitListResult::AlreadyPresent(p) => {

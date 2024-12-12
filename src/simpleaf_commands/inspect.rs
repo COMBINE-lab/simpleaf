@@ -1,4 +1,5 @@
-use crate::utils::{af_utils::Chemistry, prog_utils::*};
+use crate::atac::commands::AtacChemistry;
+use crate::utils::{af_utils::RnaChemistry, prog_utils::*};
 use strum::IntoEnumIterator;
 
 use anyhow::{Context, Result};
@@ -31,15 +32,21 @@ pub fn inspect_simpleaf(version: &str, af_home_path: PathBuf) -> Result<()> {
         json!("")
     };
 
-    let chem_list = Chemistry::iter()
+    let rna_chem_list = RnaChemistry::iter()
         .map(|c| format!("{:?}", c))
+        .collect::<Vec<String>>();
+    let atac_chem_list = AtacChemistry::iter()
+        .map(|x| format!("{:?}", x))
         .collect::<Vec<String>>();
 
     let inspect_v = json!({
         "simpleaf_version" : version,
         "simpleaf_info" : v,
         "custom_chem_info" : chem_info_value,
-        "builtin_chemistries" : chem_list
+        "builtin_chemistries" : {
+            "rna" : rna_chem_list,
+            "atac" : atac_chem_list,
+        }
     });
     println!("{}", serde_json::to_string_pretty(&inspect_v)?);
     Ok(())
