@@ -6,6 +6,7 @@ use clap::{crate_version, Parser};
 use std::env;
 use std::path::PathBuf;
 
+mod defaults;
 mod utils;
 
 // all of the relevant commands

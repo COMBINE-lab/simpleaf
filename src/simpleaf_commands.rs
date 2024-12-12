@@ -22,6 +22,7 @@ pub use self::workflow::{
 };
 
 pub use crate::atac::commands::AtacCommand;
+pub use crate::defaults::{DefaultMappingParams, DefaultParams};
 
 use clap::{builder::ArgPredicate, ArgAction, ArgGroup, Args, Subcommand};
 use std::path::PathBuf;
@@ -43,24 +44,6 @@ fn ref_type_parser(s: &str) -> Result<ReferenceType, String> {
         "spliced+unspliced" | "spliceu" => Ok(ReferenceType::SplicedUnspliced),
         t => Err(format!("Do not recognize reference type {}", t)),
     }
-}
-
-trait DefaultMappingParams {
-    const MAX_EC_CARD: u32;
-    const MAX_HIT_OCC: u32;
-    const MAX_HIT_OCC_RECOVER: u32;
-    const MAX_READ_OCC: u32;
-    const SKIPPING_STRATEGY: &'static str;
-}
-
-struct DefaultParams;
-
-impl DefaultMappingParams for DefaultParams {
-    const MAX_EC_CARD: u32 = 4096;
-    const MAX_HIT_OCC: u32 = 256;
-    const MAX_HIT_OCC_RECOVER: u32 = 1024;
-    const MAX_READ_OCC: u32 = 2500;
-    const SKIPPING_STRATEGY: &'static str = "permissive";
 }
 
 #[derive(Args, Clone, Debug)]
