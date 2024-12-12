@@ -1,6 +1,6 @@
 use crate::atac::defaults::DefaultAtacParams;
 use crate::defaults::{DefaultMappingParams, DefaultParams};
-use clap::{builder::ArgPredicate, ArgAction, ArgGroup, Args, Subcommand};
+use clap::{builder::ArgPredicate, Args, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Debug, Subcommand)]
@@ -90,6 +90,8 @@ pub struct ProcessOpts {
         help_heading = "Mapping Options",
         value_delimiter = ',',
         conflicts_with_all =  ["reads1", "reads2"],
+        required_unless_present = "reads1",
+        required_unless_present = "reads2",
         requires = "barcode-reads"
     )]
     pub reads: Option<Vec<PathBuf>>,
