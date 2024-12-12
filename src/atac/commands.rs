@@ -50,4 +50,53 @@ pub struct IndexOpts {
 /// (deduplicated) BED file generation.
 #[derive(Args, Clone, Debug)]
 #[command(arg_required_else_help = true)]
-pub struct ProcessOpts {}
+pub struct ProcessOpts {
+    /// path to index
+    #[arg(short = 'i', long = "index", help_heading = "Mapping Options")]
+    pub index: PathBuf,
+
+    /// comma-separated list of paths to read 1 files
+    #[arg(
+        short = '1',
+        long = "reads1",
+        help_heading = "Mapping Options",
+        value_delimiter = ',',
+        requires = "barcode-reads",
+        requires_ifs([
+                (ArgPredicate::IsPresent, "reads2") 
+        ]),
+    )]
+    pub reads1: Option<Vec<PathBuf>>,
+
+    /// comma-separated list of paths to read 2 files
+    #[arg(
+        short = '2',
+        long = "reads2",
+        help_heading = "Mapping Options",
+        value_delimiter = ',',
+        requires = "barcode-reads",
+        requires_ifs([
+                (ArgPredicate::IsPresent, "reads1") 
+        ]),
+    )]
+    pub reads2: Option<Vec<PathBuf>>,
+
+    #[arg(
+        short = 'r',
+        long = "reads",
+        help_heading = "Mapping Options",
+        value_delimiter = ',',
+        conflicts_with_all =  ["reads1", "reads2"],
+        requires = "barcode-reads"
+    )]
+    pub reads: Option<Vec<PathBuf>>,
+
+    #[arg(
+        short = 'b',
+        long = "barcode-reads",
+        help_heading = "Mapping Options",
+        value_delimiter = ',',
+        required = true
+    )]
+    pub barcode_reads: Vec<PathBuf>,
+}
