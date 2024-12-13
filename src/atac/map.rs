@@ -379,11 +379,28 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
         );
     }
 
+    let map_file = opts.output.join("af_map");
     let mut af_gpl = std::process::Command::new(format!("{}", &af_prog_info.exe_path.display()));
     af_gpl
         .arg("atac")
         .arg("generate-permit-list")
-        .arg("--input");
+        .arg("--input")
+        .arg(map_file);
+
+    let out_dir = opts.output.join("af_process");
+    af_gpl.arg("--output-dir").arg(out_dir);
+
+    if let Some(fm) = filter_meth_opt {
+        match fm {
+            af_utils::CellFilterMethod::UnfilteredExternalList(p, _mc) => {
+                af_gpl.arg("-u").arg(p);
+                af_gpl.arg("--min-reads").arg(format!("{}", opts.min_reads));
+            }
+            _ => bail!("unsupported filter method in atac-seq process."),
+        }
+    } else {
+        bail!("unsupported filter method in atac-seq process.");
+    }
 
     // if the user requested more threads than can be used
     let mut threads = opts.threads;
@@ -399,5 +416,25 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
         }
     }
     af_gpl.arg("--threads").arg(format!("{}", threads));
+
+    info!("gpl command : {:#?}", af_gpl);
+
+    let af_gpl_start = Instant::now();
+    let af_gpl_proc_out = prog_utils::execute_command(&mut af_gpl, CommandVerbosityLevel::Quiet)
+        .expect("could not execute [atac::af_gpl]");
+    let af_gpl_duration = af_gpl_start.elapsed();
+
+    if !af_gpl_proc_out.status.success() {
+        bail!(
+            "atac::gpl failed with exit status {:?}",
+            af_gpl_proc_out.status
+        );
+    } else {
+        info!(
+            "permit list generation completed successfully in {:#?}",
+            af_gpl_duration
+        );
+    }
+
     Ok(())
 }
