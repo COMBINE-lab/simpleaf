@@ -1,12 +1,12 @@
 use crate::atac::commands::ProcessOpts;
 use crate::utils::{
-    af_utils, prog_utils,
+    prog_utils,
     prog_utils::{CommandVerbosityLevel, ReqProgs},
 };
 use anyhow;
 use anyhow::{bail, Context};
 use serde_json::{json, Value};
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tracing::{info, warn};
@@ -138,7 +138,7 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
         ">=0.11.0, <1.0.0",
         &piscem_prog_info.version,
     ) {
-        Ok(piscem_ver) => info!("found piscem version {:#?}, proceeding", piscem_ver),
+        Ok(piscem_ver) => info!("found piscem version {:#}, proceeding", piscem_ver),
         Err(e) => return Err(e),
     }
     // figure out what type of index we expect
@@ -319,6 +319,7 @@ being used by simpleaf"#,
     )
     .with_context(|| format!("could not write {}", af_process_info_file.display()))?;
 
+    info!("successfully mapped reads and generated output RAD file.");
     Ok(())
 }
 
@@ -343,7 +344,7 @@ fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
         ">=0.11.0, <1.0.0",
         &af_prog_info.version,
     ) {
-        Ok(af_ver) => info!("found alevin-fry version {:#?}, proceeding", af_ver),
+        Ok(af_ver) => info!("found alevin-fry version {:#}, proceeding", af_ver),
         Err(e) => return Err(e),
     }
 
@@ -413,6 +414,7 @@ fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
     )
     .with_context(|| format!("could not write {}", af_process_info_file.display()))?;
 
+    info!("successfully sorted and deduplicated records and created the output BED file.");
     Ok(())
 }
 
@@ -431,11 +433,11 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
         ">=0.11.0, <1.0.0",
         &af_prog_info.version,
     ) {
-        Ok(af_ver) => info!("found alevin-fry version {:#?}, proceeding", af_ver),
+        Ok(af_ver) => info!("found alevin-fry version {:#}, proceeding", af_ver),
         Err(e) => return Err(e),
     }
 
-    let mut filter_meth_opt = None;
+    let filter_meth_opt;
 
     use crate::utils::af_utils;
     // based on the filtering method
@@ -468,7 +470,7 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
 
             // check the chemistry
             let rc = af_utils::Chemistry::Atac(opts.chemistry);
-            let pl_res = af_utils::get_permit_if_absent(&af_home_path, &rc)?;
+            let pl_res = af_utils::get_permit_if_absent(af_home_path, &rc)?;
             let min_cells = opts.min_reads;
             match pl_res {
                 af_utils::PermitListResult::DownloadSuccessful(p)
@@ -573,5 +575,6 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
     )
     .with_context(|| format!("could not write {}", af_process_info_file.display()))?;
 
+    info!("successfully performed cell barcode detection and correction.");
     Ok(())
 }

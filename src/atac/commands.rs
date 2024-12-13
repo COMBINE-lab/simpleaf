@@ -114,6 +114,34 @@ pub struct IndexOpts {
     )]
     pub minimizer_length: u32,
 
+    /// seed value to use in SSHash index construction
+    /// (try changing this in the rare event index build fails).
+    #[arg(long = "seed", default_value_t = 1, display_order = 7)]
+    pub hash_seed: u64,
+
+    /// overwrite existing files if the output directory is already populated
+    #[arg(long, display_order = 8)]
+    pub overwrite: bool,
+
+    /// working directory where temporary files should be placed
+    #[arg(
+        long = "work-dir",
+        default_value = "./workdir.noindex",
+        display_order = 6
+    )]
+    pub work_dir: PathBuf,
+
+    /// path to (optional) decoy sequence used to insert poison
+    /// k-mer information into the index (only if using piscem >= 0.7).
+    #[arg(
+        long,
+        conflicts_with = "use_piscem",
+        help_heading = "Piscem Index Options",
+        value_delimiter = ',',
+        display_order = 5
+    )]
+    pub decoy_paths: Option<Vec<PathBuf>>,
+
     /// target sequences (provide target sequences directly; avoid expanded reference construction)
     #[arg(short, long, display_order = 1)]
     pub input: PathBuf,
