@@ -35,6 +35,10 @@ fn push_advanced_piscem_options(
         piscem_map_cmd.arg("--check-kmer-orphan");
     }
 
+    if opts.use_chr {
+        piscem_map_cmd.arg("--use-chr");
+    }
+
     piscem_map_cmd
         .arg("--max-hit-occ")
         .arg(opts.max_hit_occ.to_string());
