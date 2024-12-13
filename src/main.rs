@@ -87,12 +87,16 @@ fn main() -> anyhow::Result<()> {
         // if we are running mapping and quantification
         Commands::Quant(map_quant_opts) => map_and_quant(af_home_path.as_path(), map_quant_opts),
 
+        // indexing for ATAC-seq data
         Commands::Atac(AtacCommand::Index(index_opts)) => {
             atac::index::piscem_index(af_home_path.as_path(), &index_opts)
         }
 
+        // processing for ATAC-seq data
         Commands::Atac(AtacCommand::Process(process_opts)) => {
+            // first we map the reads
             atac::process::map_reads(af_home_path.as_path(), &process_opts)?;
+            // then we generate the permit list and sort the file
             atac::process::gen_bed(af_home_path.as_path(), &process_opts)
         }
 

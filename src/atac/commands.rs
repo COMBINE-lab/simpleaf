@@ -80,6 +80,7 @@ impl clap::ValueEnum for AtacChemistry {
 }
 
 #[derive(Debug, Subcommand)]
+#[command(arg_required_else_help = true)]
 pub enum AtacCommand {
     Index(IndexOpts),
     Process(ProcessOpts),
@@ -166,7 +167,7 @@ pub struct ProcessOpts {
         long = "reads1",
         help_heading = "Mapping Options",
         value_delimiter = ',',
-        requires = "barcode-reads",
+        requires = "barcode_reads",
         requires_ifs([
                 (ArgPredicate::IsPresent, "reads2") 
         ]),
@@ -179,7 +180,7 @@ pub struct ProcessOpts {
         long = "reads2",
         help_heading = "Mapping Options",
         value_delimiter = ',',
-        requires = "barcode-reads",
+        requires = "barcode_reads",
         requires_ifs([
                 (ArgPredicate::IsPresent, "reads1") 
         ]),
@@ -195,7 +196,7 @@ pub struct ProcessOpts {
         conflicts_with_all =  ["reads1", "reads2"],
         required_unless_present = "reads1",
         required_unless_present = "reads2",
-        requires = "barcode-reads"
+        requires = "barcode_reads"
     )]
     pub reads: Option<Vec<PathBuf>>,
 
