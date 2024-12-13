@@ -1,11 +1,11 @@
 use crate::atac::commands::ProcessOpts;
 use crate::utils::{
-    prog_utils,
+    af_utils, prog_utils,
     prog_utils::{CommandVerbosityLevel, ReqProgs},
 };
 use anyhow;
 use anyhow::{bail, Context};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -278,7 +278,8 @@ being used by simpleaf"#,
         );
     }
 
-    info!("map command : {:#?}", piscem_map_cmd);
+    let map_cmd_string = prog_utils::get_cmd_line_string(&piscem_map_cmd);
+    info!("map command : {}", map_cmd_string);
 
     let map_start = Instant::now();
     let map_proc_out =
@@ -295,11 +296,123 @@ being used by simpleaf"#,
         info!("mapping completed successfully in {:#?}", map_duration);
     }
 
+    let af_process_info_file = opts.output.join("simpleaf_process_log.json");
+    let af_process_info = json!({
+        "time_info" : {
+        "map_time" : map_duration.as_secs_f64(),
+    },
+        "cmd_info" : {
+        "map_cmd" : map_cmd_string,
+    },
+        "map_info" : {
+        "mapper" : "piscem",
+        "map_cmd" : map_cmd_string,
+        "map_outdir": map_output
+    }
+    });
+
+    // write the relevant info about
+    // our run to file.
+    std::fs::write(
+        &af_process_info_file,
+        serde_json::to_string_pretty(&af_process_info).unwrap(),
+    )
+    .with_context(|| format!("could not write {}", af_process_info_file.display()))?;
+
     Ok(())
 }
 
 pub(crate) fn gen_bed(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
     af_gpl(af_home_path, opts)?;
+    af_sort(af_home_path, opts)?;
+    Ok(())
+}
+
+fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
+    // Read the JSON contents of the file as an instance of `User`.
+    let v: Value = prog_utils::inspect_af_home(af_home_path)?;
+    let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+
+    let af_prog_info = rp
+        .alevin_fry
+        .as_ref()
+        .expect("alevin-fry program info should be properly set.");
+
+    match prog_utils::check_version_constraints(
+        "alevin-fry",
+        ">=0.11.0, <1.0.0",
+        &af_prog_info.version,
+    ) {
+        Ok(af_ver) => info!("found alevin-fry version {:#?}, proceeding", af_ver),
+        Err(e) => return Err(e),
+    }
+
+    let gpl_dir = opts.output.join("af_process");
+    let rad_dir = opts.output.join("af_map");
+    let mut af_sort = std::process::Command::new(format!("{}", &af_prog_info.exe_path.display()));
+    af_sort
+        .arg("atac")
+        .arg("sort")
+        .arg("--input-dir")
+        .arg(gpl_dir)
+        .arg("--rad-dir")
+        .arg(rad_dir);
+
+    // if the user requested more threads than can be used
+    let mut threads = opts.threads;
+    if let Ok(max_threads_usize) = std::thread::available_parallelism() {
+        let max_threads = max_threads_usize.get() as u32;
+        if threads > max_threads {
+            warn!(
+                "The maximum available parallelism is {}, but {} threads were requested.",
+                max_threads, threads
+            );
+            warn!("setting number of threads to {}", max_threads);
+            threads = max_threads;
+        }
+    }
+    af_sort.arg("--threads").arg(format!("{}", threads));
+
+    let sort_cmd_string = prog_utils::get_cmd_line_string(&af_sort);
+    info!("sort command : {}", sort_cmd_string);
+
+    let af_sort_start = Instant::now();
+    let af_sort_proc_out = prog_utils::execute_command(&mut af_sort, CommandVerbosityLevel::Quiet)
+        .expect("could not execute [atac::af_sort]");
+    let af_sort_duration = af_sort_start.elapsed();
+
+    if !af_sort_proc_out.status.success() {
+        bail!(
+            "atac::sort failed with exit status {:?}",
+            af_sort_proc_out.status
+        );
+    } else {
+        info!("sort completed successfully in {:#?}", af_sort_duration);
+    }
+
+    let af_process_info_file = opts.output.join("simpleaf_process_log.json");
+    let json_file = std::fs::File::open(af_process_info_file.clone())
+        .with_context(|| format!("couldn't open file {}", af_process_info_file.display()))?;
+    let json_reader = BufReader::new(json_file);
+    let mut af_process_info: serde_json::Value = serde_json::from_reader(json_reader)
+        .with_context(|| {
+            format!(
+                "couldn't parse JSON content from {}",
+                af_process_info_file.display()
+            )
+        })?;
+
+    af_process_info["time_info"]["sort_time"] = json!(af_sort_duration.as_secs_f64());
+    af_process_info["cmd_info"]["sort_cmd"] = json!(sort_cmd_string);
+
+    // write the relevant info about
+    // our run to file.
+    std::fs::write(
+        &af_process_info_file,
+        serde_json::to_string_pretty(&af_process_info).unwrap(),
+    )
+    .with_context(|| format!("could not write {}", af_process_info_file.display()))?;
+
     Ok(())
 }
 
@@ -417,7 +530,8 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
     }
     af_gpl.arg("--threads").arg(format!("{}", threads));
 
-    info!("gpl command : {:#?}", af_gpl);
+    let gpl_cmd_string = prog_utils::get_cmd_line_string(&af_gpl);
+    info!("gpl command : {}", gpl_cmd_string);
 
     let af_gpl_start = Instant::now();
     let af_gpl_proc_out = prog_utils::execute_command(&mut af_gpl, CommandVerbosityLevel::Quiet)
@@ -435,6 +549,29 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
             af_gpl_duration
         );
     }
+
+    let af_process_info_file = opts.output.join("simpleaf_process_log.json");
+    let json_file = std::fs::File::open(af_process_info_file.clone())
+        .with_context(|| format!("couldn't open file {}", af_process_info_file.display()))?;
+    let json_reader = BufReader::new(json_file);
+    let mut af_process_info: serde_json::Value = serde_json::from_reader(json_reader)
+        .with_context(|| {
+            format!(
+                "couldn't parse JSON content from {}",
+                af_process_info_file.display()
+            )
+        })?;
+
+    af_process_info["time_info"]["gpl_time"] = json!(af_gpl_duration.as_secs_f64());
+    af_process_info["cmd_info"]["gpl_cmd"] = json!(gpl_cmd_string);
+
+    // write the relevant info about
+    // our run to file.
+    std::fs::write(
+        &af_process_info_file,
+        serde_json::to_string_pretty(&af_process_info).unwrap(),
+    )
+    .with_context(|| format!("could not write {}", af_process_info_file.display()))?;
 
     Ok(())
 }
