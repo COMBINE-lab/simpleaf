@@ -92,8 +92,8 @@ fn main() -> anyhow::Result<()> {
         }
 
         Commands::Atac(AtacCommand::Process(process_opts)) => {
-            atac::map::map_reads(af_home_path.as_path(), &process_opts)?;
-            atac::map::gen_bed(af_home_path.as_path(), &process_opts)
+            atac::process::map_reads(af_home_path.as_path(), &process_opts)?;
+            atac::process::gen_bed(af_home_path.as_path(), &process_opts)
         }
 
         Commands::Workflow(workflow_args) => {
