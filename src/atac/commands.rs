@@ -135,7 +135,6 @@ pub struct IndexOpts {
     /// k-mer information into the index (only if using piscem >= 0.7).
     #[arg(
         long,
-        conflicts_with = "use_piscem",
         help_heading = "Piscem Index Options",
         value_delimiter = ',',
         display_order = 5

@@ -20,7 +20,7 @@ fn push_advanced_piscem_options(
     } else {
         piscem_map_cmd
             .arg("--max-ec-card")
-            .arg(format!("{}", opts.max_ec_card));
+            .arg(opts.max_ec_card.to_string());
     }
 
     if opts.no_poison {
@@ -37,15 +37,15 @@ fn push_advanced_piscem_options(
 
     piscem_map_cmd
         .arg("--max-hit-occ")
-        .arg(format!("{}", opts.max_hit_occ));
+        .arg(opts.max_hit_occ.to_string());
 
     piscem_map_cmd
         .arg("--max-hit-occ-recover")
-        .arg(format!("{}", opts.max_hit_occ_recover));
+        .arg(opts.max_hit_occ_recover.to_string());
 
     piscem_map_cmd
         .arg("--max-read-occ")
-        .arg(format!("{}", opts.max_read_occ));
+        .arg(opts.max_read_occ.to_string());
 
     Ok(())
 }
@@ -230,9 +230,9 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
 
     piscem_map_cmd
         .arg("--bin-size")
-        .arg(format!("{}", opts.bin_size))
+        .arg(opts.bin_size.to_string())
         .arg("--bin-overlap")
-        .arg(format!("{}", opts.bin_overlap));
+        .arg(opts.bin_overlap.to_string());
 
     // if the user requested more threads than can be used
     let mut threads = opts.threads;
@@ -252,7 +252,7 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
     let map_output = opts.output.join("af_map");
     piscem_map_cmd
         .arg("--threads")
-        .arg(format!("{}", threads))
+        .arg(threads.to_string())
         .arg("-o")
         .arg(&map_output);
 
@@ -372,7 +372,7 @@ fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
             threads = max_threads;
         }
     }
-    af_sort.arg("--threads").arg(format!("{}", threads));
+    af_sort.arg("--threads").arg(threads.to_string());
 
     let sort_cmd_string = prog_utils::get_cmd_line_string(&af_sort);
     info!("sort command : {}", sort_cmd_string);
