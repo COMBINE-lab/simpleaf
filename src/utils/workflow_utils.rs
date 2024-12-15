@@ -1293,8 +1293,7 @@ pub fn get_protocol_estuary<T: AsRef<Path>>(
             run_cmd!(mkdir -p $pe_dir)?;
         }
 
-        let out_fname = pe_zip_file.to_string_lossy().to_string();
-        prog_utils::download_to_file(dl_url, &out_fname)?;
+        prog_utils::download_to_file(dl_url, &pe_zip_file)?;
 
         // unzip
         let mut unzip_cmd = std::process::Command::new("unzip");

@@ -1,9 +1,11 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use cmd_lib::run_fun;
 use phf::phf_map;
 use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonSeparateGeomDesc};
 use seq_geom_xform::{FifoXFormData, FragmentGeomDescExt};
+use serde_json::Value;
 use std::fmt;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 use strum_macros::EnumIter;
@@ -363,7 +365,7 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
         } else {
             run_fun!(mkdir -p $odir)?;
 
-            let output_file = odir.join(&chem_file).to_string_lossy().to_string();
+            let output_file = odir.join(&chem_file);
             prog_utils::download_to_file(dl_url, &output_file)?;
 
             Ok(PermitListResult::DownloadSuccessful(odir.join(&chem_file)))
@@ -511,4 +513,37 @@ pub fn add_or_transform_fragment_library(
             Ok(FragmentTransformationType::Identity)
         }
     }
+}
+
+static CUSTOM_CHEM_URL: &str =
+    "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/custom_chem.json";
+
+/// This function gets the custom chemistry from the `af_home_path` directory.
+/// If the file doesn't exist, it downloads the file from the `url` and saves it
+pub fn get_custom_chem_path(af_home_path: &Path) -> Result<PathBuf> {
+    // check if the custom_chemistries.json file exists
+    let custom_chem_p = af_home_path.join("custom_chemistries.json");
+    let custom_chem_exists = custom_chem_p.is_file();
+
+    if custom_chem_exists {
+        // test if the file is good
+        let custom_chem_file = std::fs::File::open(&custom_chem_p).with_context(|| {
+            format!(
+                "Couldn't open the existing custom chemistry file. Please consider delete it from {}",
+                custom_chem_p.display()
+            )
+        })?;
+        let custom_chem_reader = BufReader::new(custom_chem_file);
+        let _v: Value = serde_json::from_reader(custom_chem_reader).with_context(|| {
+            format!(
+                "Couldn't parse the existing custom chemistry file. Please consider delete it from {}",
+                custom_chem_p.display()
+            )
+        })?;
+    } else {
+        // download the custom_chemistries.json file if needed
+        let custom_chem_url = CUSTOM_CHEM_URL;
+        prog_utils::download_to_file(custom_chem_url, &custom_chem_p)?;
+    }
+    Ok(custom_chem_p)
 }

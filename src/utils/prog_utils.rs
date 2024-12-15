@@ -4,6 +4,7 @@ use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::ffi::{OsStr, OsString};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::LazyLock;
@@ -41,12 +42,13 @@ pub fn shell<S: AsRef<OsStr>>(cmd: S) -> Command {
     command
 }
 
-pub fn download_to_file<T: AsRef<str>>(url: T, filename: &str) -> Result<()> {
+pub fn download_to_file<T: AsRef<str>>(url: T, file_path: &Path) -> Result<()> {
     let url = url.as_ref();
 
     debug!(
         "Downloading file from {} and writing to file {}",
-        url, filename
+        url,
+        file_path.display()
     );
 
     let request = minreq::get(url).with_timeout(120).send()?;
@@ -67,8 +69,7 @@ pub fn download_to_file<T: AsRef<str>>(url: T, filename: &str) -> Result<()> {
         }
     }
 
-    let mut out_file = std::fs::File::create(filename)?;
-    use std::io::Write;
+    let mut out_file = std::fs::File::create(file_path)?;
     out_file.write_all(request.as_bytes())?;
     Ok(())
 }

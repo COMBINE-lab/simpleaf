@@ -17,7 +17,7 @@ pub fn add_chemistry(af_home_path: PathBuf, add_chem_cmd: Commands) -> Result<()
             let _cg = extract_geometry(&geometry)?;
 
             // do we have a custom chemistry file
-            let custom_chem_p = af_home_path.join("custom_chemistries.json");
+            let custom_chem_p = get_custom_chem_path(&af_home_path)?;
 
             let mut custom_chem_file = std::fs::OpenOptions::new()
                 .read(true)

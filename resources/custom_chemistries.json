@@ -1,0 +1,8 @@
+{
+    "visiumv1-probe" : "1{b[16]u[12]x:}2{r[50]x:}",
+    "visiumv1" : "1{b[16]u[12]x:}2{r:}",
+    "visiumv4-probe" : "1{b[16]u[12]x:}2{r[50]x:}",
+    "visiumv4" : "1{b[16]u[12]x:}2{r:}",
+    "visiumv5-probe" : "1{b[16]u[12]x:}2{r[50]x:}",
+    "visiumv5" : "1{b[16]u[12]x:}2{r:}"
+}

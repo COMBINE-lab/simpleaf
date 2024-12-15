@@ -1,5 +1,8 @@
 use crate::atac::commands::AtacChemistry;
-use crate::utils::{af_utils::RnaChemistry, prog_utils::*};
+use crate::utils::{
+    af_utils::{get_custom_chem_path, RnaChemistry},
+    prog_utils::*,
+};
 use strum::IntoEnumIterator;
 
 use anyhow::{Context, Result};
@@ -11,7 +14,7 @@ pub fn inspect_simpleaf(version: &str, af_home_path: PathBuf) -> Result<()> {
     // Read the JSON contents of the file as an instance of `User`.
     let v: Value = inspect_af_home(af_home_path.as_path())?;
     // do we have a custom chemistry file
-    let custom_chem_p = af_home_path.join("custom_chemistries.json");
+    let custom_chem_p = get_custom_chem_path(&af_home_path)?;
     let chem_info_value = if custom_chem_p.is_file() {
         // parse the custom chemistry json file
         let custom_chem_file = std::fs::File::open(&custom_chem_p).with_context({
