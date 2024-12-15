@@ -5,8 +5,8 @@ use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonS
 use seq_geom_xform::{FifoXFormData, FragmentGeomDescExt};
 use serde_json::Value;
 use std::fmt;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use std::io::BufReader;
 
 use strum_macros::EnumIter;
 use tracing::error;
@@ -515,8 +515,8 @@ pub fn add_or_transform_fragment_library(
     }
 }
 
-static CUSTOM_CHEM_URL: &str =
-    "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/custom_chem.json";
+static CUSTOM_CHEM_URL: &str = "https://raw.githubusercontent.com/an-altosian/simpleaf/spatial/resources/custom_chemistries.json";
+// "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/custom_chem.json";
 
 /// This function gets the custom chemistry from the `af_home_path` directory.
 /// If the file doesn't exist, it downloads the file from the `url` and saves it

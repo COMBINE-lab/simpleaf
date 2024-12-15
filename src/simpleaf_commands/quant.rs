@@ -445,7 +445,7 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
 
                 let min_cells = opts.min_reads;
                 filter_meth_opt = Some(CellFilterMethod::UnfilteredExternalList(
-                    pl_file.to_string_lossy().into_owned(),
+                    pl_info.final_file.to_string_lossy().into_owned(),
                     min_cells,
                 ));
             } else {
@@ -468,7 +468,7 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
                 PermitListResult::DownloadSuccessful(p) | PermitListResult::AlreadyPresent(p) => {
                     pl_info.init(&p, &opts.output)?;
                     filter_meth_opt = Some(CellFilterMethod::UnfilteredExternalList(
-                        p.to_string_lossy().into_owned(),
+                        pl_info.final_file.to_string_lossy().into_owned(),
                         min_cells,
                     ));
                 }
@@ -482,8 +482,9 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
         }
     } else {
         if let Some(ref filtered_path) = opts.explicit_pl {
+            pl_info.init(filtered_path, &opts.output)?;
             filter_meth_opt = Some(CellFilterMethod::ExplicitList(
-                filtered_path.to_string_lossy().into_owned(),
+                pl_info.final_file.to_string_lossy().into_owned(),
             ));
         };
         if let Some(ref num_forced) = opts.forced_cells {

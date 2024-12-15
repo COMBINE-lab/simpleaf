@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use cmd_lib::run_fun;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
@@ -61,11 +61,12 @@ pub fn download_to_file<T: AsRef<str>>(url: T, file_path: &Path) -> Result<()> {
             );
         }
         x => {
-            bail!(
-                "could not obtain the permit list; HTTP status code {}, reason {}",
+            return Err(anyhow!(
+                "could not obtain the requested file from {}; HTTP status code {}, reason {}",
+                url,
                 x,
                 request.reason_phrase
-            );
+            ))
         }
     }
 
