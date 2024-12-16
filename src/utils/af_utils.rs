@@ -20,11 +20,11 @@ use crate::utils::prog_utils;
 
 // TODO: Update the path while merging
 static PERMIT_LIST_INFO_VERSION: &str = "0.1.0";
-static PERMIT_LIST_INFO_URL: &str = "https://raw.githubusercontent.com/an-altosian/simpleaf/spatial/resources/permit_list_info.json";
+static PERMIT_LIST_INFO_URL: &str = "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/spatial/resources/permit_list_info.json";
 // "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/permit_list_info.json";
 
 static CUSTOM_CHEMISTRIES_VERSION: &str = "0.1.0";
-static CUSTOM_CHEMISTRIES_URL: &str = "https://raw.githubusercontent.com/an-altosian/simpleaf/spatial/resources/custom_chemistries.json";
+static CUSTOM_CHEMISTRIES_URL: &str = "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/spatial/resources/custom_chemistries.json";
 // "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/custom_chem.json";
 
 /// The map from pre-specified chemistry types that salmon knows
