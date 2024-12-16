@@ -256,7 +256,7 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
     let permit_info_reader = BufReader::new(permit_info_file);
     let v: Value = serde_json::from_reader(permit_info_reader)?;
 
-    let fake_version = json!("0.0.1");
+    let fake_version = json!("0.0.0");
     // get the version. If it is an old version, suggest the user to delete it
     let version = v
         .get("version")
@@ -275,7 +275,7 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
         version,
     ) {
         Ok(af_ver) => info!("found permit_list_info.json version {:#}; Proceeding", af_ver),
-        Err(_) => warn!("found outdated permit list info file (with version {}) at {:#?}. Please consider delete it.", version, &permit_info_p)
+        Err(_) => warn!("found outdated permit list info file with version {}. Please consider delete it from {:#?}.", version, &permit_info_p)
     }
 
     // get chemistry name
@@ -553,7 +553,7 @@ pub fn get_custom_chem_hm(custom_chem_p: &Path) -> Result<HashMap<String, Custom
         })?;
 
         // we check if the file is up to date
-        let fake_version = json!("0.0.1");
+        let fake_version = json!("0.0.0");
         // get the version. If it is an old version, suggest the user to delete it
         let version = v
             .get("version")
@@ -573,7 +573,7 @@ pub fn get_custom_chem_hm(custom_chem_p: &Path) -> Result<HashMap<String, Custom
             version,
         ) {
             Ok(af_ver) => info!("found permit_list_info.json version {:#}; Proceeding", af_ver),
-            Err(_) => warn!("found outdated permit list info file (with version {}) at {:#?}. Please consider delete it.", version, custom_chem_p)
+            Err(_) => warn!("found outdated permit list info file with version {}. Please consider delete it from {:#?}.", version, custom_chem_p)
         }
     } else {
         // download the custom_chemistries.json file if needed
@@ -614,7 +614,7 @@ pub fn get_custom_chem_hm_from_value(
     // Except the expected_ori key, others are custom chemistries
     for (key, value) in v_obj.iter() {
         // skip the expected_ori key
-        if key == &expected_ori_key {
+        if (key == expected_ori_key.as_str()) | (key == "version") {
             continue;
         }
 
