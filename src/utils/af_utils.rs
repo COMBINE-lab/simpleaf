@@ -1,15 +1,17 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use cmd_lib::run_fun;
 use phf::phf_map;
 use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonSeparateGeomDesc};
 use seq_geom_xform::{FifoXFormData, FragmentGeomDescExt};
-use serde_json::Value;
-use std::fmt;
-use std::path::{Path, PathBuf};
+use serde_json;
+use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::io::BufReader;
+use std::path::{Path, PathBuf};
+use std::fmt;
 
 use strum_macros::EnumIter;
-use tracing::error;
+use tracing::{error, warn};
 
 use crate::atac::commands::AtacChemistry;
 use crate::utils::prog_utils;
@@ -231,151 +233,88 @@ pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Comm
     Ok(())
 }
 
+static PERMIT_DIRECT_URL: &str = "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/permit_list_info.json"
+
 pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitListResult> {
+    //check if the permit_list_info.json file exists
+    // if we have permit list file in af_home, there should be a permit_list_info.json file
+    // if it's not there, we should download it
+    let permit_info_p = af_home.join("permit_list_info.json");
+    if !permit_info_p.exists() {
+        // download the permit_list_info.json file if needed
+        prog_utils::download_to_file(PERMIT_DIRECT_URL, &permit_info_p)?;
+    }
+    // read the permit_list_info.json file
+    let permit_info_file = std::fs::File::open(&permit_info_p)?;
+    let permit_info_reader = BufReader::new(permit_info_file);
+    let v: Value = serde_json::from_reader(permit_info_reader)?;
+
+    // get chemistry name
+    let chem_name = match chem {
+        Chemistry::Rna(rna_chem) => {
+            rna_chem.as_str()
+        }
+        Chemistry::Atac(atac_chem) => {
+            atac_chem.as_str()
+        }
+    };
+
     // check if the file already exists
     let odir = af_home.join("plist");
-    match chem {
-        Chemistry::Rna(rna_chem) => match rna_chem {
-            RnaChemistry::TenxV2 => {
-                let chem_file = "10x_v2_permit.txt";
-                if odir.join(chem_file).exists() {
-                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
-                }
-            }
-            RnaChemistry::TenxV25P => {
-                // v2 and v2-5' use the same permit list
-                let chem_file = "10x_v2_permit.txt";
-                if odir.join(chem_file).exists() {
-                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
-                }
-            }
-            RnaChemistry::TenxV3 => {
-                let chem_file = "10x_v3_permit.txt";
-                if odir.join(chem_file).exists() {
-                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
-                }
-            }
-            RnaChemistry::TenxV35P => {
-                let chem_file = "10x_v3_5p_permit.txt";
-                if odir.join(chem_file).exists() {
-                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
-                }
-            }
-            RnaChemistry::TenxV43P => {
-                let chem_file = "10x_v4_3p_permit.txt";
-                if odir.join(chem_file).exists() {
-                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
-                }
-            }
-            _ => {
-                return Ok(PermitListResult::UnregisteredChemistry);
-            }
-        },
-        Chemistry::Atac(atac_chem) => match atac_chem {
-            AtacChemistry::TenxV11 | AtacChemistry::TenxV2 => {
-                let chem_file = "10x_atac_v1_v11_v2.txt";
-                if odir.join(chem_file).exists() {
-                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
-                }
-            }
-            AtacChemistry::TenxMulti => {
-                let chem_file = "10x_arc_atac_v1.txt";
-                if odir.join(chem_file).exists() {
-                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
-                }
-            }
-        },
-    }
 
-    // the file doesn't exist, so get the json file that gives us
-    // the chemistry name to permit list URL mapping.
-    let permit_dict_url = "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/permit_list_info.json";
-    let request_result = minreq::get(permit_dict_url).send().inspect_err( |err| {
-        error!("Could not obtain the permit list metadata from {}; encountered {:?}.", &permit_dict_url, &err);
-        error!("This may be a transient failure, or could be because the client is lacking a network connection. \
-        In the latter case, please consider manually providing the appropriate permit list file directly \
-        via the command line to avoid an attempt by simpleaf to automatically obtain it.");
-    })?;
-    let permit_dict: serde_json::Value = request_result.json::<serde_json::Value>()?;
-    let opt_chem_file: Option<String>;
-    let opt_dl_url: Option<String>;
-    // parse the JSON appropriately based on the chemistry we have
-    match chem {
-        Chemistry::Rna(rna_chem) => match rna_chem {
-            RnaChemistry::TenxV2
-            | RnaChemistry::TenxV25P
-            | RnaChemistry::TenxV3
-            | RnaChemistry::TenxV35P
-            | RnaChemistry::TenxV43P => {
-                let chem_key = chem.as_str();
-                if let Some(d) = permit_dict.get(chem_key) {
-                    opt_chem_file = d
-                        .get("filename")
-                        .expect("value for filename field should be a string")
-                        .as_str()
-                        .map(|cf| cf.to_string());
-                    opt_dl_url = d
-                        .get("url")
-                        .expect("value for url field should be a string")
-                        .as_str()
-                        .map(|url| url.to_string());
-                } else {
-                    bail!(
-                        "could not obtain \"{}\" key from the fetched permit_dict at {} = {:?}",
-                        chem_key,
-                        permit_dict_url,
-                        permit_dict
-                    )
-                }
-            }
-            _ => {
-                return Ok(PermitListResult::UnregisteredChemistry);
-            }
-        },
-        Chemistry::Atac(atac_chem) => match atac_chem {
-            AtacChemistry::TenxV11 | AtacChemistry::TenxV2 | AtacChemistry::TenxMulti => {
-                let chem_key = atac_chem.resource_key();
-                if let Some(d) = permit_dict.get(&chem_key) {
-                    opt_chem_file = d
-                        .get("filename")
-                        .expect("value for filename field should be a string")
-                        .as_str()
-                        .map(|cf| cf.to_string());
-                    opt_dl_url = d
-                        .get("url")
-                        .expect("value for url field should be a string")
-                        .as_str()
-                        .map(|url| url.to_string());
-                } else {
-                    bail!(
-                        "could not obtain \"{}\" key from the fetched permit_dict at {} = {:?}",
-                        chem_key,
-                        permit_dict_url,
-                        permit_dict
-                    )
-                }
-            }
-        },
-    }
+    // get the permit list file name and url if its in the permit info file
+    if let Some(chem_info) = v.get(chem_name) {
+        // get chemistry file name
+        let chem_filename = chem_info
+            .get("filename")
+            .with_context(|| {
+                format!(
+                    "could not obtain the filename field for chemistry {} from the permit_list_info.json file. Please report this issue onto the simpleaf github repository. The value obtained was {:?}",
+                    chem_name,
+                    chem_info
+                )
+            })?
+            .as_str()
+            .with_context(|| {
+                format!(
+                    "value for filename field should be a string for chemistry {} from the permit_list_info.json file. Please report this issue onto the simpleaf github repository. The value obtained was {:?}",
+                    chem_name,
+                    chem_info
+                )
+            })?
+            .to_string();
 
-    // actually download the permit list if we need it and don't have it.
-    if let (Some(chem_file), Some(dl_url)) = (opt_chem_file, opt_dl_url) {
-        if odir.join(&chem_file).exists() {
-            Ok(PermitListResult::AlreadyPresent(odir.join(&chem_file)))
-        } else {
-            run_fun!(mkdir -p $odir)?;
-
-            let output_file = odir.join(&chem_file);
-            prog_utils::download_to_file(dl_url, &output_file)?;
-
-            Ok(PermitListResult::DownloadSuccessful(odir.join(&chem_file)))
+        //if it exists, return the path
+        if odir.join(&chem_filename).is_file() {
+            return Ok(PermitListResult::AlreadyPresent(odir.join(&chem_filename)));
         }
+
+        // now, we download it
+        let dl_url = chem_info
+            .get("url")
+            .with_context(|| {
+                format!(
+                    "could not obtain the url field for chemistry {} from the permit_list_info.json file. Please report this issue onto the simpleaf github repository. The value obtained was {:?}",
+                    chem_name,
+                    chem_info
+                )
+            })?
+            .as_str()
+            .with_context(|| {
+                format!(
+                    "value for url field should be a string for chemistry {} from the permit_list_info.json file. Please report this issue onto the simpleaf github repository. The value obtained was {:?}",
+                    chem_name,
+                    chem_info
+                )
+            })?
+            .to_string();
+        
+        // download the file
+        let output_file = odir.join(&chem_filename);
+        prog_utils::download_to_file(dl_url, &output_file)?;
+        return Ok(PermitListResult::DownloadSuccessful(output_file));
     } else {
-        bail!(
-            "could not properly parse the permit dictionary obtained from {} = {:?}",
-            permit_dict_url,
-            permit_dict
-        );
+        return Ok(PermitListResult::UnregisteredChemistry)
     }
 }
 
@@ -518,16 +457,65 @@ pub fn add_or_transform_fragment_library(
 static CUSTOM_CHEM_URL: &str = "https://raw.githubusercontent.com/an-altosian/simpleaf/spatial/resources/custom_chemistries.json";
 // "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/custom_chem.json";
 
+#[derive(Debug, Clone)]
+pub enum ExpectedOri {
+    Forward,
+    Reverse,
+    Both,
+}
+
+impl ExpectedOri {
+    pub fn as_str(&self) -> &str {
+        match self {
+            ExpectedOri::Forward => "fw",
+            ExpectedOri::Reverse => "rc",
+            ExpectedOri::Both => "both",
+        }
+    }
+
+    // construct the expected_ori from a str
+    pub fn from_str(s: &str) -> Result<ExpectedOri> {
+        match s {
+            "fw" => Ok(ExpectedOri::Forward),
+            "rc" => Ok(ExpectedOri::Reverse),
+            "both" => Ok(ExpectedOri::Both),
+            _ => Err(anyhow!("Invalid expected_ori value: {}", s)),
+        }
+    }
+}
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct CustomChemistry {
+    pub name: String,
+    pub geometry: String,
+    pub expected_ori: ExpectedOri,
+}
+
+#[allow(dead_code)]
+impl CustomChemistry {
+    pub fn geometry(&self) -> &str {
+        self.geometry.as_str()
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    pub fn expected_ori(&self) -> ExpectedOri {
+        self.expected_ori.clone()
+    }
+}
+
 /// This function gets the custom chemistry from the `af_home_path` directory.
 /// If the file doesn't exist, it downloads the file from the `url` and saves it
-pub fn get_custom_chem_path(af_home_path: &Path) -> Result<PathBuf> {
+pub fn get_custom_chem_hm(custom_chem_p: &Path) -> Result<HashMap<String, CustomChemistry>> {
     // check if the custom_chemistries.json file exists
-    let custom_chem_p = af_home_path.join("custom_chemistries.json");
     let custom_chem_exists = custom_chem_p.is_file();
 
+    // get the file
     if custom_chem_exists {
         // test if the file is good
-        let custom_chem_file = std::fs::File::open(&custom_chem_p).with_context(|| {
+        let custom_chem_file = std::fs::File::open(custom_chem_p).with_context(|| {
             format!(
                 "Couldn't open the existing custom chemistry file. Please consider delete it from {}",
                 custom_chem_p.display()
@@ -543,7 +531,124 @@ pub fn get_custom_chem_path(af_home_path: &Path) -> Result<PathBuf> {
     } else {
         // download the custom_chemistries.json file if needed
         let custom_chem_url = CUSTOM_CHEM_URL;
-        prog_utils::download_to_file(custom_chem_url, &custom_chem_p)?;
+        prog_utils::download_to_file(custom_chem_url, custom_chem_p)?;
     }
-    Ok(custom_chem_p)
+
+    // load the file
+    let custom_chem_file = std::fs::File::open(custom_chem_p)?;
+    let custom_chem_reader = BufReader::new(custom_chem_file);
+    let v: Value = serde_json::from_reader(custom_chem_reader)?;
+    get_custom_chem_hm_from_value(v, custom_chem_p)
+}
+
+pub fn get_custom_chem_hm_from_value(
+    v: Value,
+    custom_chem_p: &Path,
+) -> Result<HashMap<String, CustomChemistry>> {
+    let v_obj = v.as_object().with_context(|| {
+        format!(
+            "Couldn't parse the existing custom chemistry file. Please consider delete it from {}",
+            custom_chem_p.display()
+        )
+    })?;
+
+    let expected_ori_key = String::from("expected_ori");
+    // check if expected_ori exists
+    let expected_oris = v_obj.get(&expected_ori_key);
+
+    // warn if the expected_ori doesn't exist
+    if expected_oris.is_none() {
+        warn!("The expected_ori key is not found in the custom chemistry file, indicating it is an outdated version. All custom chemistries'  expected_ori will be treated as `both`. Please consider deleting the existing file from {}", custom_chem_p.display());
+    }
+
+    // Then we go over the keys and values and create a hashmap
+    let mut custom_chem_map = HashMap::new();
+
+    // Except the expected_ori key, others are custom chemistries
+    for (key, value) in v_obj.iter() {
+        // skip the expected_ori key
+        if key == &expected_ori_key {
+            continue;
+        }
+
+        // Now, we would expect we are working on a custom chemistry
+        let chem_spec = value.as_str().with_context(|| {
+            format!(
+                "Couldn't parse chemistry {} : {} in the custom chemistry file. Please consider delete the file from {}",
+                key,
+                value,
+                custom_chem_p.display()
+            )
+        })?;
+        let _cg = extract_geometry(chem_spec).with_context(|| {
+            format!(
+                "Couldn't parse the geometry for {}: {}. Please consider delete the file from {}",
+                key,
+                chem_spec,
+                custom_chem_p.display()
+            )
+        })?;
+
+        // insert it into the custom_chem_map
+        custom_chem_map.insert(key.clone(), CustomChemistry {
+            name: key.clone(),
+            geometry: chem_spec.to_string(),
+            expected_ori: {
+                // if expected_ori exists, we use it
+                if let Some(expected_ori_value) = expected_oris {
+                    let default_v = json!("both");
+                    // get the expected_ori str
+                    let expected_ori = expected_ori_value.get(key).unwrap_or(&default_v).as_str().with_context(|| {
+                        format!(
+                            "Couldn't parse the expected_ori for {}: {}. Please consider delete the file from {}",
+                            key,
+                            expected_ori_value.get(key).unwrap_or(&json!("both")),
+                            custom_chem_p.display()
+                        )
+                    })?;
+                    // convert it to expected_ori enum
+                    ExpectedOri::from_str(expected_ori).with_context(|| {
+                        format!(
+                            "Couldn't parse the expected_ori for {}: {}. Please consider delete the file from {}",
+                            key,
+                            expected_ori,
+                            custom_chem_p.display()
+                        )
+                    })?
+                } else {
+                    ExpectedOri::Both
+                }
+            }
+        });
+    }
+
+    Ok(custom_chem_map)
+}
+
+pub fn custom_chem_hm_to_json(custom_chem_hm: &HashMap<String, CustomChemistry>) -> Result<Value> {
+
+    // first create the name to genometry mapping
+    let mut v: Value = custom_chem_hm
+        .iter()
+        .map(|(k, v)| {
+            json!({
+                k.clone() : v.geometry().to_string()
+            })
+        })
+        .collect();
+
+    // add in expected ori mapping
+    let expected_ori_v: Value = custom_chem_hm
+        .iter()
+        .map(|(k, v)| {
+            json!({
+                k.clone() : v.expected_ori().as_str().to_string()
+            })
+        })
+        .collect();
+
+    // add the expected_ori to the geometry json
+    v["expected_ori"] = expected_ori_v;
+    
+    Ok(v)
 }

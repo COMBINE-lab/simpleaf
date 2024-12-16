@@ -969,7 +969,6 @@ impl WorkflowLog {
     /// 1. the `active` field of the executed commands in execution log
     /// 2. cmd runtime
     /// 3. number of succeed commands.
-
     pub fn update(&mut self, field_trajectory_vec: &[usize]) -> anyhow::Result<()> {
         // update cmd run time
         if let Some(command_runtime) = &self.command_runtime {

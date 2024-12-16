@@ -74,8 +74,8 @@ fn main() -> anyhow::Result<()> {
                 alevin_fry,
             },
         ),
-        Commands::AddChemistry { name, geometry } => {
-            add_chemistry(af_home_path, Commands::AddChemistry { name, geometry })
+        Commands::AddChemistry { name, geometry, expected_ori } => {
+            add_chemistry(af_home_path, Commands::AddChemistry { name, geometry, expected_ori })
         }
         Commands::Inspect {} => inspect_simpleaf(crate_version!(), af_home_path),
 

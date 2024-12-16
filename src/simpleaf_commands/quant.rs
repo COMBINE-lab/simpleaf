@@ -1,8 +1,5 @@
-use crate::utils::af_utils;
-use crate::utils::af_utils::{
-    CellFilterMethod, Chemistry, FragmentTransformationType, MapperType, PermitListResult,
-    RnaChemistry,
-};
+use crate::utils::af_utils::{self, *};
+
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::{CommandVerbosityLevel, ReqProgs};
 
@@ -371,7 +368,9 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
     }
 
     // do we have a custom chemistry file
-    let custom_chem_p = af_utils::get_custom_chem_path(af_home_path)?;
+    let custom_chem_p = af_home_path.join("custom_chemistries.json");
+    let custom_chem_hm = af_utils::get_custom_chem_hm(&custom_chem_p)?;
+    let custom_chem = custom_chem_hm.get(opts.chemistry.as_str());
 
     let chem = match opts.chemistry.as_str() {
         "10xv2" => RnaChemistry::TenxV2,
@@ -380,22 +379,21 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
         "10xv3-5p" => RnaChemistry::TenxV35P,
         "10xv4-3p" => RnaChemistry::TenxV43P,
         s => {
-            // parse the custom chemistry json file
-            let custom_chem_file = std::fs::File::open(&custom_chem_p)?;
-            let custom_chem_reader = BufReader::new(custom_chem_file);
-            let v: Value = serde_json::from_reader(custom_chem_reader)?;
-            let rchem = match v[s.to_string()].as_str() {
-                Some(chem_str) => {
-                    info!("custom chemistry {} maps to geometry {}", s, &chem_str);
-                    RnaChemistry::Other(chem_str.to_string())
-                }
-                None => RnaChemistry::Other(s.to_string()),
+            let rchem = if let Some(chem) = custom_chem {
+                info!(
+                    "custom chemistry {} maps to geometry {}",
+                    s,
+                    chem.geometry()
+                );
+                RnaChemistry::Other(chem.geometry().to_string())
+            } else {
+                RnaChemistry::Other(s.to_string())
             };
             rchem
         }
     };
 
-    let ori;
+    let ori: String;
     // if the user set the orientation, then
     // use that explicitly
     if let Some(o) = opts.expected_ori.clone() {
@@ -419,8 +417,13 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
                 // and when we propagate more information about paired-end mappings.
                 ori = "fw".to_string();
             }
-            _ => {
-                ori = "both".to_string();
+            RnaChemistry::Other(_) => {
+                let expected_ori = if let Some(chem) = custom_chem {
+                    chem.expected_ori()
+                } else {
+                    ExpectedOri::Both
+                };
+                ori = expected_ori.as_str().to_string()
             }
         }
     }
