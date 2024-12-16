@@ -34,10 +34,11 @@ impl AtacChemistry {
             .filter_map(clap::ValueEnum::to_possible_value)
     }
 
+    #[allow(dead_code)]
     pub fn resource_key(&self) -> String {
         match self {
             Self::TenxV11 => String::from("10x-atac-v1"),
-            Self::TenxV2 => String::from("10x-atac-v1"),
+            Self::TenxV2 => String::from("10x-atac-v2"),
             Self::TenxMulti => String::from("10x-arc-atac-v1"),
         }
     }

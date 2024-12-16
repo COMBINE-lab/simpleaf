@@ -1,22 +1,31 @@
 use anyhow::{anyhow, bail, Context, Result};
-use cmd_lib::run_fun;
+// use cmd_lib::run_fun;
 use phf::phf_map;
 use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonSeparateGeomDesc};
 use seq_geom_xform::{FifoXFormData, FragmentGeomDescExt};
 use serde_json;
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::fmt;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::fmt;
 
 use strum_macros::EnumIter;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 use crate::atac::commands::AtacChemistry;
 use crate::utils::prog_utils;
 //use ureq;
 //use minreq::Response;
+
+// TODO: Update the path while merging
+static PERMIT_LIST_INFO_VERSION: &str = "0.1.0";
+static PERMIT_LIST_INFO_URL: &str = "https://raw.githubusercontent.com/an-altosian/simpleaf/spatial/resources/permit_list_info.json";
+// "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/permit_list_info.json";
+
+static CUSTOM_CHEMISTRIES_VERSION: &str = "0.1.0";
+static CUSTOM_CHEMISTRIES_URL: &str = "https://raw.githubusercontent.com/an-altosian/simpleaf/spatial/resources/custom_chemistries.json";
+// "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/custom_chem.json";
 
 /// The map from pre-specified chemistry types that salmon knows
 /// to the corresponding command line flag that salmon should be passed
@@ -233,8 +242,6 @@ pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Comm
     Ok(())
 }
 
-static PERMIT_DIRECT_URL: &str = "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/permit_list_info.json"
-
 pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitListResult> {
     //check if the permit_list_info.json file exists
     // if we have permit list file in af_home, there should be a permit_list_info.json file
@@ -242,28 +249,47 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
     let permit_info_p = af_home.join("permit_list_info.json");
     if !permit_info_p.exists() {
         // download the permit_list_info.json file if needed
-        prog_utils::download_to_file(PERMIT_DIRECT_URL, &permit_info_p)?;
+        prog_utils::download_to_file(PERMIT_LIST_INFO_URL, &permit_info_p)?;
     }
     // read the permit_list_info.json file
     let permit_info_file = std::fs::File::open(&permit_info_p)?;
     let permit_info_reader = BufReader::new(permit_info_file);
     let v: Value = serde_json::from_reader(permit_info_reader)?;
 
+    let fake_version = json!("0.0.1");
+    // get the version. If it is an old version, suggest the user to delete it
+    let version = v
+        .get("version")
+        .unwrap_or(&fake_version)
+        .as_str()
+        .with_context(|| {
+            format!(
+                "value for version field should be a string from the permit_list_info.json file. Please report this issue onto the simpleaf github repository. The value obtained was {:?}",
+                v
+            )
+        })?;
+
+    match prog_utils::check_version_constraints(
+        "permit_list_info.json",
+        ">=".to_string() + PERMIT_LIST_INFO_VERSION,
+        version,
+    ) {
+        Ok(af_ver) => info!("found permit_list_info.json version {:#}; Proceeding", af_ver),
+        Err(_) => warn!("found outdated permit list info file (with version {}) at {:#?}. Please consider delete it.", version, &permit_info_p)
+    }
+
     // get chemistry name
-    let chem_name = match chem {
-        Chemistry::Rna(rna_chem) => {
-            rna_chem.as_str()
-        }
-        Chemistry::Atac(atac_chem) => {
-            atac_chem.as_str()
-        }
-    };
+    let chem_name = chem.as_str();
 
     // check if the file already exists
     let odir = af_home.join("plist");
 
     // get the permit list file name and url if its in the permit info file
     if let Some(chem_info) = v.get(chem_name) {
+        info!(
+            "Chemistry {} is registered in the permit_list_info.json file",
+            chem_name
+        );
         // get chemistry file name
         let chem_filename = chem_info
             .get("filename")
@@ -308,13 +334,13 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
                 )
             })?
             .to_string();
-        
+
         // download the file
         let output_file = odir.join(&chem_filename);
         prog_utils::download_to_file(dl_url, &output_file)?;
-        return Ok(PermitListResult::DownloadSuccessful(output_file));
+        Ok(PermitListResult::DownloadSuccessful(output_file))
     } else {
-        return Ok(PermitListResult::UnregisteredChemistry)
+        Ok(PermitListResult::UnregisteredChemistry)
     }
 }
 
@@ -454,10 +480,7 @@ pub fn add_or_transform_fragment_library(
     }
 }
 
-static CUSTOM_CHEM_URL: &str = "https://raw.githubusercontent.com/an-altosian/simpleaf/spatial/resources/custom_chemistries.json";
-// "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/custom_chem.json";
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, EnumIter)]
 pub enum ExpectedOri {
     Forward,
     Reverse,
@@ -483,7 +506,7 @@ impl ExpectedOri {
         }
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub struct CustomChemistry {
     pub name: String,
@@ -522,15 +545,39 @@ pub fn get_custom_chem_hm(custom_chem_p: &Path) -> Result<HashMap<String, Custom
             )
         })?;
         let custom_chem_reader = BufReader::new(custom_chem_file);
-        let _v: Value = serde_json::from_reader(custom_chem_reader).with_context(|| {
+        let v: Value = serde_json::from_reader(custom_chem_reader).with_context(|| {
             format!(
                 "Couldn't parse the existing custom chemistry file. Please consider delete it from {}",
                 custom_chem_p.display()
             )
         })?;
+
+        // we check if the file is up to date
+        let fake_version = json!("0.0.1");
+        // get the version. If it is an old version, suggest the user to delete it
+        let version = v
+            .get("version")
+            .unwrap_or(&fake_version)
+            .as_str()
+            .with_context(|| {
+                format!(
+                    "value for version field should be a string from the permit_list_info.json file. Please report this issue onto the simpleaf github repository. The value obtained was {:?}",
+                    v
+                )
+            })?;
+
+        // check if the permit_list_info.json file is up to date
+        match prog_utils::check_version_constraints(
+            "custom_chemistries.json",
+            ">=".to_string() + CUSTOM_CHEMISTRIES_VERSION,
+            version,
+        ) {
+            Ok(af_ver) => info!("found permit_list_info.json version {:#}; Proceeding", af_ver),
+            Err(_) => warn!("found outdated permit list info file (with version {}) at {:#?}. Please consider delete it.", version, custom_chem_p)
+        }
     } else {
         // download the custom_chemistries.json file if needed
-        let custom_chem_url = CUSTOM_CHEM_URL;
+        let custom_chem_url = CUSTOM_CHEMISTRIES_URL;
         prog_utils::download_to_file(custom_chem_url, custom_chem_p)?;
     }
 
@@ -626,7 +673,6 @@ pub fn get_custom_chem_hm_from_value(
 }
 
 pub fn custom_chem_hm_to_json(custom_chem_hm: &HashMap<String, CustomChemistry>) -> Result<Value> {
-
     // first create the name to genometry mapping
     let mut v: Value = custom_chem_hm
         .iter()
@@ -649,6 +695,6 @@ pub fn custom_chem_hm_to_json(custom_chem_hm: &HashMap<String, CustomChemistry>)
 
     // add the expected_ori to the geometry json
     v["expected_ori"] = expected_ori_v;
-    
+
     Ok(v)
 }

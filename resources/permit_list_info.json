@@ -63,5 +63,6 @@
     "filename" : "visium-v5_coordinates.txt",
     "cr_filename" : "visium-v5_coordinates.txt",
     "url" : "https://umd.box.com/shared/static/518elp0hmb0es0qbhmp2o34evup4qwwr.txt"
-  }
+  },
+  "version" : "0.1.0"
 }

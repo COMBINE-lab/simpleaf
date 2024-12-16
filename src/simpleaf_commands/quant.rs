@@ -379,18 +379,24 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
         "10xv3-5p" => RnaChemistry::TenxV35P,
         "10xv4-3p" => RnaChemistry::TenxV43P,
         s => {
-            let rchem = if let Some(chem) = custom_chem {
+            if let Some(chem) = custom_chem {
                 info!(
                     "custom chemistry {} maps to geometry {}",
                     s,
                     chem.geometry()
                 );
-                RnaChemistry::Other(chem.geometry().to_string())
+                RnaChemistry::Other(s.to_string())
             } else {
                 RnaChemistry::Other(s.to_string())
-            };
-            rchem
+            }
         }
+    };
+
+    // we get the final string we want to use for the fragment geometry later
+    let frag_geometry_str = if let Some(cc) = custom_chem {
+        cc.geometry()
+    } else {
+        chem.as_str()
     };
 
     let ori: String;
@@ -589,11 +595,12 @@ being used by simpleaf"#,
                     );
                 }
 
+                // we get the final geometry we want to pass to piscem
                 // check if we can parse the geometry directly, or if we are dealing with a
                 // "complex" geometry.
                 let frag_lib_xform = af_utils::add_or_transform_fragment_library(
                     MapperType::Piscem,
-                    chem.as_str(),
+                    frag_geometry_str,
                     reads1,
                     reads2,
                     &mut piscem_quant_cmd,
@@ -671,7 +678,7 @@ being used by simpleaf"#,
                 // "complex" geometry.
                 let frag_lib_xform = af_utils::add_or_transform_fragment_library(
                     MapperType::Salmon,
-                    chem.as_str(),
+                    frag_geometry_str,
                     reads1,
                     reads2,
                     &mut salmon_quant_cmd,

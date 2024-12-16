@@ -1,6 +1,6 @@
 use crate::atac::commands::AtacChemistry;
 use crate::utils::{
-    af_utils::{get_custom_chem_hm, RnaChemistry,custom_chem_hm_to_json},
+    af_utils::{custom_chem_hm_to_json, get_custom_chem_hm, RnaChemistry},
     prog_utils::*,
 };
 use strum::IntoEnumIterator;
@@ -16,7 +16,7 @@ pub fn inspect_simpleaf(version: &str, af_home_path: PathBuf) -> Result<()> {
     let custom_chem_p = af_home_path.join("custom_chemistries.json");
     let chem_info_value = if custom_chem_p.is_file() {
         // parse the custom chemistry json file
-        let custom_chem_hm= get_custom_chem_hm(&custom_chem_p)?;
+        let custom_chem_hm = get_custom_chem_hm(&custom_chem_p)?;
         let v = custom_chem_hm_to_json(&custom_chem_hm)?;
         json!({
             "custom_chem_path" : custom_chem_p.display().to_string(),

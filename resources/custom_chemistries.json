@@ -12,5 +12,6 @@
         "visiumv4" : "fw",
         "visiumv5-probe" : "fw",
         "visiumv5" : "fw"
-    }
+    },
+    "version" : "0.1.0"
 }
