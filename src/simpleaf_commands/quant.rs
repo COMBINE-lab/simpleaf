@@ -1,4 +1,4 @@
-use crate::utils::af_utils::{self, *};
+use crate::utils::af_utils::*;
 
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::{CommandVerbosityLevel, ReqProgs};
@@ -369,7 +369,7 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
 
     // do we have a custom chemistry file
     let custom_chem_p = af_home_path.join("custom_chemistries.json");
-    let custom_chem_hm = af_utils::get_custom_chem_hm(&custom_chem_p)?;
+    let custom_chem_hm = get_custom_chem_hm(&custom_chem_p)?;
     let custom_chem = custom_chem_hm.get(opts.chemistry.as_str());
 
     let chem = match opts.chemistry.as_str() {
@@ -471,7 +471,7 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
 
             // check the chemistry
             let rc = Chemistry::Rna(chem.clone());
-            let pl_res = af_utils::get_permit_if_absent(af_home_path, &rc)?;
+            let pl_res = get_permit_if_absent(af_home_path, &rc)?;
             let min_cells = opts.min_reads;
             match pl_res {
                 PermitListResult::DownloadSuccessful(p) | PermitListResult::AlreadyPresent(p) => {
@@ -598,7 +598,7 @@ being used by simpleaf"#,
                 // we get the final geometry we want to pass to piscem
                 // check if we can parse the geometry directly, or if we are dealing with a
                 // "complex" geometry.
-                let frag_lib_xform = af_utils::add_or_transform_fragment_library(
+                let frag_lib_xform = add_or_transform_fragment_library(
                     MapperType::Piscem,
                     frag_geometry_str,
                     reads1,
@@ -676,7 +676,7 @@ being used by simpleaf"#,
 
                 // check if we can parse the geometry directly, or if we are dealing with a
                 // "complex" geometry.
-                let frag_lib_xform = af_utils::add_or_transform_fragment_library(
+                let frag_lib_xform = add_or_transform_fragment_library(
                     MapperType::Salmon,
                     frag_geometry_str,
                     reads1,
