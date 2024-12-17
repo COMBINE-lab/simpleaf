@@ -454,7 +454,7 @@ pub enum Commands {
         /// the geometry to which the chemistry maps. Details can be found at https://hackmd.io/@PI7Og0l1ReeBZu_pjQGUQQ/rJMgmvr13
         #[arg(short, long)]
         geometry: String,
-        /// the expected orientation to give to the chemistry.
+        /// the expected orientation to give to the chemistry
         #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(["fw", "rc", "both"]))]
         expected_ori: String,
         /// the path to a local permit list if applicable

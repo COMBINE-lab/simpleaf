@@ -23,6 +23,7 @@ pub fn add_chemistry(af_home_path: PathBuf, add_chem_cmd: Commands) -> Result<()
             extract_geometry(&geometry)?;
             Version::parse(version.as_ref()).with_context(|| format!("could not parse version {}. Please follow https://semver.org/. A valid example is 0.1.0", version))?;
 
+
             // init the custom chemistry struct
             let custom_chem = CustomChemistry {
                 name: name.clone(),
