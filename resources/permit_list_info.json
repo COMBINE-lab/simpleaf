@@ -29,6 +29,11 @@
     "cr_filename" : "737K-cratac-v1.txt",
     "url" : "https://umd.box.com/shared/static/2fni966esnkorl92ca3jxjogz8dyt1ki"
   },
+  "10x-atac-v2" : {
+    "filename" : "10x_atac_v1_v11_v2.txt",
+    "cr_filename" : "737K-cratac-v1.txt",
+    "url" : "https://umd.box.com/shared/static/2fni966esnkorl92ca3jxjogz8dyt1ki"
+  },
   "10x-arc-atac-v1" : {
     "filename" : "10x_arc_atac_v1.txt",
     "cr_filename" : "737K-arc-v1.txt",

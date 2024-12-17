@@ -676,25 +676,20 @@ pub fn custom_chem_hm_to_json(custom_chem_hm: &HashMap<String, CustomChemistry>)
     // first create the name to genometry mapping
     let mut v: Value = custom_chem_hm
         .iter()
-        .map(|(k, v)| {
-            json!({
-                k.clone() : v.geometry().to_string()
-            })
-        })
+        .map(|(k, v)| (k.clone(), v.geometry().to_string()))
         .collect();
 
     // add in expected ori mapping
     let expected_ori_v: Value = custom_chem_hm
         .iter()
-        .map(|(k, v)| {
-            json!({
-                k.clone() : v.expected_ori().as_str().to_string()
-            })
-        })
+        .map(|(k, v)| (k.clone(), v.expected_ori().as_str().to_string()))
         .collect();
 
     // add the expected_ori to the geometry json
-    v["expected_ori"] = expected_ori_v;
+    let chem_obj = v
+        .as_object_mut()
+        .expect("top-level custom chemistry JSON must be an object");
+    chem_obj.insert(String::from("expected_ori"), expected_ori_v);
 
     Ok(v)
 }

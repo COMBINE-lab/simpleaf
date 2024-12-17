@@ -455,7 +455,7 @@ pub enum Commands {
         #[arg(short, long)]
         geometry: String,
         /// the expected orientation to give to the chemistry
-        #[arg(short, long)]
+        #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(["fw", "rc", "both"]))]
         expected_ori: String,
     },
     /// inspect the current configuration

@@ -19,7 +19,7 @@ pub fn add_chemistry(af_home_path: PathBuf, add_chem_cmd: Commands) -> Result<()
             let _cg = extract_geometry(&geometry)?;
 
             // cannot use expected_ori as the name
-            if (&name == "expected_ori") | (&name == "version") {
+            if (&name == "expected_ori") || (&name == "version") {
                 bail!("The name '{}' is reserved for the expected orientation of the molecule; Please choose another name", &name);
             }
 
