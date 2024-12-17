@@ -33,5 +33,36 @@
     "filename" : "10x_arc_atac_v1.txt",
     "cr_filename" : "737K-arc-v1.txt",
     "url" : "https://umd.box.com/shared/static/4bs2mf4nkvvhviyz90ntdnpfzf6exnlj"
-  }
+  },
+  "visiumv1-probe" : {
+    "filename" : "visium-v1_coordinates.txt",
+    "cr_filename" : "visium-v1_coordinates.txt",
+    "url" : "https://umd.box.com/shared/static/851sydyypct2cy4nri98yhelb4a9q3sg.txt"
+  },
+  "visiumv1" : {
+    "filename" : "visium-v1_coordinates.txt",
+    "cr_filename" : "visium-v1_coordinates.txt",
+    "url" : "https://umd.box.com/shared/static/851sydyypct2cy4nri98yhelb4a9q3sg.txt"
+  },
+  "visiumv4-probe" : {
+    "filename" : "visium-v4_coordinates.txt",
+    "cr_filename" : "visium-v4_coordinates.txt",
+    "url" : "https://umd.box.com/shared/static/i4udjwaceixd1em71fol50c3izl1wbzk.txt"
+  },
+  "visiumv4" : {
+    "filename" : "visium-v4_coordinates.txt",
+    "cr_filename" : "visium-v4_coordinates.txt",
+    "url" : "https://umd.box.com/shared/static/i4udjwaceixd1em71fol50c3izl1wbzk.txt"
+  },
+  "visiumv5-probe" : {
+    "filename" : "visium-v5_coordinates.txt",
+    "cr_filename" : "visium-v5_coordinates.txt",
+    "url" : "https://umd.box.com/shared/static/518elp0hmb0es0qbhmp2o34evup4qwwr.txt"
+  },
+  "visiumv5" : {
+    "filename" : "visium-v5_coordinates.txt",
+    "cr_filename" : "visium-v5_coordinates.txt",
+    "url" : "https://umd.box.com/shared/static/518elp0hmb0es0qbhmp2o34evup4qwwr.txt"
+  },
+  "version" : "0.1.0"
 }

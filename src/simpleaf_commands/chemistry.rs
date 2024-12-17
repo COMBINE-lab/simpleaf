@@ -1,9 +1,7 @@
 use crate::utils::af_utils::*;
 
 use anyhow::{bail, Context, Result};
-use serde_json::json;
-use serde_json::Value;
-use std::io::{BufReader, Seek, Write};
+use std::io::{Seek, Write};
 use std::path::PathBuf;
 use tracing::info;
 
@@ -11,50 +9,49 @@ use super::Commands;
 
 pub fn add_chemistry(af_home_path: PathBuf, add_chem_cmd: Commands) -> Result<()> {
     match add_chem_cmd {
-        Commands::AddChemistry { name, geometry } => {
+        Commands::AddChemistry {
+            name,
+            geometry,
+            expected_ori,
+        } => {
             // check geometry string, if no good then
             // propagate error.
             let _cg = extract_geometry(&geometry)?;
 
-            // do we have a custom chemistry file
-            let custom_chem_p = af_home_path.join("custom_chemistries.json");
-
-            let mut custom_chem_file = std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .create(true)
-                .truncate(false) // can't truncate because we've not read it yet
-                .open(&custom_chem_p)
-                .with_context({
-                    || {
-                        format!(
-                            "couldn't open the custom chemistry file {}",
-                            custom_chem_p.display()
-                        )
-                    }
-                })?;
-
-            let custom_chem_reader = BufReader::new(&custom_chem_file);
-            let mut v: Value = match serde_json::from_reader(custom_chem_reader) {
-                Ok(sv) => sv,
-                Err(_) => {
-                    // the file was empty so here return an empty json object
-                    json!({})
-                }
-            };
-
-            if let Some(g) = v.get_mut(&name) {
-                let gs = g.as_str().unwrap();
-                info!("chemistry {} already existed, with geometry {}; overwriting geometry specification", name, gs);
-                *g = json!(geometry);
-            } else {
-                info!("inserting chemistry {} with geometry {}", name, geometry);
-                v[name] = json!(geometry);
+            // cannot use expected_ori as the name
+            if (&name == "expected_ori") | (&name == "version") {
+                bail!("The name '{}' is reserved for the expected orientation of the molecule; Please choose another name", &name);
             }
 
-            custom_chem_file.set_len(0)?;
-            // custom_chem_file.seek(SeekFrom::Start(0))?;
-            // suggested by cargo clippy
+            // init the custom chemistry struct
+            let custom_chem = CustomChemistry {
+                name: name.clone(),
+                geometry: geometry.clone(),
+                expected_ori: ExpectedOri::from_str(&expected_ori)?,
+            };
+
+            // read in the custom chemistry file
+            let custom_chem_p = af_home_path.join("custom_chemistries.json");
+
+            let mut custom_chem_hm = get_custom_chem_hm(&custom_chem_p)?;
+
+            // check if the chemistry already exists and log
+            if let Some(cc) = custom_chem_hm.get(&name) {
+                info!("chemistry {} already existed, with geometry {}; overwriting geometry specification", name, cc.geometry());
+                custom_chem_hm
+                    .entry(name.clone())
+                    .and_modify(|e| *e = custom_chem);
+            } else {
+                info!("inserting chemistry {} with geometry {}", name, geometry);
+                custom_chem_hm.insert(name.clone(), custom_chem);
+            }
+
+            // convert the custom chemistry hashmap to json
+            let v = custom_chem_hm_to_json(&custom_chem_hm)?;
+
+            // write out the new custom chemistry file
+            let mut custom_chem_file = std::fs::File::create(&custom_chem_p)
+                .with_context(|| format!("could not create {}", custom_chem_p.display()))?;
             custom_chem_file.rewind()?;
 
             custom_chem_file

@@ -969,7 +969,6 @@ impl WorkflowLog {
     /// 1. the `active` field of the executed commands in execution log
     /// 2. cmd runtime
     /// 3. number of succeed commands.
-
     pub fn update(&mut self, field_trajectory_vec: &[usize]) -> anyhow::Result<()> {
         // update cmd run time
         if let Some(command_runtime) = &self.command_runtime {
@@ -1293,8 +1292,7 @@ pub fn get_protocol_estuary<T: AsRef<Path>>(
             run_cmd!(mkdir -p $pe_dir)?;
         }
 
-        let out_fname = pe_zip_file.to_string_lossy().to_string();
-        prog_utils::download_to_file(dl_url, &out_fname)?;
+        prog_utils::download_to_file(dl_url, &pe_zip_file)?;
 
         // unzip
         let mut unzip_cmd = std::process::Command::new("unzip");

@@ -454,6 +454,9 @@ pub enum Commands {
         /// the geometry to which the chemistry maps
         #[arg(short, long)]
         geometry: String,
+        /// the expected orientation to give to the chemistry
+        #[arg(short, long)]
+        expected_ori: String,
     },
     /// inspect the current configuration
     Inspect {},

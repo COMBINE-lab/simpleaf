@@ -1,0 +1,17 @@
+{
+    "visiumv1-probe" : "1{b[16]u[12]x:}2{r[50]x:}",
+    "visiumv1" : "1{b[16]u[12]x:}2{r:}",
+    "visiumv4-probe" : "1{b[16]u[12]x:}2{r[50]x:}",
+    "visiumv4" : "1{b[16]u[12]x:}2{r:}",
+    "visiumv5-probe" : "1{b[16]u[12]x:}2{r[50]x:}",
+    "visiumv5" : "1{b[16]u[12]x:}2{r:}",
+    "expected_ori" : {
+        "visiumv1-probe" : "fw",
+        "visiumv1" : "fw",
+        "visiumv4-probe" : "fw",
+        "visiumv4" : "fw",
+        "visiumv5-probe" : "fw",
+        "visiumv5" : "fw"
+    },
+    "version" : "0.1.0"
+}
