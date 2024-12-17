@@ -451,12 +451,22 @@ pub enum Commands {
         /// the name to give the chemistry
         #[arg(short, long)]
         name: String,
-        /// the geometry to which the chemistry maps
+        /// the geometry to which the chemistry maps. Details can be found at https://hackmd.io/@PI7Og0l1ReeBZu_pjQGUQQ/rJMgmvr13
         #[arg(short, long)]
         geometry: String,
-        /// the expected orientation to give to the chemistry
+        /// the expected orientation to give to the chemistry, possible values are: fw, rc, both
         #[arg(short, long)]
         expected_ori: String,
+        /// the path to a local permit list if applicable
+        #[arg(short, long)]
+        local_pl_path: Option<String>,
+        /// the url to a remote permit list tsv file, if applicable, where the first column must records the barcodes 
+        #[arg(short, long)]
+        remote_pl_url: Option<String>,
+        /// the version of the chemistry.
+        #[arg(short, long, default_value = "0.0.1")]
+        version: String,
+
     },
     /// inspect the current configuration
     Inspect {},

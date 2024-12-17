@@ -6,6 +6,7 @@ use crate::utils::prog_utils::{CommandVerbosityLevel, ReqProgs};
 use anyhow::{bail, Context};
 use serde_json::json;
 use serde_json::Value;
+use strum::IntoEnumIterator;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -369,51 +370,49 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
 
     // do we have a custom chemistry file
     let custom_chem_p = af_home_path.join("custom_chemistries.json");
-    let custom_chem_hm = get_custom_chem_hm(&custom_chem_p)?;
-    let custom_chem = custom_chem_hm.get(opts.chemistry.as_str());
 
     let chem = match opts.chemistry.as_str() {
-        "10xv2" => RnaChemistry::TenxV2,
-        "10xv2-5p" => RnaChemistry::TenxV25P,
-        "10xv3" => RnaChemistry::TenxV3,
-        "10xv3-5p" => RnaChemistry::TenxV35P,
-        "10xv4-3p" => RnaChemistry::TenxV43P,
+        "10xv2" => Chemistry::Rna(RnaChemistry::TenxV2),
+        "10xv2-5p" => Chemistry::Rna(RnaChemistry::TenxV25P),
+        "10xv3" => Chemistry::Rna(RnaChemistry::TenxV3),
+        "10xv3-5p" => Chemistry::Rna(RnaChemistry::TenxV35P),
+        "10xv4-3p" => Chemistry::Rna(RnaChemistry::TenxV43P),
         s => {
-            if let Some(chem) = custom_chem {
+            // we try to extract the single record for the chemistry and ignore the rest
+            if let Some(chem) = get_single_custom_chem_from_file(&custom_chem_p,opts.chemistry.as_str())? {
                 info!(
                     "custom chemistry {} maps to geometry {}",
                     s,
                     chem.geometry()
                 );
-                RnaChemistry::Other(s.to_string())
+                Chemistry::Custom(chem)
             } else {
-                RnaChemistry::Other(s.to_string())
+                Chemistry::Custom(CustomChemistry::simple_custom(s).with_context(|| {
+                    format!(
+                        "Could not parse the provided chemistry {}. Please ensure it is a valid chemistry string wrapped by quotes or that it is defined in the custom_chemistries.json file.",
+                        s
+                    )
+                })?)
             }
         }
     };
 
-    // we get the final string we want to use for the fragment geometry later
-    let frag_geometry_str = if let Some(cc) = custom_chem {
-        cc.geometry()
-    } else {
-        chem.as_str()
-    };
-
-    let ori: String;
+    let ori: ExpectedOri;
     // if the user set the orientation, then
     // use that explicitly
     if let Some(o) = opts.expected_ori.clone() {
-        ori = o;
+        ori = ExpectedOri::from_str(&o)
+            .with_context(|| format!("Could not parse orientation {}. It must be one of the following: {:?}", o, ExpectedOri::iter().map(|v| v.to_string()).collect::<Vec<String>>().join(", ")))?;
     } else {
         // otherwise, this was not set explicitly. In that case
         // if we have 10xv2, 10xv3, or 10xv4 (3') chemistry, set ori = "fw"
         // if we have 10xv2-5p or 10xv3-5p chemistry, set ori = "rc"
         // otherwise set ori = "both"
-        match chem {
-            RnaChemistry::TenxV2 | RnaChemistry::TenxV3 | RnaChemistry::TenxV43P => {
-                ori = "fw".to_string();
+        match &chem {
+            Chemistry::Rna(RnaChemistry::TenxV2) | Chemistry::Rna(RnaChemistry::TenxV3) | Chemistry::Rna(RnaChemistry::TenxV43P) => {
+                ori = ExpectedOri::Forward;
             }
-            RnaChemistry::TenxV25P | RnaChemistry::TenxV35P => {
+            Chemistry::Rna(RnaChemistry::TenxV25P) | Chemistry::Rna(RnaChemistry::TenxV35P) => {
                 // NOTE: This is because we assume the piscem encoding
                 // that is, these are treated as potentially paired-end protocols and
                 // we infer the orientation of the fragment = orientation of read 1.
@@ -421,15 +420,21 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
                 // above, we separate out the case statement here for clarity.
                 // Further, we may consider changing this or making it more robust if
                 // and when we propagate more information about paired-end mappings.
-                ori = "fw".to_string();
+                ori = ExpectedOri::Forward;
             }
-            RnaChemistry::Other(_) => {
-                let expected_ori = if let Some(chem) = custom_chem {
-                    chem.expected_ori()
+            Chemistry::Rna(RnaChemistry::Other(_)) => {
+                ori = ExpectedOri::Both
+            }
+            Chemistry::Custom(cc) => {
+                // if the custom chemistry has an orientation, use that
+                if let Some(o) = cc.expected_ori() {
+                    ori = o.clone();
                 } else {
-                    ExpectedOri::Both
-                };
-                ori = expected_ori.as_str().to_string()
+                    ori = ExpectedOri::Both;
+                }
+            }
+            _ => {
+                bail!("Encountered non-RNA chemistry in simpleaf quant. This should not happen. Please report this to simpleaf GitHub issues.");
             }
         }
     }
@@ -470,8 +475,7 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
             // using 10xv2, 10xv3, or 10xv4
 
             // check the chemistry
-            let rc = Chemistry::Rna(chem.clone());
-            let pl_res = get_permit_if_absent(af_home_path, &rc)?;
+            let pl_res = get_permit_if_absent(af_home_path, &chem)?;
             let min_cells = opts.min_reads;
             match pl_res {
                 PermitListResult::DownloadSuccessful(p) | PermitListResult::AlreadyPresent(p) => {
@@ -600,7 +604,7 @@ being used by simpleaf"#,
                 // "complex" geometry.
                 let frag_lib_xform = add_or_transform_fragment_library(
                     MapperType::Piscem,
-                    frag_geometry_str,
+                    chem.fragment_geometry_str(),
                     reads1,
                     reads2,
                     &mut piscem_quant_cmd,
@@ -678,7 +682,7 @@ being used by simpleaf"#,
                 // "complex" geometry.
                 let frag_lib_xform = add_or_transform_fragment_library(
                     MapperType::Salmon,
-                    frag_geometry_str,
+                    chem.fragment_geometry_str(),
                     reads1,
                     reads2,
                     &mut salmon_quant_cmd,
@@ -770,7 +774,7 @@ being used by simpleaf"#,
 
     alevin_gpl_cmd.arg("generate-permit-list");
     alevin_gpl_cmd.arg("-i").arg(&map_output);
-    alevin_gpl_cmd.arg("-d").arg(&ori);
+    alevin_gpl_cmd.arg("-d").arg(ori.as_str());
 
     // add the filter mode
     filter_meth.add_to_args(&mut alevin_gpl_cmd);
