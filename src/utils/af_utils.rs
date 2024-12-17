@@ -733,7 +733,8 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
                 // check if the geometry field exists and is valid
                 let geometry = obj.get(GEOMETRY_KEY).with_context(|| {
                     format!(
-                        "Couldn't find the required geometry field for the custom chemistry record for {}: {}.",
+                        "Couldn't find the required {} field for the custom chemistry record for {}: {}.",
+                        GEOMETRY_KEY,
                         key,
                         value
                     )
@@ -741,7 +742,8 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
                 // it should be a string
                 let geometry_str = geometry.as_str().with_context(|| {
                     format!(
-                        "Couldn't parse the geometry field for the custom chemistry record for {}: {}.",
+                        "Couldn't parse the {} field for the custom chemistry record for {}: {}.",
+                        GEOMETRY_KEY,
                         key,
                         geometry
                     )
@@ -749,7 +751,7 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
                 // it should be a valid geometry
                 extract_geometry(geometry_str).with_context(|| {
                     format!(
-                        "Found invalid custom chemistry record for {}: {}.",
+                        "Found invalid custom geometry for {}: {}.",
                         key,
                         geometry_str
                     )
@@ -757,23 +759,38 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
 
                 // check if the expected_ori field exists and is valid
                 let expected_ori = if let Some(eo) = obj.get(EXPECTED_ORI_KEY) {
-                    // if it exists, it should be valid
-                    let expected_ori_str = eo.as_str().with_context(|| {
-                        format!(
-                            "Couldn't parse the expected_ori field for {}: {}.",
-                            key,
-                            eo
-                        )
-                    })?;
-                    // convert it to expected_ori enum
-                    let eo = ExpectedOri::from_str(expected_ori_str).with_context(|| {
-                        format!(
-                            "Found invalid expected_ori for {}: {}",
-                            key,
-                            expected_ori_str
-                        )
-                    })?;
-                    Some(eo)
+                    if eo.is_null() {
+                        None
+                    } else {
+                        // if it exists, it should be string
+                        let expected_ori_str = eo.as_str().with_context(|| {
+                            format!(
+                                "Couldn't parse the {} field for the custom chemistry record for {}: {}",
+                                EXPECTED_ORI_KEY,
+                                key,
+                                eo
+                            )
+                        })?;
+                        // check if the expected_ori exists
+                        if !ExpectedOri::from_str(expected_ori_str).is_ok() {
+                            Err(anyhow!(
+                                "Found invalid {} for {}: {}",
+                                EXPECTED_ORI_KEY,
+                                key,
+                                expected_ori_str
+                            ))?;
+                        }
+                        // convert it to expected_ori enum
+                        let eo = ExpectedOri::from_str(expected_ori_str).with_context(|| {
+                            format!(
+                                "Found invalid {} for {}: {}",
+                                EXPECTED_ORI_KEY,
+                                key,
+                                expected_ori_str
+                            )
+                        })?;
+                        Some(eo)
+                    }
                 } else {
                     None
                 };
@@ -781,50 +798,59 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
                 // check if the version field exists
                 let version = match obj.get("version") {
                     Some(v) => {
-                        let prog_ver_string = v
-                            .as_str()
-                            .with_context(|| {
+                        if v.is_null() {
+                            None
+                        } else {
+                            // if it exists, it should be string
+                            let prog_ver_string = v
+                                .as_str()
+                                .with_context(|| {
+                                    format!(
+                                        "Couldn't parse the version for the custom chemistry {} as a string: {}",
+                                        key,
+                                        v,
+                                    )
+                                })?;
+                                
+                            // check if the version is valid
+                            Version::parse(prog_ver_string).with_context(|| {
                                 format!(
-                                    "Couldn't parse the version for the custom chemistry {} as a string: {}",
+                                    "Found invalid version string for the custom chemistry {}: {}",
                                     key,
-                                    v,
+                                    prog_ver_string
                                 )
                             })?;
-                            
-                        // check if the version is valid
-                        Version::parse(prog_ver_string).with_context(|| {
-                            format!(
-                                "Found invalid version string for the custom chemistry {}: {}",
-                                key,
-                                prog_ver_string
-                            )
-                        })?;
-                        Some(prog_ver_string.to_string())
+                            Some(prog_ver_string.to_string())
+                        }
                     }
                     None => None
                 };
 
                 // check if the local_pl_path field exists and is valid
                 let local_pl_path = if let Some(lpp) = obj.get(LOCAL_PL_PATH_KEY) {
-                    // if it exists, it should be string
-                    let local_pl_path_str = lpp.as_str().with_context(|| {
-                        format!(
-                            "Couldn't parse the local_pl_path field for {}: {}",
-                            key,
-                            lpp
-                        )
-                    })?;
-
-                    // check if the local_pl_path exists
-                    if !PathBuf::from(local_pl_path_str).is_file() {
-                        Err(anyhow!(
-                            "Couldn't find the local_pl_path for the custom chemistry record for {}: {}",
-                            key,
-                            local_pl_path_str
-                        ))?;
+                    if lpp.is_null() {
+                        None
+                    } else {
+                        // if it exists, it should be string
+                        let local_pl_path_str = lpp.as_str().with_context(|| {
+                            format!(
+                                "Couldn't parse the local_pl_path field for {}: {}",
+                                key,
+                                lpp
+                            )
+                        })?;
+    
+                        // check if the local_pl_path exists
+                        if !PathBuf::from(local_pl_path_str).is_file() {
+                            Err(anyhow!(
+                                "Couldn't find the local_pl_path for the custom chemistry record for {}: {}",
+                                key,
+                                local_pl_path_str
+                            ))?;
+                        }
+    
+                        Some(local_pl_path_str.to_string())
                     }
-
-                    Some(local_pl_path_str.to_string())
                 } else {
                     None
                 };
@@ -832,15 +858,19 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
                 // check if the remote_pl_url field exists and is valid
                 // TODO: should we try to access the remote_pl_url to ensure it is valid?
                 let remote_pl_url = if let Some(rpu) = obj.get(REMOTE_PL_URL_KEY) {
-                    // if it exists, it should be valid
-                    let remote_pl_url_str = rpu.as_str().with_context(|| {
-                        format!(
-                            "Couldn't parse the remote_pl_url field for {}: {}",
-                            key,
-                            rpu
-                        )
-                    })?;
-                    Some(remote_pl_url_str.to_string())
+                    if rpu.is_null() {
+                        None
+                    } else {
+                        // if it exists, it should be valid
+                        let remote_pl_url_str = rpu.as_str().with_context(|| {
+                            format!(
+                                "Couldn't parse the remote_pl_url field for {}: {}",
+                                key,
+                                rpu
+                            )
+                        })?;
+                        Some(remote_pl_url_str.to_string())
+                    }
                 } else {
                     None
                 };
@@ -875,18 +905,28 @@ pub fn custom_chem_hm_to_json(custom_chem_hm: &HashMap<String, CustomChemistry>)
             let mut value = json!({
                 GEOMETRY_KEY: v.geometry.clone()
             });
-            if let Some(eo) = &v.expected_ori {
-                value[EXPECTED_ORI_KEY] = json!(eo.as_str());
-            }
-            if let Some(ver) = &v.version {
-                value[VERSION_KEY] = json!(ver);
-            }
-            if let Some(lpp) = &v.local_pl_path {
-                value[LOCAL_PL_PATH_KEY] = json!(lpp);
-            }
-            if let Some(rpu) = &v.remote_pl_url {
-                value[REMOTE_PL_URL_KEY] = json!(rpu);
-            }
+            value[EXPECTED_ORI_KEY] = if let Some(eo) = &v.expected_ori {
+                json!(eo.as_str())
+            } else {
+                info!("`expected_ori` is missing for custom chemistry {}; Set as {}", k, ExpectedOri::Both.as_str());
+                json!(ExpectedOri::Both.as_str())
+            };
+            value[VERSION_KEY] = if let Some(ver) = &v.version {
+                json!(ver)
+            } else {
+                info!("`version` is missing for custom chemistry {}; Set as {}", k, "0.0.1");
+                json!("0.0.1")
+            };
+            value[LOCAL_PL_PATH_KEY] = if let Some(lpp) = &v.local_pl_path {
+                json!(lpp)
+            } else {
+                json!(null)
+            };
+            value[REMOTE_PL_URL_KEY] = if let Some(rpu) = &v.remote_pl_url {
+                json!(rpu)
+            } else {
+                json!(null)
+            };
             (k.clone(), value)
         })
         .collect();

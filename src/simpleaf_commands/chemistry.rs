@@ -29,8 +29,8 @@ pub fn add_chemistry(af_home_path: PathBuf, add_chem_cmd: Commands) -> Result<()
                 name: name.clone(),
                 geometry: geometry.clone(),
                 expected_ori: Some(ExpectedOri::from_str(&expected_ori)?),
-                local_pl_path: local_pl_path.clone(),
-                remote_pl_url: remote_pl_url.clone(),
+                local_pl_path: local_pl_path,
+                remote_pl_url: remote_pl_url,
                 version: None
             };
 
