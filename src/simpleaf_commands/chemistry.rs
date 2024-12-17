@@ -1,6 +1,6 @@
 use crate::utils::af_utils::*;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use std::io::{Seek, Write};
 use std::path::PathBuf;
 use tracing::info;
@@ -20,9 +20,13 @@ pub fn add_chemistry(af_home_path: PathBuf, add_chem_cmd: Commands) -> Result<()
         } => {
             // check geometry string, if no good then
             // propagate error.
-            extract_geometry(&geometry)?;
+            match extract_geometry(&geometry) {
+                Ok(_) => {}
+                Err(e) => {
+                    Err(anyhow!("Could not parse the input string to --geometry. Please make sure it is valid and wrapped in quotes. The error message was: {}", e))?;
+                }
+            };
             Version::parse(version.as_ref()).with_context(|| format!("could not parse version {}. Please follow https://semver.org/. A valid example is 0.1.0", version))?;
-
 
             // init the custom chemistry struct
             let custom_chem = CustomChemistry {
