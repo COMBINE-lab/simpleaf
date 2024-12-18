@@ -66,3 +66,63 @@
         }
     }
 }
+        "geometry": "1{b[16]u[12]x:}2{r[50]x:}",
+        "version" : "0.1.0",
+        "expected_ori" : "fw",
+        "local_pl_path" : null,
+        "remote_pl_url" : "https://umd.box.com/shared/static/851sydyypct2cy4nri98yhelb4a9q3sg.txt"
+        "meta" : {
+            "cr_filename" : "visium-v1_coordinates.txt",
+        }
+    } ,
+    "visiumv1"  : {
+        "geometry": "1{b[16]u[12]x:}2{r:}",
+        "version" : "0.1.0",
+        "expected_ori" : "fw",
+        "local_pl_path" : null,
+        "remote_pl_url" : "https://umd.box.com/shared/static/851sydyypct2cy4nri98yhelb4a9q3sg.txt"
+        "meta" : {
+            "cr_filename" : "visium-v1_coordinates.txt",
+        }
+    } ,
+    "visiumv4-probe"  : {
+        "geometry": "1{b[16]u[12]x:}2{r[50]x:}",
+        "version" : "0.1.0",
+        "expected_ori" : "fw",
+        "local_pl_path" : null,
+        "remote_pl_url" : "https://umd.box.com/shared/static/i4udjwaceixd1em71fol50c3izl1wbzk.txt"
+        "meta" : {
+            "cr_filename" : "visium-v4_coordinates.txt",
+        }
+    } ,
+    "visiumv4" : {
+        "geometry": "1{b[16]u[12]x:}2{r:}",
+        "version" : "0.1.0",
+        "expected_ori" : "fw",
+        "local_pl_path" : null,
+        "remote_pl_url" : "https://umd.box.com/shared/static/i4udjwaceixd1em71fol50c3izl1wbzk.txt"
+        "meta" : {
+            "cr_filename" : "visium-v4_coordinates.txt",
+        }
+    } ,
+    "visiumv5-probe"  : {
+        "geometry": "1{b[16]u[12]x:}2{r[50]x:}",
+        "version" : "0.1.0",
+        "expected_ori" : "fw",
+        "local_pl_path" : null,
+        "remote_pl_url" : "https://umd.box.com/shared/static/518elp0hmb0es0qbhmp2o34evup4qwwr.txt"
+        "meta" : {
+            "cr_filename" : "visium-v4_coordinates.txt",
+        }
+    } ,
+    "visiumv5" : {
+        "geometry": "1{b[16]u[12]x:}2{r:}",
+        "version" : "0.1.0",
+        "expected_ori" : "fw",
+        "local_pl_path" : null,
+        "remote_pl_url" : "https://umd.box.com/shared/static/518elp0hmb0es0qbhmp2o34evup4qwwr.txt"
+        "meta" : {
+            "cr_filename" : "visium-v4_coordinates.txt",
+        }
+    }
+}

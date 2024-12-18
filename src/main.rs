@@ -89,12 +89,18 @@ fn main() -> anyhow::Result<()> {
             name,
             geometry,
             expected_ori,
+            local_pl_path,
+            remote_pl_url,
+            version
         } => add_chemistry(
             af_home_path,
             Commands::AddChemistry {
                 name,
                 geometry,
                 expected_ori,
+                local_pl_path,
+                remote_pl_url,
+                version
             },
         ),
         Commands::Inspect {} => inspect_simpleaf(crate_version!(), af_home_path),

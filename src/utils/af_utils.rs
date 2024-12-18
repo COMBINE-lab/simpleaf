@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 // use cmd_lib::run_fun;
 use phf::phf_map;
+use semver::Version;
 use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonSeparateGeomDesc};
 use seq_geom_xform::{FifoXFormData, FragmentGeomDescExt};
 use serde_json;
@@ -15,16 +16,17 @@ use tracing::{error, info, warn};
 
 use crate::atac::commands::AtacChemistry;
 use crate::utils::prog_utils;
+
 //use ureq;
 //use minreq::Response;
 
 // TODO: Update the path while merging
 static PERMIT_LIST_INFO_VERSION: &str = "0.1.0";
-static PERMIT_LIST_INFO_URL: &str = "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/spatial/resources/permit_list_info.json";
+static PERMIT_LIST_INFO_URL: &str = "https://raw.githubusercontent.com/an-altosian/simpleaf/spatial/resources/permit_list_info.json";
 // "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/permit_list_info.json";
 
-static CUSTOM_CHEMISTRIES_VERSION: &str = "0.1.0";
-static CUSTOM_CHEMISTRIES_URL: &str = "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/spatial/resources/custom_chemistries.json";
+// static CUSTOM_CHEMISTRIES_VERSION: &str = "0.1.0";
+static CUSTOM_CHEMISTRIES_URL: &str = "https://raw.githubusercontent.com/an-altosian/simpleaf/spatial/resources/custom_chemistries.json";
 // "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/custom_chem.json";
 
 /// The map from pre-specified chemistry types that salmon knows
@@ -137,11 +139,12 @@ impl CellFilterMethod {
 pub enum Chemistry {
     Rna(RnaChemistry),
     Atac(AtacChemistry),
+    Custom(CustomChemistry)
 }
 
 /// The builtin geometry types that have special handling to
 /// reduce necessary options in the common case, as well as the
-/// `Other` varant that covers custom geometries.
+/// `Other` variant that covers custom geometries.
 #[derive(EnumIter, Clone, PartialEq)]
 pub enum RnaChemistry {
     TenxV2,
@@ -149,7 +152,7 @@ pub enum RnaChemistry {
     TenxV3,
     TenxV35P,
     TenxV43P,
-    Other(String),
+    Other(String), // this will never be used because we have Chemistry::Custom
 }
 
 /// `&str` representations of the different geometries.
@@ -158,6 +161,15 @@ impl Chemistry {
         match self {
             Chemistry::Rna(rna_chem) => rna_chem.as_str(),
             Chemistry::Atac(atac_chem) => atac_chem.as_str(),
+            Chemistry::Custom(custom_chem) => custom_chem.name.as_str()
+        }
+    }
+
+    pub fn fragment_geometry_str(&self) -> &str {
+        match self {
+            Chemistry::Rna(rna_chem) => rna_chem.as_str(),
+            Chemistry::Atac(atac_chem) => atac_chem.as_str(),
+            Chemistry::Custom(custom_chem) => custom_chem.geometry()
         }
     }
 }
@@ -197,7 +209,14 @@ pub enum PermitListResult {
 }
 
 pub fn extract_geometry(geo: &str) -> Result<FragmentGeomDesc> {
-    FragmentGeomDesc::try_from(geo)
+    let fg = FragmentGeomDesc::try_from(geo);
+    match fg {
+        Ok(fg) => Ok(fg),
+        Err(e) => {
+            error!("Could not parse geometry {}. Please ensure that it is a valid geometry definition wrapped by quotes. The error message was: {:?}", geo, e);
+            Err(e)
+        }
+    }
 }
 
 pub fn add_chemistry_to_args_salmon(chem_str: &str, cmd: &mut std::process::Command) -> Result<()> {
@@ -242,19 +261,68 @@ pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Comm
     Ok(())
 }
 
+/// This function try to get permit list from five different sources with the following order:
+/// 1. If it has a local_pl_path in the custom_chemistries.json, it will use it.
+/// 2. If it has a remote_pl_url in the custom_chemistries.json and the default download path is a file, it will use the default download path.
+/// 3. If it has a remote_pl_url in the custom_chemistries.json and the default download path doesn't exist, it will download the file from url to the default path.
+/// 4. If it has a permit list file defined in the permit_list_info.json, it will use it.
+/// 4. If it has a remote url in the custom chemistry in the permit_list_info.json, it will download the file from the remote url to the defined path and use it
+// TODO: if we can combine the permit_list_info.json and custom_chemistries.json, we can simplify the logic and only check a single file
 pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitListResult> {
-    //check if the permit_list_info.json file exists
+    let odir = af_home.join("plist");
+    if !odir.exists() {
+        std::fs::create_dir(&odir).with_context(|| {
+            format!(
+                "Couldn't create the permit list directory at {}",
+                odir.display()
+            )
+        })?;
+    }
+
+    // define pl_path and url
+    let mut local_pl_path: PathBuf = odir.join(chem.as_str());
+    local_pl_path.set_extension("txt");
+    let mut remote_pl_url: Option<String> = None;
+
+    // FIRST TRY
+    // the first try will be to get the pl file from the custom chemistry
+    if let Chemistry::Custom(custom_chem) = chem {
+        info!("Try to get the permit list file from the custom chemistry");
+        // if we have local pl path, we should use it
+        if let Some(lpp) = custom_chem.local_pl_path() {
+            local_pl_path = PathBuf::from(lpp);
+            if local_pl_path.is_file() {
+                info!("Use local permit list file recorded in {} at {:#?}",
+                LOCAL_PL_PATH_KEY,
+                local_pl_path);
+                return Ok(PermitListResult::AlreadyPresent(local_pl_path));
+            } else {
+                warn!(
+                    "Couldn't find the local permit list file recorded in {} at {:#?}",
+                    LOCAL_PL_PATH_KEY,
+                    local_pl_path
+                );
+            }
+        } else if let Some(rpu) = custom_chem.remote_pl_url() {
+            // SECOND TRY
+            // we check if the default download path exists
+            if local_pl_path.is_file() {
+                info!("Use downloaded permit list file at {:#?}", local_pl_path);
+                return Ok(PermitListResult::AlreadyPresent(local_pl_path));
+            } else {
+                remote_pl_url = Some(rpu.to_string());
+            }
+        }
+    }
+
+    // the second try is to get the local file path from the permit_list_info.json file
+    // check if the permit_list_info.json file exists
     // if we have permit list file in af_home, there should be a permit_list_info.json file
     // if it's not there, we should download it
+    info!("Try to get the permit list file from predefined permit list info file");
+
     let permit_info_p = af_home.join("permit_list_info.json");
-    if !permit_info_p.exists() {
-        // download the permit_list_info.json file if needed
-        prog_utils::download_to_file(PERMIT_LIST_INFO_URL, &permit_info_p)?;
-    }
-    // read the permit_list_info.json file
-    let permit_info_file = std::fs::File::open(&permit_info_p)?;
-    let permit_info_reader = BufReader::new(permit_info_file);
-    let v: Value = serde_json::from_reader(permit_info_reader)?;
+    let v: Value = parse_resource_json_file(&permit_info_p, PERMIT_LIST_INFO_URL)?;
 
     let fake_version = json!("0.0.0");
     // get the version. If it is an old version, suggest the user to delete it
@@ -281,9 +349,7 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
     // get chemistry name
     let chem_name = chem.as_str();
 
-    // check if the file already exists
-    let odir = af_home.join("plist");
-
+    // THIRD TRY
     // get the permit list file name and url if its in the permit info file
     if let Some(chem_info) = v.get(chem_name) {
         info!(
@@ -307,38 +373,47 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
                     chem_name,
                     chem_info
                 )
-            })?
-            .to_string();
-
+            })?;
+        
         //if it exists, return the path
-        if odir.join(&chem_filename).is_file() {
-            return Ok(PermitListResult::AlreadyPresent(odir.join(&chem_filename)));
+        if odir.join(chem_filename).is_file() {
+            info!("Use permit list file at {:#?}", odir.join(chem_filename));
+            return Ok(PermitListResult::AlreadyPresent(odir.join(chem_filename)));
         }
 
-        // now, we download it
-        let dl_url = chem_info
-            .get("url")
-            .with_context(|| {
-                format!(
-                    "could not obtain the url field for chemistry {} from the permit_list_info.json file. Please report this issue onto the simpleaf github repository. The value obtained was {:?}",
-                    chem_name,
-                    chem_info
-                )
-            })?
-            .as_str()
-            .with_context(|| {
-                format!(
-                    "value for url field should be a string for chemistry {} from the permit_list_info.json file. Please report this issue onto the simpleaf github repository. The value obtained was {:?}",
-                    chem_name,
-                    chem_info
-                )
-            })?
-            .to_string();
+        // we update the url if we did not get it from the custom chemistry
+        if remote_pl_url.is_none() {
+            let dl_url = chem_info
+                .get("url")
+                .with_context(|| {
+                    format!(
+                        "could not obtain the url field for chemistry {} from the permit_list_info.json file. Please report this issue onto the simpleaf github repository. The value obtained was {:?}",
+                        chem_name,
+                        chem_info
+                    )
+                })?
+                .as_str()
+                .with_context(|| {
+                    format!(
+                        "value for url field should be a string for chemistry {} from the permit_list_info.json file. Please report this issue onto the simpleaf github repository. The value obtained was {:?}",
+                        chem_name,
+                        chem_info
+                    )
+                })?
+                .to_string();
 
+            // update the url and corresponding local path
+            remote_pl_url = Some(dl_url);
+            local_pl_path = odir.join(chem_filename);
+        }
+    } 
+
+    // LAST TRY
+    // we download the file from the remote url
+    if let Some(url) = remote_pl_url {
         // download the file
-        let output_file = odir.join(&chem_filename);
-        prog_utils::download_to_file(dl_url, &output_file)?;
-        Ok(PermitListResult::DownloadSuccessful(output_file))
+        prog_utils::download_to_file(url, &local_pl_path)?;
+        Ok(PermitListResult::DownloadSuccessful(local_pl_path))
     } else {
         Ok(PermitListResult::UnregisteredChemistry)
     }
@@ -487,6 +562,12 @@ pub enum ExpectedOri {
     Both,
 }
 
+impl std::fmt::Display for ExpectedOri {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}", self.as_str())
+    }
+}
+
 impl ExpectedOri {
     pub fn as_str(&self) -> &str {
         match self {
@@ -512,11 +593,26 @@ impl ExpectedOri {
 pub struct CustomChemistry {
     pub name: String,
     pub geometry: String,
-    pub expected_ori: ExpectedOri,
+    pub expected_ori: Option<ExpectedOri>,
+    pub version:Option <String>,
+    pub local_pl_path: Option<String>,
+    pub remote_pl_url: Option<String>,
 }
 
 #[allow(dead_code)]
 impl CustomChemistry {
+    pub fn simple_custom(geometry: &str) -> Result<CustomChemistry> {
+        // TODO: if we 
+        // extract_geometry(geometry)?;
+        Ok(CustomChemistry {
+            name: geometry.to_string(),
+            geometry: geometry.to_string(),
+            expected_ori: None,
+            version: None,
+            local_pl_path: None,
+            remote_pl_url: None,
+        })
+    }
     pub fn geometry(&self) -> &str {
         self.geometry.as_str()
     }
@@ -525,172 +621,327 @@ impl CustomChemistry {
         self.name.as_str()
     }
 
-    pub fn expected_ori(&self) -> ExpectedOri {
-        self.expected_ori.clone()
+    pub fn expected_ori(&self) -> &Option<ExpectedOri> {
+        &self.expected_ori
     }
+
+    pub fn version(&self) -> &Option<String> {
+        &self.version
+    }
+
+    pub fn local_pl_path(&self) -> &Option<String> {
+        &self.local_pl_path
+    }
+
+    pub fn remote_pl_url(&self) -> &Option<String> {
+        &self.remote_pl_url
+    }
+}
+
+static GEOMETRY_KEY: &str = "geometry";
+static EXPECTED_ORI_KEY: &str = "expected_ori";
+static VERSION_KEY: &str = "version";
+static LOCAL_PL_PATH_KEY: &str = "local_pl_path";
+static REMOTE_PL_URL_KEY: &str = "remote_pl_url";
+
+pub fn parse_resource_json_file(p: &Path, url: &str) -> Result<Value> {
+    // check if the custom_chemistries.json file exists
+    let resource_exists = p.is_file();
+
+    // get the file
+    if !resource_exists {
+        // download the custom_chemistries.json file if needed
+        prog_utils::download_to_file(url, p)?;
+    }
+
+    // load the file
+    let resource_file = std::fs::File::open(p).with_context(|| {
+        format!(
+            "Couldn't open the existing resource file. Please consider delete it from {}",
+            p.display()
+        )
+    })?;
+    let resource_reader = BufReader::new(resource_file);
+    serde_json::from_reader(resource_reader).with_context(|| {
+        format!(
+            "Couldn't parse the existing resource file. Please consider delete it from {}",
+            p.display()
+        )
+    })
 }
 
 /// This function gets the custom chemistry from the `af_home_path` directory.
 /// If the file doesn't exist, it downloads the file from the `url` and saves it
 pub fn get_custom_chem_hm(custom_chem_p: &Path) -> Result<HashMap<String, CustomChemistry>> {
-    // check if the custom_chemistries.json file exists
-    let custom_chem_exists = custom_chem_p.is_file();
-
-    // get the file
-    if custom_chem_exists {
-        // test if the file is good
-        let custom_chem_file = std::fs::File::open(custom_chem_p).with_context(|| {
-            format!(
-                "Couldn't open the existing custom chemistry file. Please consider delete it from {}",
-                custom_chem_p.display()
-            )
-        })?;
-        let custom_chem_reader = BufReader::new(custom_chem_file);
-        let v: Value = serde_json::from_reader(custom_chem_reader).with_context(|| {
-            format!(
-                "Couldn't parse the existing custom chemistry file. Please consider delete it from {}",
-                custom_chem_p.display()
-            )
-        })?;
-
-        // we check if the file is up to date
-        let fake_version = json!("0.0.0");
-        // get the version. If it is an old version, suggest the user to delete it
-        let version = v
-            .get("version")
-            .unwrap_or(&fake_version)
-            .as_str()
-            .with_context(|| {
-                format!(
-                    "value for version field should be a string from the permit_list_info.json file. Please report this issue onto the simpleaf github repository. The value obtained was {:?}",
-                    v
-                )
-            })?;
-
-        // check if the permit_list_info.json file is up to date
-        match prog_utils::check_version_constraints(
-            "custom_chemistries.json",
-            ">=".to_string() + CUSTOM_CHEMISTRIES_VERSION,
-            version,
-        ) {
-            Ok(af_ver) => info!("found permit_list_info.json version {:#}; Proceeding", af_ver),
-            Err(_) => warn!("found outdated permit list info file with version {}. Please consider delete it from {:#?}.", version, custom_chem_p)
+    let v: Value = parse_resource_json_file(custom_chem_p, CUSTOM_CHEMISTRIES_URL)?;
+    let chem_hm = get_custom_chem_hm_from_value(v);
+    match chem_hm {
+        Ok(hm) => Ok(hm),
+        Err(e) => {
+            bail!("{}; Please consider delete it from {}", e, custom_chem_p.display());
         }
-    } else {
-        // download the custom_chemistries.json file if needed
-        let custom_chem_url = CUSTOM_CHEMISTRIES_URL;
-        prog_utils::download_to_file(custom_chem_url, custom_chem_p)?;
     }
-
-    // load the file
-    let custom_chem_file = std::fs::File::open(custom_chem_p)?;
-    let custom_chem_reader = BufReader::new(custom_chem_file);
-    let v: Value = serde_json::from_reader(custom_chem_reader)?;
-    get_custom_chem_hm_from_value(v, custom_chem_p)
 }
 
+/// This function gets the custom chemistry from the custom_chemistries.json file in the `af_home_path` directory.
+/// We need to ensure back compatibility with the old version of the custom_chemistries.json file.
+/// In the old version, each key of `v` is associated with a string field recording the geometry.
+/// In the new version, each key of `v` is associated with a json object with two fields: `geometry`, `expected_ori`, `version`, local_pl_path, and "remote_pl_url".
 pub fn get_custom_chem_hm_from_value(
-    v: Value,
-    custom_chem_p: &Path,
+    v: Value
 ) -> Result<HashMap<String, CustomChemistry>> {
     let v_obj = v.as_object().with_context(|| {
-        format!(
-            "Couldn't parse the existing custom chemistry file. Please consider delete it from {}",
-            custom_chem_p.display()
-        )
+        format!("Couldn't parse the existing custom chemistry json file: {}.", v)
     })?;
 
-    let expected_ori_key = String::from("expected_ori");
-    // check if expected_ori exists
-    let expected_oris = v_obj.get(&expected_ori_key);
-
-    // warn if the expected_ori doesn't exist
-    if expected_oris.is_none() {
-        warn!("The expected_ori key is not found in the custom chemistry file, indicating it is an outdated version. All custom chemistries'  expected_ori will be treated as `both`. Please consider deleting the existing file from {}", custom_chem_p.display());
-    }
-
     // Then we go over the keys and values and create a hashmap
-    let mut custom_chem_map = HashMap::new();
+    let mut custom_chem_map = HashMap::with_capacity(v_obj.len());
 
-    // Except the expected_ori key, others are custom chemistries
+    // we build the hashmap
     for (key, value) in v_obj.iter() {
-        // skip the expected_ori key
-        if (key == expected_ori_key.as_str()) | (key == "version") {
-            continue;
-        }
-
-        // Now, we would expect we are working on a custom chemistry
-        let chem_spec = value.as_str().with_context(|| {
-            format!(
-                "Couldn't parse chemistry {} : {} in the custom chemistry file. Please consider delete the file from {}",
-                key,
-                value,
-                custom_chem_p.display()
-            )
-        })?;
-        let _cg = extract_geometry(chem_spec).with_context(|| {
-            format!(
-                "Couldn't parse the geometry for {}: {}. Please consider delete the file from {}",
-                key,
-                chem_spec,
-                custom_chem_p.display()
-            )
-        })?;
-
-        // insert it into the custom_chem_map
-        custom_chem_map.insert(key.clone(), CustomChemistry {
-            name: key.clone(),
-            geometry: chem_spec.to_string(),
-            expected_ori: {
-                // if expected_ori exists, we use it
-                if let Some(expected_ori_value) = expected_oris {
-                    let default_v = json!("both");
-                    // get the expected_ori str
-                    let expected_ori = expected_ori_value.get(key).unwrap_or(&default_v).as_str().with_context(|| {
-                        format!(
-                            "Couldn't parse the expected_ori for {}: {}. Please consider delete the file from {}",
-                            key,
-                            expected_ori_value.get(key).unwrap_or(&json!("both")),
-                            custom_chem_p.display()
-                        )
-                    })?;
-                    // convert it to expected_ori enum
-                    ExpectedOri::from_str(expected_ori).with_context(|| {
-                        format!(
-                            "Couldn't parse the expected_ori for {}: {}. Please consider delete the file from {}",
-                            key,
-                            expected_ori,
-                            custom_chem_p.display()
-                        )
-                    })?
-                } else {
-                    ExpectedOri::Both
-                }
-            }
-        });
+        let cc: CustomChemistry = parse_single_custom_chem_from_value(key, value)?; 
+        custom_chem_map.insert(key.clone(), cc);
     }
 
     Ok(custom_chem_map)
 }
 
+pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<CustomChemistry> {
+    let record_v = value.as_str();
+    if let Some(record_v) = record_v {
+        // if it is a string, it should be a geometry
+        match extract_geometry(record_v) {
+            Ok(_) => Ok(CustomChemistry {
+                name: key.to_string(),
+                geometry: record_v.to_string(),
+                expected_ori: None,
+                version: None,
+                local_pl_path: None,
+                remote_pl_url: None,
+            }),
+            Err(e) => Err(
+                anyhow!(
+                    "Found invalid custom chemistry record for {}: {}.\nThe error message was {}",
+                    key,
+                    record_v,
+                    e
+                )
+            )
+        }
+    } else {
+        match value.as_object() {
+            Some(obj) => {
+                // check if the geometry field exists and is valid
+                let geometry = obj.get(GEOMETRY_KEY).with_context(|| {
+                    format!(
+                        "Couldn't find the required {} field for the custom chemistry record for {}: {}.",
+                        GEOMETRY_KEY,
+                        key,
+                        value
+                    )
+                })?;
+                // it should be a string
+                let geometry_str = geometry.as_str().with_context(|| {
+                    format!(
+                        "Couldn't parse the {} field for the custom chemistry record for {}: {}.",
+                        GEOMETRY_KEY,
+                        key,
+                        geometry
+                    )
+                })?;
+                // it should be a valid geometry
+                extract_geometry(geometry_str).with_context(|| {
+                    format!(
+                        "Found invalid custom geometry for {}: {}.",
+                        key,
+                        geometry_str
+                    )
+                })?;
+
+                // check if the expected_ori field exists and is valid
+                let expected_ori = if let Some(eo) = obj.get(EXPECTED_ORI_KEY) {
+                    if eo.is_null() {
+                        None
+                    } else {
+                        // if it exists, it should be string
+                        let expected_ori_str = eo.as_str().with_context(|| {
+                            format!(
+                                "Couldn't parse the {} field for the custom chemistry record for {}: {}",
+                                EXPECTED_ORI_KEY,
+                                key,
+                                eo
+                            )
+                        })?;
+                        // check if the expected_ori exists
+                        if !ExpectedOri::from_str(expected_ori_str).is_ok() {
+                            Err(anyhow!(
+                                "Found invalid {} for {}: {}",
+                                EXPECTED_ORI_KEY,
+                                key,
+                                expected_ori_str
+                            ))?;
+                        }
+                        // convert it to expected_ori enum
+                        let eo = ExpectedOri::from_str(expected_ori_str).with_context(|| {
+                            format!(
+                                "Found invalid {} for {}: {}",
+                                EXPECTED_ORI_KEY,
+                                key,
+                                expected_ori_str
+                            )
+                        })?;
+                        Some(eo)
+                    }
+                } else {
+                    None
+                };
+                
+                // check if the version field exists
+                let version = match obj.get("version") {
+                    Some(v) => {
+                        if v.is_null() {
+                            None
+                        } else {
+                            // if it exists, it should be string
+                            let prog_ver_string = v
+                                .as_str()
+                                .with_context(|| {
+                                    format!(
+                                        "Couldn't parse the version for the custom chemistry {} as a string: {}",
+                                        key,
+                                        v,
+                                    )
+                                })?;
+                                
+                            // check if the version is valid
+                            Version::parse(prog_ver_string).with_context(|| {
+                                format!(
+                                    "Found invalid version string for the custom chemistry {}: {}",
+                                    key,
+                                    prog_ver_string
+                                )
+                            })?;
+                            Some(prog_ver_string.to_string())
+                        }
+                    }
+                    None => None
+                };
+
+                // check if the local_pl_path field exists and is valid
+                let local_pl_path = if let Some(lpp) = obj.get(LOCAL_PL_PATH_KEY) {
+                    if lpp.is_null() {
+                        None
+                    } else {
+                        // if it exists, it should be string
+                        let local_pl_path_str = lpp.as_str().with_context(|| {
+                            format!(
+                                "Couldn't parse the local_pl_path field for {}: {}",
+                                key,
+                                lpp
+                            )
+                        })?;
+    
+                        // check if the local_pl_path exists
+                        if !PathBuf::from(local_pl_path_str).is_file() {
+                            Err(anyhow!(
+                                "Couldn't find the local_pl_path for the custom chemistry record for {}: {}",
+                                key,
+                                local_pl_path_str
+                            ))?;
+                        }
+    
+                        Some(local_pl_path_str.to_string())
+                    }
+                } else {
+                    None
+                };
+
+                // check if the remote_pl_url field exists and is valid
+                // TODO: should we try to access the remote_pl_url to ensure it is valid?
+                let remote_pl_url = if let Some(rpu) = obj.get(REMOTE_PL_URL_KEY) {
+                    if rpu.is_null() {
+                        None
+                    } else {
+                        // if it exists, it should be valid
+                        let remote_pl_url_str = rpu.as_str().with_context(|| {
+                            format!(
+                                "Couldn't parse the remote_pl_url field for {}: {}",
+                                key,
+                                rpu
+                            )
+                        })?;
+                        Some(remote_pl_url_str.to_string())
+                    }
+                } else {
+                    None
+                };
+
+                Ok(CustomChemistry {
+                    name: key.to_string(),
+                    geometry: geometry_str.to_string(),
+                    expected_ori,
+                    version,
+                    local_pl_path,
+                    remote_pl_url,
+                })
+            }
+            None => {
+                Err(
+                    anyhow!(
+                        "Found invalid custom chemistry record for {}: {}.",
+                        key,
+                        value
+                    )
+                )
+            }
+        } // end of match
+    } // end of else
+}
+
 pub fn custom_chem_hm_to_json(custom_chem_hm: &HashMap<String, CustomChemistry>) -> Result<Value> {
     // first create the name to genometry mapping
-    let mut v: Value = custom_chem_hm
+    let v: Value = custom_chem_hm
         .iter()
-        .map(|(k, v)| (k.clone(), v.geometry().to_string()))
+        .map(|(k, v)| {
+            let mut value = json!({
+                GEOMETRY_KEY: v.geometry.clone()
+            });
+            value[EXPECTED_ORI_KEY] = if let Some(eo) = &v.expected_ori {
+                json!(eo.as_str())
+            } else {
+                info!("`expected_ori` is missing for custom chemistry {}; Set as {}", k, ExpectedOri::Both.as_str());
+                json!(ExpectedOri::Both.as_str())
+            };
+            value[VERSION_KEY] = if let Some(ver) = &v.version {
+                json!(ver)
+            } else {
+                info!("`version` is missing for custom chemistry {}; Set as {}", k, "0.0.1");
+                json!("0.0.1")
+            };
+            value[LOCAL_PL_PATH_KEY] = if let Some(lpp) = &v.local_pl_path {
+                json!(lpp)
+            } else {
+                json!(null)
+            };
+            value[REMOTE_PL_URL_KEY] = if let Some(rpu) = &v.remote_pl_url {
+                json!(rpu)
+            } else {
+                json!(null)
+            };
+            (k.clone(), value)
+        })
         .collect();
-
-    // add in expected ori mapping
-    let expected_ori_v: Value = custom_chem_hm
-        .iter()
-        .map(|(k, v)| (k.clone(), v.expected_ori().as_str().to_string()))
-        .collect();
-
-    // add the expected_ori to the geometry json
-    let chem_obj = v
-        .as_object_mut()
-        .expect("top-level custom chemistry JSON must be an object");
-    chem_obj.insert(String::from("expected_ori"), expected_ori_v);
 
     Ok(v)
+}
+
+/// This function tries to extract the custom chemistry with the specified name from the custom_chemistries.json file in the `af_home_path` directory. 
+pub fn get_single_custom_chem_from_file(custom_chem_p: &Path, chem_name: &str) -> Result<Option<CustomChemistry>> {
+    let v: Value = parse_resource_json_file(custom_chem_p, CUSTOM_CHEMISTRIES_URL)?;
+    if let Some(chem_v) = v.get(chem_name) {
+        let custom_chem = parse_single_custom_chem_from_value(chem_name, chem_v)?;
+        Ok(Some(custom_chem))
+    } else {
+        Ok(None)
+    }
 }
