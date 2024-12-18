@@ -1,9 +1,10 @@
 use crate::utils::af_utils::*;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use std::io::{Seek, Write};
 use std::path::PathBuf;
 use tracing::info;
+use semver::Version;
 
 use super::Commands;
 
@@ -13,21 +14,28 @@ pub fn add_chemistry(af_home_path: PathBuf, add_chem_cmd: Commands) -> Result<()
             name,
             geometry,
             expected_ori,
+            local_pl_path,
+            remote_pl_url,
+            version,
         } => {
             // check geometry string, if no good then
             // propagate error.
-            let _cg = extract_geometry(&geometry)?;
-
-            // cannot use expected_ori as the name
-            if (&name == "expected_ori") || (&name == "version") {
-                bail!("The name '{}' is reserved for the expected orientation of the molecule; Please choose another name", &name);
-            }
+            match extract_geometry(&geometry) {
+                Ok(_) => {}
+                Err(e) => {
+                    Err(anyhow!("Could not parse the input string to --geometry. Please make sure it is valid and wrapped in quotes. The error message was: {}", e))?;
+                }
+            };
+            Version::parse(version.as_ref()).with_context(|| format!("could not parse version {}. Please follow https://semver.org/. A valid example is 0.1.0", version))?;
 
             // init the custom chemistry struct
             let custom_chem = CustomChemistry {
                 name: name.clone(),
                 geometry: geometry.clone(),
-                expected_ori: ExpectedOri::from_str(&expected_ori)?,
+                expected_ori: Some(ExpectedOri::from_str(&expected_ori)?),
+                local_pl_path: local_pl_path,
+                remote_pl_url: remote_pl_url,
+                version: None
             };
 
             // read in the custom chemistry file

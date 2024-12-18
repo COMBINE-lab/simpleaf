@@ -1,17 +1,44 @@
 {
-    "visiumv1-probe" : "1{b[16]u[12]x:}2{r[50]x:}",
-    "visiumv1" : "1{b[16]u[12]x:}2{r:}",
-    "visiumv4-probe" : "1{b[16]u[12]x:}2{r[50]x:}",
-    "visiumv4" : "1{b[16]u[12]x:}2{r:}",
-    "visiumv5-probe" : "1{b[16]u[12]x:}2{r[50]x:}",
-    "visiumv5" : "1{b[16]u[12]x:}2{r:}",
-    "expected_ori" : {
-        "visiumv1-probe" : "fw",
-        "visiumv1" : "fw",
-        "visiumv4-probe" : "fw",
-        "visiumv4" : "fw",
-        "visiumv5-probe" : "fw",
-        "visiumv5" : "fw"
-    },
-    "version" : "0.1.0"
+    "visiumv1-probe" : {
+        "geometry": "1{b[16]u[12]x:}2{r[50]x:}",
+        "version" : "0.1.0",
+        "expected_ori" : "fw",
+        "local_pl_path" : null,
+        "remote_pl_url" : "https://umd.box.com/shared/static/851sydyypct2cy4nri98yhelb4a9q3sg.txt"
+    } ,
+    "visiumv1"  : {
+        "geometry": "1{b[16]u[12]x:}2{r:}",
+        "version" : "0.1.0",
+        "expected_ori" : "fw",
+        "local_pl_path" : null,
+        "remote_pl_url" : "https://umd.box.com/shared/static/851sydyypct2cy4nri98yhelb4a9q3sg.txt"
+    } ,
+    "visiumv4-probe"  : {
+        "geometry": "1{b[16]u[12]x:}2{r[50]x:}",
+        "version" : "0.1.0",
+        "expected_ori" : "fw",
+        "local_pl_path" : null,
+        "remote_pl_url" : "https://umd.box.com/shared/static/i4udjwaceixd1em71fol50c3izl1wbzk.txt"
+    } ,
+    "visiumv4" : {
+        "geometry": "1{b[16]u[12]x:}2{r:}",
+        "version" : "0.1.0",
+        "expected_ori" : "fw",
+        "local_pl_path" : null,
+        "remote_pl_url" : "https://umd.box.com/shared/static/i4udjwaceixd1em71fol50c3izl1wbzk.txt"
+    } ,
+    "visiumv5-probe"  : {
+        "geometry": "1{b[16]u[12]x:}2{r[50]x:}",
+        "version" : "0.1.0",
+        "expected_ori" : "fw",
+        "local_pl_path" : null,
+        "remote_pl_url" : "https://umd.box.com/shared/static/518elp0hmb0es0qbhmp2o34evup4qwwr.txt"
+    } ,
+    "visiumv5" : {
+        "geometry": "1{b[16]u[12]x:}2{r:}",
+        "version" : "0.1.0",
+        "expected_ori" : "fw",
+        "local_pl_path" : null,
+        "remote_pl_url" : "https://umd.box.com/shared/static/518elp0hmb0es0qbhmp2o34evup4qwwr.txt"
+    }
 }
