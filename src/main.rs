@@ -74,6 +74,17 @@ fn main() -> anyhow::Result<()> {
                 alevin_fry,
             },
         ),
+        Commands::Chemistry(ChemistryCommand::Add(add_opts)) => add_chemistry(
+            af_home_path,
+            Commands::AddChemistry {
+                name: add_opts.name,
+                geometry: add_opts.geometry,
+                expected_ori: add_opts.expected_ori,
+            },
+        ),
+        Commands::Chemistry(ChemistryCommand::Refresh) => {
+            todo!("implement chemistry refresh")
+        }
         Commands::AddChemistry {
             name,
             geometry,

@@ -441,11 +441,35 @@ pub struct IndexOpts {
     pub sparse: bool,
 }
 
+/// Add a new chemistry to the registry of custom chemistries
+#[derive(Args, Clone, Debug)]
+#[command(arg_required_else_help = true)]
+pub struct ChemistryAddOpts {
+    /// the name to give the chemistry
+    #[arg(short, long)]
+    pub name: String,
+    /// the geometry to which the chemistry maps
+    #[arg(short, long)]
+    pub geometry: String,
+    /// the expected orientation to give to the chemistry
+    #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(["fw", "rc", "both"]))]
+    pub expected_ori: String,
+}
+
+#[derive(Debug, Subcommand)]
+#[command(arg_required_else_help = true)]
+pub enum ChemistryCommand {
+    Refresh,
+    Add(ChemistryAddOpts),
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     /// build the (expanded) reference index
     Index(IndexOpts),
     /// add a new custom chemistry to geometry mapping
+    #[command(subcommand)]
+    Chemistry(ChemistryCommand),
     #[command(arg_required_else_help = true)]
     AddChemistry {
         /// the name to give the chemistry
