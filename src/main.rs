@@ -80,6 +80,9 @@ fn main() -> anyhow::Result<()> {
                 name: add_opts.name,
                 geometry: add_opts.geometry,
                 expected_ori: add_opts.expected_ori,
+                local_pl_path: None,
+                remote_pl_url: None,
+                version: String::from("0.0.0"),
             },
         ),
         Commands::Chemistry(ChemistryCommand::Refresh) => {
@@ -91,7 +94,7 @@ fn main() -> anyhow::Result<()> {
             expected_ori,
             local_pl_path,
             remote_pl_url,
-            version
+            version,
         } => add_chemistry(
             af_home_path,
             Commands::AddChemistry {
@@ -100,7 +103,7 @@ fn main() -> anyhow::Result<()> {
                 expected_ori,
                 local_pl_path,
                 remote_pl_url,
-                version
+                version,
             },
         ),
         Commands::Inspect {} => inspect_simpleaf(crate_version!(), af_home_path),
