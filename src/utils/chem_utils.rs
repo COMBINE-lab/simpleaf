@@ -1,6 +1,4 @@
-use crate::utils::af_utils::{
-    parse_resource_json_file, validate_geometry, ExpectedOri,
-};
+use crate::utils::af_utils::{parse_resource_json_file, validate_geometry, ExpectedOri};
 use crate::utils::constants::*;
 use anyhow::{anyhow, bail, Context, Result};
 use semver::Version;
@@ -14,8 +12,12 @@ use tracing::info;
 static GEOMETRY_KEY: &str = "geometry";
 static EXPECTED_ORI_KEY: &str = "expected_ori";
 static VERSION_KEY: &str = "version";
-pub(crate) static LOCAL_PL_PATH_KEY: &str = "local_pl_path";
-static REMOTE_PL_URL_KEY: &str = "remote_pl_url";
+pub(crate) static LOCAL_PL_PATH_KEY: &str = "plist_name";
+pub(crate) static REMOTE_PL_URL_KEY: &str = "remote_url";
+
+pub trait QueryInRegistry {
+    fn registry_key(&self) -> &str;
+}
 
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
@@ -24,8 +26,14 @@ pub struct CustomChemistry {
     pub geometry: String,
     pub expected_ori: Option<ExpectedOri>,
     pub version: Option<String>,
-    pub local_pl_path: Option<String>,
+    pub plist_name: Option<String>,
     pub remote_pl_url: Option<String>,
+}
+
+impl QueryInRegistry for CustomChemistry {
+    fn registry_key(&self) -> &str {
+        self.name()
+    }
 }
 
 #[allow(dead_code)]
@@ -38,7 +46,7 @@ impl CustomChemistry {
             geometry: geometry.to_string(),
             expected_ori: None,
             version: None,
-            local_pl_path: None,
+            plist_name: None,
             remote_pl_url: None,
         })
     }
@@ -58,8 +66,8 @@ impl CustomChemistry {
         &self.version
     }
 
-    pub fn local_pl_path(&self) -> &Option<String> {
-        &self.local_pl_path
+    pub fn plist_name(&self) -> &Option<String> {
+        &self.plist_name
     }
 
     pub fn remote_pl_url(&self) -> &Option<String> {
@@ -135,7 +143,7 @@ pub fn get_custom_chem_hm(custom_chem_p: &Path) -> Result<HashMap<String, Custom
 /// This function gets the custom chemistry from the custom_chemistries.json file in the `af_home_path` directory.
 /// We need to ensure back compatibility with the old version of the custom_chemistries.json file.
 /// In the old version, each key of `v` is associated with a string field recording the geometry.
-/// In the new version, each key of `v` is associated with a json object with two fields: `geometry`, `expected_ori`, `version`, local_pl_path, and "remote_pl_url".
+/// In the new version, each key of `v` is associated with a json object with two fields: `geometry`, `expected_ori`, `version`, `plist_name`, and "remote_pl_url".
 pub fn get_custom_chem_hm_from_value(v: Value) -> Result<HashMap<String, CustomChemistry>> {
     // the top-level value should be an object
     let v_obj = v.as_object().with_context(|| {
@@ -203,7 +211,7 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
                     geometry: record_v.to_string(),
                     expected_ori: None,
                     version: None,
-                    local_pl_path: None,
+                    plist_name: None,
                     remote_pl_url: None,
                     //meta: None,
                 }),
@@ -255,7 +263,7 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
                 })?;
             };
 
-            let local_pl_path =
+            let plist_name =
                 try_get_str_from_json(LOCAL_PL_PATH_KEY, obj, FieldType::Optional, None)?;
 
             let remote_pl_url =
@@ -266,7 +274,7 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
                 geometry,
                 expected_ori,
                 version,
-                local_pl_path,
+                plist_name,
                 remote_pl_url,
             })
         }
@@ -311,7 +319,7 @@ pub fn custom_chem_hm_to_json(custom_chem_hm: &HashMap<String, CustomChemistry>)
                 );
                 json!("0.0.1")
             };
-            value[LOCAL_PL_PATH_KEY] = if let Some(lpp) = &v.local_pl_path {
+            value[LOCAL_PL_PATH_KEY] = if let Some(lpp) = &v.plist_name {
                 json!(lpp)
             } else {
                 json!(null)

@@ -7,72 +7,109 @@ use anyhow::{bail, Context, Result};
 use semver::Version;
 use serde_json::json;
 use std::io::{Seek, Write};
+use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 use tracing::{info, warn};
 
 use super::Commands;
 
-pub fn add_chemistry(af_home_path: PathBuf, add_chem_cmd: Commands) -> Result<()> {
-    match add_chem_cmd {
-        Commands::AddChemistry {
-            name,
-            geometry,
-            expected_ori,
-            local_pl_path,
-            remote_pl_url,
-            version,
-        } => {
-            // check geometry string, if no good then
-            // propagate error.
-            extract_geometry(&geometry)?;
-            Version::parse(version.as_ref()).with_context(|| format!("could not parse version {}. Please follow https://semver.org/. A valid example is 0.1.0", version))?;
+pub fn add_chemistry(
+    af_home_path: PathBuf,
+    add_opts: crate::simpleaf_commands::ChemistryAddOpts,
+) -> Result<()> {
+    let geometry = add_opts.geometry;
+    // check geometry string, if no good then
+    // propagate error.
+    validate_geometry(&geometry)?;
 
-            // init the custom chemistry struct
-            let custom_chem = CustomChemistry {
-                name,
-                geometry,
-                expected_ori: Some(ExpectedOri::from_str(&expected_ori)?),
-                local_pl_path,
-                remote_pl_url,
-                version: None,
-            };
+    let version = add_opts.version.unwrap_or("0.0.0".to_string());
+    Version::parse(version.as_ref()).with_context(|| format!("could not parse version {}. Please follow https://semver.org/. A valid example is 0.1.0", version))?;
 
-            // read in the custom chemistry file
-            let custom_chem_p = af_home_path.join("custom_chemistries.json");
+    let name = add_opts.name;
 
-            let mut custom_chem_hm = get_custom_chem_hm(&custom_chem_p)?;
-
-            // check if the chemistry already exists and log
-            if let Some(cc) = custom_chem_hm.get(custom_chem.name()) {
-                info!("chemistry {} already existed, with geometry {} the one recorded: {}; overwriting geometry specification", custom_chem.name(), if cc.geometry() == custom_chem.geometry() {"same as"} else {"different with"}, cc.geometry());
-                custom_chem_hm
-                    .entry(custom_chem.name().to_string())
-                    .and_modify(|e| *e = custom_chem);
-            } else {
-                info!(
-                    "inserting chemistry {} with geometry {}",
-                    custom_chem.name(),
-                    custom_chem.geometry()
-                );
-                custom_chem_hm.insert(custom_chem.name().to_string(), custom_chem);
+    let local_plist;
+    if let Some(local_url) = add_opts.local_url {
+        if local_url.is_file() {
+            let metadata = std::fs::metadata(&local_url)?;
+            let flen = metadata.size();
+            if flen > 4_294_967_296 {
+                warn!("The file provided to local-url ({}) is {} bytes. This file will be *copied* into the ALEVIN_FRY_HOME directory", local_url.display(), flen);
             }
 
-            // convert the custom chemistry hashmap to json
-            let v = custom_chem_hm_to_json(&custom_chem_hm)?;
+            let local_plist_name = PathBuf::from(&name).with_extension("txt");
+            let pdir = af_home_path.join("plist");
+            let local_plist_path = pdir.join(&local_plist_name);
 
-            // write out the new custom chemistry file
-            let mut custom_chem_file = std::fs::File::create(&custom_chem_p)
-                .with_context(|| format!("could not create {}", custom_chem_p.display()))?;
-            custom_chem_file.rewind()?;
+            if !pdir.exists() {
+                info!(
+                    "The permit list directory ({}) doesn't yet exist; attempting to create it.",
+                    pdir.display()
+                );
+                std::fs::create_dir(&pdir).with_context(|| {
+                    format!(
+                        "Couldn't create the permit list directory at {}",
+                        pdir.display()
+                    )
+                })?;
+            }
 
-            custom_chem_file
-                .write_all(serde_json::to_string_pretty(&v).unwrap().as_bytes())
-                .with_context(|| format!("could not write {}", custom_chem_p.display()))?;
+            std::fs::copy(&local_url, &local_plist_path).with_context(|| {
+                format!(
+                    "failed to copy local permit list url {} to location {}",
+                    local_url.display(),
+                    local_plist_path.display()
+                )
+            })?;
+            local_plist = Some(local_plist_name.display().to_string());
+        } else {
+            bail!("The local-url {} was provided, but no file could be found at that location. Cannot continue.", local_url.display());
         }
-        _ => {
-            bail!("unknown command");
-        }
+    } else {
+        local_plist = None;
     }
+
+    // init the custom chemistry struct
+    let custom_chem = CustomChemistry {
+        name,
+        geometry,
+        expected_ori: Some(ExpectedOri::from_str(&add_opts.expected_ori)?),
+        plist_name: local_plist,
+        remote_pl_url: add_opts.remote_url,
+        version: Some(version),
+    };
+
+    // read in the custom chemistry file
+    let chem_p = af_home_path.join(CHEMISTRIES_PATH);
+
+    let mut chem_hm = get_custom_chem_hm(&chem_p)?;
+
+    // check if the chemistry already exists and log
+    if let Some(cc) = chem_hm.get(custom_chem.name()) {
+        info!("chemistry {} already existed, with geometry {} the one recorded: {}; overwriting geometry specification", custom_chem.name(), if cc.geometry() == custom_chem.geometry() {"same as"} else {"different with"}, cc.geometry());
+        chem_hm
+            .entry(custom_chem.name().to_string())
+            .and_modify(|e| *e = custom_chem);
+    } else {
+        info!(
+            "inserting chemistry {} with geometry {}",
+            custom_chem.name(),
+            custom_chem.geometry()
+        );
+        chem_hm.insert(custom_chem.name().to_string(), custom_chem);
+    }
+
+    // convert the custom chemistry hashmap to json
+    let v = custom_chem_hm_to_json(&chem_hm)?;
+
+    // write out the new custom chemistry file
+    let mut custom_chem_file = std::fs::File::create(&chem_p)
+        .with_context(|| format!("could not create {}", chem_p.display()))?;
+    custom_chem_file.rewind()?;
+
+    custom_chem_file
+        .write_all(serde_json::to_string_pretty(&v).unwrap().as_bytes())
+        .with_context(|| format!("could not write {}", chem_p.display()))?;
+
     Ok(())
 }
 
@@ -184,5 +221,64 @@ pub fn refresh_chemistries(af_home: PathBuf) -> Result<()> {
             bail!("Could not parse newly downloaded \"chemistries.json\" file as a JSON object, something is wrong. Please report this on GitHub.");
         }
     }
+    Ok(())
+}
+
+pub fn remove_chemistry(
+    af_home_path: PathBuf,
+    remove_opts: crate::simpleaf_commands::ChemistryRemoveOpts,
+) -> Result<()> {
+    let name = remove_opts.name;
+    // read in the custom chemistry file
+    let chem_p = af_home_path.join(CHEMISTRIES_PATH);
+
+    let mut chem_hm = get_custom_chem_hm(&chem_p)?;
+
+    // check if the chemistry already exists and log
+    if let Some(cc) = chem_hm.get(&name) {
+        info!("chemistry {} found in the registry; removing it!", name);
+        chem_hm.remove(&name);
+
+        // convert the custom chemistry hashmap to json
+        let v = custom_chem_hm_to_json(&chem_hm)?;
+
+        // write out the new custom chemistry file
+        let mut custom_chem_file = std::fs::File::create(&chem_p)
+            .with_context(|| format!("could not create {}", chem_p.display()))?;
+        custom_chem_file.rewind()?;
+
+        custom_chem_file
+            .write_all(serde_json::to_string_pretty(&v).unwrap().as_bytes())
+            .with_context(|| format!("could not write {}", chem_p.display()))?;
+    } else {
+        info!(
+            "no chemistry with name {} was found in the registry; nothing to remove",
+            name
+        );
+    }
+
+    Ok(())
+}
+
+pub fn lookup_chemistry(
+    af_home_path: PathBuf,
+    lookup_opts: crate::simpleaf_commands::ChemistryLookupOpts,
+) -> Result<()> {
+    let name = lookup_opts.name;
+    // read in the custom chemistry file
+    let chem_p = af_home_path.join(CHEMISTRIES_PATH);
+
+    let chem_hm = get_custom_chem_hm(&chem_p)?;
+    println!("{:#?}", chem_hm);
+
+    // check if the chemistry already exists and log
+    if let Some(cc) = chem_hm.get(&name) {
+        println!("chemistry name : {}", name);
+        println!("==============");
+        println!("{:#?}", cc);
+    } else {
+        info!("no chemistry with name {} was found in the registry!", name);
+    }
+
     Ok(())
 }

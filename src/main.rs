@@ -1,4 +1,4 @@
-use chemistry::refresh_chemistries;
+use chemistry::{add_chemistry, lookup_chemistry, refresh_chemistries, remove_chemistry};
 use tracing_subscriber::{filter::LevelFilter, fmt, prelude::*, EnvFilter};
 
 use anyhow::bail;
@@ -75,36 +75,16 @@ fn main() -> anyhow::Result<()> {
                 alevin_fry,
             },
         ),
-        Commands::Chemistry(ChemistryCommand::Add(add_opts)) => add_chemistry(
-            af_home_path,
-            Commands::AddChemistry {
-                name: add_opts.name,
-                geometry: add_opts.geometry,
-                expected_ori: add_opts.expected_ori,
-                local_pl_path: None,
-                remote_pl_url: None,
-                version: String::from("0.0.0"),
-            },
-        ),
+        Commands::Chemistry(ChemistryCommand::Add(add_opts)) => {
+            add_chemistry(af_home_path, add_opts)
+        }
+        Commands::Chemistry(ChemistryCommand::Remove(rem_opts)) => {
+            remove_chemistry(af_home_path, rem_opts)
+        }
+        Commands::Chemistry(ChemistryCommand::Lookup(lookup_opts)) => {
+            lookup_chemistry(af_home_path, lookup_opts)
+        }
         Commands::Chemistry(ChemistryCommand::Refresh) => refresh_chemistries(af_home_path),
-        Commands::AddChemistry {
-            name,
-            geometry,
-            expected_ori,
-            local_pl_path,
-            remote_pl_url,
-            version,
-        } => add_chemistry(
-            af_home_path,
-            Commands::AddChemistry {
-                name,
-                geometry,
-                expected_ori,
-                local_pl_path,
-                remote_pl_url,
-                version,
-            },
-        ),
         Commands::Inspect {} => inspect_simpleaf(crate_version!(), af_home_path),
 
         Commands::RefreshProgInfo {} => refresh_prog_info(af_home_path),

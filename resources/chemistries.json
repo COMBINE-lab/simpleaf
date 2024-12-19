@@ -3,7 +3,7 @@
     "geometry": "1{b[16]u[12]x:}2{r[50]x:}",
     "expected_ori": "fw",
     "version": "0.1.0",
-    "local_url": "visium-v1_coordinates.txt",
+    "plist_name": "visium-v1_coordinates.txt",
     "remote_url": "https://umd.box.com/shared/static/851sydyypct2cy4nri98yhelb4a9q3sg.txt",
     "meta": {
       "cr_filename": "visium-v1_coordinates.txt"
@@ -13,7 +13,7 @@
     "geometry": "1{b[16]u[12]x:}2{r:}",
     "expected_ori": "fw",
     "version": "0.1.0",
-    "local_url": "visium-v1_coordinates.txt",
+    "plist_name": "visium-v1_coordinates.txt",
     "remote_url": "https://umd.box.com/shared/static/851sydyypct2cy4nri98yhelb4a9q3sg.txt",
     "meta": {
       "cr_filename": "visium-v1_coordinates.txt"
@@ -23,7 +23,7 @@
     "geometry": "1{b[16]u[12]x:}2{r[50]x:}",
     "expected_ori": "fw",
     "version": "0.1.0",
-    "local_url": "visium-v4_coordinates.txt",
+    "plist_name": "visium-v4_coordinates.txt",
     "remote_url": "https://umd.box.com/shared/static/i4udjwaceixd1em71fol50c3izl1wbzk.txt",
     "meta": {
       "cr_filename": "visium-v4_coordinates.txt"
@@ -33,7 +33,7 @@
     "geometry": "1{b[16]u[12]x:}2{r:}",
     "expected_ori": "fw",
     "version": "0.1.0",
-    "local_url": "visium-v4_coordinates.txt",
+    "plist_name": "visium-v4_coordinates.txt",
     "remote_url": "https://umd.box.com/shared/static/i4udjwaceixd1em71fol50c3izl1wbzk.txt",
     "meta": {
       "cr_filename": "visium-v4_coordinates.txt"
@@ -43,7 +43,7 @@
     "geometry": "1{b[16]u[12]x:}2{r[50]x:}",
     "expected_ori": "fw",
     "version": "0.1.0",
-    "local_url": "visium-v5_coordinates.txt",
+    "plist_name": "visium-v5_coordinates.txt",
     "remote_url": "https://umd.box.com/shared/static/518elp0hmb0es0qbhmp2o34evup4qwwr.txt",
     "meta": {
       "cr_filename": "visium-v5_coordinates.txt"
@@ -53,7 +53,7 @@
     "geometry": "1{b[16]u[12]x:}2{r:}",
     "expected_ori": "fw",
     "version": "0.1.0",
-    "local_url": "visium-v5_coordinates.txt",
+    "plist_name": "visium-v5_coordinates.txt",
     "remote_url": "https://umd.box.com/shared/static/518elp0hmb0es0qbhmp2o34evup4qwwr.txt",
     "meta": {
       "cr_filename": "visium-v5_coordinates.txt"
@@ -62,7 +62,7 @@
   "10xv2": {
     "geometry": "__builtin",
     "expected_ori": "fw",
-    "local_url": "10x_v2_permit.txt",
+    "plist_name": "10x_v2_permit.txt",
     "version": "0.1.0",
     "meta": {
       "cr_filename": "737k-august-2016.txt"
@@ -72,7 +72,7 @@
   "10xv2-5p": {
     "geometry": "__builtin",
     "expected_ori": "fw",
-    "local_url": "10x_v2_permit.txt",
+    "plist_name": "10x_v2_permit.txt",
     "version": "0.1.0",
     "meta": {
       "cr_filename": "737k-august-2016.txt"
@@ -82,7 +82,7 @@
   "10xv3": {
     "geometry": "__builtin",
     "expected_ori": "fw",
-    "local_url": "10x_v3_permit.txt",
+    "plist_name": "10x_v3_permit.txt",
     "version": "0.1.0",
     "meta": {
       "cr_filename": "3M-febrary-2018.txt.gz"
@@ -92,7 +92,7 @@
   "10xv3-5p": {
     "geometry": "__builtin",
     "expected_ori": "fw",
-    "local_url": "10x_v3_5p_permit.txt",
+    "plist_name": "10x_v3_5p_permit.txt",
     "version": "0.1.0",
     "meta": {
       "cr_filename": "3M-5pgex-jan-2023.txt.gz"
@@ -102,7 +102,7 @@
   "10xv4-3p": {
     "geometry": "__builtin",
     "expected_ori": "fw",
-    "local_url": "10x_v4_3p_permit.txt",
+    "plist_name": "10x_v4_3p_permit.txt",
     "version": "0.1.0",
     "meta": {
       "cr_filename": "3M-3pgex-may-2023.txt.gz"
@@ -112,7 +112,7 @@
   "10x-atac-v1": {
     "geometry": "__builtin",
     "expected_ori": "fw",
-    "local_url": "10x_atac_v1_v11_v2.txt",
+    "plist_name": "10x_atac_v1_v11_v2.txt",
     "remote_url": "https://umd.box.com/shared/static/2fni966esnkorl92ca3jxjogz8dyt1ki",
     "version": "0.1.0",
     "meta": {
@@ -122,7 +122,7 @@
   "10x-atac-v2": {
     "geometry": "__builtin",
     "expected_ori": "fw",
-    "local_url": "10x_atac_v1_v11_v2.txt",
+    "plist_name": "10x_atac_v1_v11_v2.txt",
     "remote_url": "https://umd.box.com/shared/static/2fni966esnkorl92ca3jxjogz8dyt1ki",
     "version": "0.1.0",
     "meta": {
@@ -132,7 +132,7 @@
   "10x-arc-atac-v1": {
     "geometry": "__builtin",
     "expected_ori": "fw",
-    "local_url": "10x_arc_atac_v1.txt",
+    "plist_name": "10x_arc_atac_v1.txt",
     "remote_url": "https://umd.box.com/shared/static/4bs2mf4nkvvhviyz90ntdnpfzf6exnlj",
     "version": "0.1.0",
     "meta": {

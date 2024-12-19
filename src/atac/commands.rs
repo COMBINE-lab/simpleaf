@@ -1,5 +1,6 @@
 use crate::atac::defaults::DefaultAtacParams;
 use crate::defaults::{DefaultMappingParams, DefaultParams};
+use crate::utils::chem_utils::QueryInRegistry;
 use clap::{
     builder::{ArgPredicate, PossibleValue},
     Args, Subcommand, ValueEnum,
@@ -22,6 +23,16 @@ impl fmt::Debug for AtacChemistry {
             AtacChemistry::TenxV11 => write!(f, "10xv1"),
             AtacChemistry::TenxV2 => write!(f, "10xv2"),
             AtacChemistry::TenxMulti => write!(f, "10xmulti"),
+        }
+    }
+}
+
+impl QueryInRegistry for AtacChemistry {
+    fn registry_key(&self) -> &str {
+        match self {
+            Self::TenxV11 => "10x-atac-v1",
+            Self::TenxV2 => "10x-atac-v2",
+            Self::TenxMulti => "10x-arc-atac-v1",
         }
     }
 }

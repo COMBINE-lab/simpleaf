@@ -442,9 +442,27 @@ pub struct IndexOpts {
     pub sparse: bool,
 }
 
-/// Add a new chemistry to the registry of custom chemistries
+/// Remove a chemistry from the chemistry registry
 #[derive(Args, Clone, Debug)]
 #[command(arg_required_else_help = true)]
+pub struct ChemistryRemoveOpts {
+    /// the name of the chemistry you wish to remove
+    #[arg(short, long)]
+    pub name: String,
+}
+
+/// Lookup a chemistry in the chemistry registry
+#[derive(Args, Clone, Debug)]
+#[command(arg_required_else_help = true)]
+pub struct ChemistryLookupOpts {
+    /// the name of the chemistry you wish to lookup
+    #[arg(short, long)]
+    pub name: String,
+}
+
+/// Add a new chemistry to the registry of custom chemistries
+#[derive(Args, Clone, Debug)]
+#[command(arg_required_else_help = true, disable_version_flag = true)]
 pub struct ChemistryAddOpts {
     /// the name to give the chemistry
     #[arg(short, long)]
@@ -455,6 +473,23 @@ pub struct ChemistryAddOpts {
     /// the expected orientation to give to the chemistry
     #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(["fw", "rc", "both"]))]
     pub expected_ori: String,
+    /// the (fully-qualified) path to a local file that will be copied into
+    /// the permit list directory of the ALEVIN_FRY_HOME directory to provide
+    /// a permit list for use with this chemistry.
+    #[arg(long)]
+    pub local_url: Option<PathBuf>,
+    /// the url of a remote file that will be downloaded (*on demand*)
+    /// to provide a permit list for use with this chemistry. This file
+    /// should be obtainable with the equivalent of `wget <local-url>`.
+    /// The file will only be downloaded the first time it is needed and
+    /// will be locally cached in ALEVIN_FRY_HOME after that.
+    #[arg(long)]
+    pub remote_url: Option<String>,
+    /// optionally assign a version number to this chemistry. A chemistry's
+    /// entry can be updated in the future by adding it again with a higher
+    /// version number.
+    #[arg(long)]
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -462,6 +497,8 @@ pub struct ChemistryAddOpts {
 pub enum ChemistryCommand {
     Refresh,
     Add(ChemistryAddOpts),
+    Remove(ChemistryRemoveOpts),
+    Lookup(ChemistryLookupOpts),
 }
 
 #[derive(Debug, Subcommand)]
@@ -471,28 +508,6 @@ pub enum Commands {
     /// add a new custom chemistry to geometry mapping
     #[command(subcommand)]
     Chemistry(ChemistryCommand),
-    #[command(arg_required_else_help = true)]
-    AddChemistry {
-        /// the name to give the chemistry
-        #[arg(short, long)]
-        name: String,
-        /// the geometry to which the chemistry maps, wrapped in quotes.
-        /// Details can be found at https://hackmd.io/@PI7Og0l1ReeBZu_pjQGUQQ/rJMgmvr13
-        #[arg(short, long)]
-        geometry: String,
-        /// the expected orientation to give to the chemistry
-        #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(["fw", "rc", "both"]))]
-        expected_ori: String,
-        /// the path to a local permit list if applicable
-        #[arg(short, long)]
-        local_pl_path: Option<String>,
-        /// the url to a remote permit list tsv file, if applicable, where the first column must records the barcodes
-        #[arg(short, long)]
-        remote_pl_url: Option<String>,
-        /// the version of the chemistry.
-        #[arg(short, long, default_value = "0.0.1")]
-        version: String,
-    },
     /// inspect the current configuration
     Inspect {},
     /// quantify a sample

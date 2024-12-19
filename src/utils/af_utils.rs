@@ -14,8 +14,10 @@ use strum_macros::EnumIter;
 use tracing::{error, info, warn};
 
 use crate::atac::commands::AtacChemistry;
-use crate::utils::chem_utils::{CustomChemistry, LOCAL_PL_PATH_KEY};
-use crate::utils::prog_utils;
+use crate::utils::chem_utils::{CustomChemistry, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY};
+use crate::utils::{self, prog_utils};
+
+use super::chem_utils::QueryInRegistry;
 
 //use ureq;
 //use minreq::Response;
@@ -141,6 +143,16 @@ pub enum Chemistry {
     Custom(CustomChemistry),
 }
 
+impl QueryInRegistry for Chemistry {
+    fn registry_key(&self) -> &str {
+        match self {
+            Chemistry::Rna(rc) => rc.registry_key(),
+            Chemistry::Atac(ac) => ac.registry_key(),
+            Chemistry::Custom(cc) => cc.registry_key(),
+        }
+    }
+}
+
 /// The builtin geometry types that have special handling to
 /// reduce necessary options in the common case, as well as the
 /// `Other` variant that covers custom geometries.
@@ -152,6 +164,12 @@ pub enum RnaChemistry {
     TenxV35P,
     TenxV43P,
     Other(String), // this will never be used because we have Chemistry::Custom
+}
+
+impl QueryInRegistry for RnaChemistry {
+    fn registry_key(&self) -> &str {
+        self.as_str()
+    }
 }
 
 /// `&str` representations of the different geometries.
@@ -205,6 +223,7 @@ pub enum PermitListResult {
     DownloadSuccessful(PathBuf),
     AlreadyPresent(PathBuf),
     UnregisteredChemistry,
+    MissingPermitKeys,
 }
 
 pub fn validate_geometry(geo: &str) -> Result<()> {
@@ -273,164 +292,116 @@ pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Comm
     Ok(())
 }
 
-/// This function try to get permit list from five different sources with the following order:
-/// 1. If it has a local_pl_path in the custom_chemistries.json, it will use it.
-/// 2. If it has a remote_pl_url in the custom_chemistries.json and the default download path is a file, it will use the default download path.
-/// 3. If it has a remote_pl_url in the custom_chemistries.json and the default download path doesn't exist, it will download the file from url to the default path.
-/// 4. If it has a permit list file defined in the permit_list_info.json, it will use it.
-/// 4. If it has a remote url in the custom chemistry in the permit_list_info.json, it will download the file from the remote url to the defined path and use it
-// TODO: if we can combine the permit_list_info.json and custom_chemistries.json, we can simplify the logic and only check a single file
+/// This function try to get permit list for this chemistry. The general algorithm is as follows:
+/// * If this chemsitry is unregistered, then we can't obtain a permit list
+/// * If it is registered and has a plist_name in the chemistries.json, we will look for that file.
+///     - If it is registered and does not have a plist_name, we'll construct a temporary one as
+///       chemistry + ".txt"
+/// * If the file at plist_name exists, then use it (success)
+/// * If the file at plist_name doesn't exist, check for a remote_url key
+/// * If a remote_url key exists, then download the file and place it in the file plist_name
+///   (success)
+/// * If no remote_url key exists, then inform the user that this chemsitry has no keys for
+///   obtaining a permit list
 pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitListResult> {
-    let odir = af_home.join("plist");
-    if !odir.exists() {
-        std::fs::create_dir(&odir).with_context(|| {
+    // consult the chemistry file to see what the permit list for this should be
+    let chem_registry_path = af_home.join(utils::constants::CHEMISTRIES_PATH);
+    // get the existing chemistyr registry, or try to download it
+    let chem_registry =
+        parse_resource_json_file(&chem_registry_path, Some(utils::constants::CHEMISTRIES_URL))?;
+
+    let registry_key = chem.registry_key();
+
+    if let Some(reg_entry) = chem_registry.get(registry_key) {
+        let reg_map = reg_entry.as_object().with_context(|| {
             format!(
-                "Couldn't create the permit list directory at {}",
-                odir.display()
+                "The entry for registry key {} should be a proper JSON object",
+                registry_key
             )
         })?;
-    }
 
-    // define pl_path and url
-    let mut local_pl_path: PathBuf = odir.join(chem.as_str());
-    local_pl_path.set_extension("txt");
-    let mut remote_pl_url: Option<String> = None;
-
-    // FIRST TRY
-    // the first try will be to get the pl file from the custom chemistry
-    if let Chemistry::Custom(custom_chem) = chem {
-        info!("Try to get the permit list file from the custom chemistry");
-        // if we have local pl path, we should use it
-        if let Some(lpp) = custom_chem.local_pl_path() {
-            local_pl_path = PathBuf::from(lpp);
-            // we assume it is an absolute path
-            if local_pl_path.is_file() {
-                info!(
-                    "Use local permit list file recorded in {} at {:#?}",
-                    LOCAL_PL_PATH_KEY, local_pl_path
-                );
-                return Ok(PermitListResult::AlreadyPresent(local_pl_path));
-            } else if odir.join(lpp).is_file() {
-                // we assume it is a file name in the plist directory
-                info!("Use local permit list file at {:#?}", odir.join(lpp));
-                return Ok(PermitListResult::AlreadyPresent(odir.join(lpp)));
-            } else {
-                warn!(
-                    "Couldn't find the local permit list file recorded in {} at {:#?}",
-                    LOCAL_PL_PATH_KEY, local_pl_path
-                );
+        let has_local_name;
+        let local_path;
+        // check if the resource has a local url
+        match reg_map.get(LOCAL_PL_PATH_KEY) {
+            // if we didn't have this key or the value was explicitly
+            // null, then we don't even have a place to put this file
+            // when we download it, so it's an error.
+            None | Some(serde_json::Value::Null) => {
+                has_local_name = false;
+                local_path = PathBuf::from(registry_key).with_extension("txt");
             }
-        } else if let Some(rpu) = custom_chem.remote_pl_url() {
-            // SECOND TRY
-            // we check if the default download path exists
-            if local_pl_path.is_file() {
-                info!("Use downloaded permit list file at {:#?}", local_pl_path);
-                return Ok(PermitListResult::AlreadyPresent(local_pl_path));
-            } else {
-                remote_pl_url = Some(rpu.to_string());
+            Some(lpath) => {
+                let lpath = lpath.as_str().with_context(|| {
+                    format!(
+                        "expected the local url for {}, which was {:#}, to be a string!",
+                        registry_key, lpath
+                    )
+                })?;
+                local_path = PathBuf::from(lpath);
+                has_local_name = true;
             }
         }
-    }
 
-    // the second try is to get the local file path from the permit_list_info.json file
-    // check if the permit_list_info.json file exists
-    // if we have permit list file in af_home, there should be a permit_list_info.json file
-    // if it's not there, we should download it
-    info!("Try to get the permit list file from predefined permit list info file");
+        let pdir = af_home.join("plist");
 
-    let permit_info_p = af_home.join("permit_list_info.json");
-    let v: Value = parse_resource_json_file(&permit_info_p, Some(PERMIT_LIST_INFO_URL))?;
+        // if we got a name for a local file, check if it exists
+        let local_permit_file = pdir.join(local_path);
+        if has_local_name && local_permit_file.is_file() {
+            return Ok(PermitListResult::AlreadyPresent(local_permit_file));
+        }
 
-    let fake_version = json!("0.0.0");
-    // get the version. If it is an old version, suggest the user to delete it
-    let version = v
-        .get("version")
-        .unwrap_or(&fake_version)
-        .as_str()
-        .with_context(|| {
-            format!(
-                "value for version field should be a string from the permit_list_info.json file. Please report this issue onto the simpleaf github repository. The value obtained was {:?}",
-                v
-            )
-        })?;
-
-    match prog_utils::check_version_constraints(
-        "permit_list_info.json",
-        ">=".to_string() + PERMIT_LIST_INFO_VERSION,
-        version,
-    ) {
-        Ok(af_ver) => info!("found permit_list_info.json version {:#}; Proceeding", af_ver),
-        Err(_) => warn!("found outdated permit list info file with version {}. Please consider delete it from {:#?}.", version, &permit_info_p)
-    }
-
-    // get chemistry name
-    let chem_name = chem.as_str();
-
-    // THIRD TRY
-    // get the permit list file name and url if its in the permit info file
-    if let Some(chem_info) = v.get(chem_name) {
-        info!(
-            "Chemistry {} is registered in the permit_list_info.json file",
-            chem_name
-        );
-        // get chemistry file name
-        let chem_filename = chem_info
-            .get("filename")
-            .with_context(|| {
+        if !pdir.exists() {
+            info!(
+                "The permit list directory ({}) doesn't yet exist; attempting to create it.",
+                pdir.display()
+            );
+            std::fs::create_dir(&pdir).with_context(|| {
                 format!(
-                    "could not obtain the filename field for chemistry {} from the permit_list_info.json file. Please report this issue onto the simpleaf github repository. The value obtained was {:?}",
-                    chem_name,
-                    chem_info
-                )
-            })?
-            .as_str()
-            .with_context(|| {
-                format!(
-                    "value for filename field should be a string for chemistry {} from the permit_list_info.json file. Please report this issue onto the simpleaf github repository. The value obtained was {:?}",
-                    chem_name,
-                    chem_info
+                    "Couldn't create the permit list directory at {}",
+                    pdir.display()
                 )
             })?;
-
-        //if it exists, return the path
-        if odir.join(chem_filename).is_file() {
-            info!("Use permit list file at {:#?}", odir.join(chem_filename));
-            return Ok(PermitListResult::AlreadyPresent(odir.join(chem_filename)));
         }
 
-        // we update the url if we did not get it from the custom chemistry
-        if remote_pl_url.is_none() {
-            let dl_url = chem_info
-                .get("url")
-                .with_context(|| {
+        // either we made the name up, or we had a name but the file
+        // wasn't present. In either case, we now want the remote url.
+        match reg_map.get(REMOTE_PL_URL_KEY) {
+            // if we didn't have this key or the value was explicitly
+            // null then we are out of luck.
+            None | Some(serde_json::Value::Null) => {
+                // if we had a local name, then this is a "registered chemistry" but
+                // there is no way to obtain the permit list, so the user should place
+                // the file there explicitly or provide a download url.
+                if has_local_name {
+                    warn!("The chemistry {} is registered in {} with the local permit list file {}.
+                          However, no such file was present, and no remote url was provided from which 
+                          to obtain it. Please either register a local permit list for this chemistry
+                          or provide a \"remote_url\" for this chemistry in the file {} to allow 
+                          downloading it.",
+                        chem.as_str(), chem_registry_path.display(), local_permit_file.display(),
+                        chem_registry_path.display());
+                    Ok(PermitListResult::MissingPermitKeys)
+                } else {
+                    warn!("The chemistry {} is registered in {} but it has no associated local \"plist_name\" or \"remote url\".
+                          If there is an associated permit list for this chemistry, please update the entry 
+                          associated with this chemistry in {} to reflect the proper file.",
+                        chem.as_str(), chem_registry_path.display(), chem_registry_path.display());
+                    Ok(PermitListResult::MissingPermitKeys)
+                }
+            }
+            Some(rpath) => {
+                let rpath = rpath.as_str().with_context(|| {
                     format!(
-                        "could not obtain the url field for chemistry {} from the permit_list_info.json file. Please report this issue onto the simpleaf github repository. The value obtained was {:?}",
-                        chem_name,
-                        chem_info
+                        "expected the remote url for {}, which was {:#}, to be a string!",
+                        registry_key, rpath
                     )
-                })?
-                .as_str()
-                .with_context(|| {
-                    format!(
-                        "value for url field should be a string for chemistry {} from the permit_list_info.json file. Please report this issue onto the simpleaf github repository. The value obtained was {:?}",
-                        chem_name,
-                        chem_info
-                    )
-                })?
-                .to_string();
-
-            // update the url and corresponding local path
-            remote_pl_url = Some(dl_url);
-            local_pl_path = odir.join(chem_filename);
+                })?;
+                // download the file
+                prog_utils::download_to_file(rpath, &local_permit_file)?;
+                Ok(PermitListResult::DownloadSuccessful(local_permit_file))
+            }
         }
-    }
-
-    // LAST TRY
-    // we download the file from the remote url
-    if let Some(url) = remote_pl_url {
-        // download the file
-        prog_utils::download_to_file(url, &local_pl_path)?;
-        Ok(PermitListResult::DownloadSuccessful(local_pl_path))
     } else {
         Ok(PermitListResult::UnregisteredChemistry)
     }
