@@ -5,7 +5,6 @@ pub mod refresh;
 pub use self::refresh::refresh_prog_info;
 
 pub mod chemistry;
-pub use self::chemistry::add_chemistry;
 
 pub mod paths;
 pub use self::paths::set_paths;

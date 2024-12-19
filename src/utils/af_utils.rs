@@ -4,7 +4,7 @@ use phf::phf_map;
 use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonSeparateGeomDesc};
 use seq_geom_xform::{FifoXFormData, FragmentGeomDescExt};
 use serde_json;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::fmt;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -18,17 +18,6 @@ use crate::utils::chem_utils::{CustomChemistry, LOCAL_PL_PATH_KEY, REMOTE_PL_URL
 use crate::utils::{self, prog_utils};
 
 use super::chem_utils::QueryInRegistry;
-
-//use ureq;
-//use minreq::Response;
-
-// TODO: Update the path while merging
-static PERMIT_LIST_INFO_VERSION: &str = "0.1.0";
-static PERMIT_LIST_INFO_URL: &str = "https://raw.githubusercontent.com/an-altosian/simpleaf/spatial/resources/permit_list_info.json";
-// "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/permit_list_info.json";
-
-// static CUSTOM_CHEMISTRIES_VERSION: &str = "0.1.0";
-// "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/custom_chem.json";
 
 /// The map from pre-specified chemistry types that salmon knows
 /// to the corresponding command line flag that salmon should be passed

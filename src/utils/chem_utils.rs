@@ -75,54 +75,6 @@ impl CustomChemistry {
     }
 }
 
-pub(crate) fn get_validated_geometry_from_value<'a>(
-    key: &str,
-    obj: &'a serde_json::Map<String, Value>,
-) -> Result<&'a str> {
-    // check if the geometry field exists and is valid
-    let geometry = obj.get(GEOMETRY_KEY).with_context(|| {
-        format!(
-            "Couldn't find the required {} field for the custom chemistry record for {}: {:#?}.",
-            GEOMETRY_KEY, key, obj
-        )
-    })?;
-    // it should be a string
-    let geometry_str = geometry.as_str().with_context(|| {
-        format!(
-            "Couldn't parse the {} field for the custom chemistry record for {}: {}.",
-            GEOMETRY_KEY, key, geometry
-        )
-    })?;
-    // it should be a valid geometry
-    // TODO: what if isn't a "custom" geometry?
-    validate_geometry(geometry_str).with_context(|| {
-        format!(
-            "Found invalid custom geometry for {}: {}.",
-            key, geometry_str
-        )
-    })?;
-    Ok(geometry_str)
-}
-
-/// Parse the **now-deprecated** "custom_chemistries.json" format file and return
-/// the result in a simple HashMap
-pub fn get_deprecated_custom_chem_hm(
-    custom_chem_p: &Path,
-) -> Result<HashMap<String, CustomChemistry>> {
-    let v: Value = parse_resource_json_file(custom_chem_p, Some(CHEMISTRIES_URL))?;
-    let chem_hm = get_custom_chem_hm_from_value(v);
-    match chem_hm {
-        Ok(hm) => Ok(hm),
-        Err(e) => {
-            bail!(
-                "{}; Please consider delete it from {}",
-                e,
-                custom_chem_p.display()
-            );
-        }
-    }
-}
-
 /// This function gets the custom chemistry from the `af_home_path` directory.
 /// If the file doesn't exist, it downloads the file from the `url` and saves it
 pub fn get_custom_chem_hm(custom_chem_p: &Path) -> Result<HashMap<String, CustomChemistry>> {

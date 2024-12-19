@@ -11,8 +11,6 @@ use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 use tracing::{info, warn};
 
-use super::Commands;
-
 pub fn add_chemistry(
     af_home_path: PathBuf,
     add_opts: crate::simpleaf_commands::ChemistryAddOpts,
@@ -235,7 +233,7 @@ pub fn remove_chemistry(
     let mut chem_hm = get_custom_chem_hm(&chem_p)?;
 
     // check if the chemistry already exists and log
-    if let Some(cc) = chem_hm.get(&name) {
+    if chem_hm.contains_key(&name) {
         info!("chemistry {} found in the registry; removing it!", name);
         chem_hm.remove(&name);
 
@@ -269,7 +267,6 @@ pub fn lookup_chemistry(
     let chem_p = af_home_path.join(CHEMISTRIES_PATH);
 
     let chem_hm = get_custom_chem_hm(&chem_p)?;
-    println!("{:#?}", chem_hm);
 
     // check if the chemistry already exists and log
     if let Some(cc) = chem_hm.get(&name) {
