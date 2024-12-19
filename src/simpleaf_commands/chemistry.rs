@@ -130,7 +130,11 @@ pub fn refresh_chemistries(af_home: PathBuf) -> Result<()> {
                 chem_file.rewind()?;
 
                 chem_file
-                    .write_all(serde_json::to_string_pretty(&new_chem).unwrap().as_bytes())
+                    .write_all(
+                        serde_json::to_string_pretty(&existing_chem)
+                            .unwrap()
+                            .as_bytes(),
+                    )
                     .with_context(|| format!("could not write {}", chem_path.display()))?;
 
                 // remove the temp file
