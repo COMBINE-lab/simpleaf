@@ -1,4 +1,4 @@
-use crate::atac::defaults::DefaultAtacParams;
+use crate::atac::defaults::{AtacIndexParams, DefaultAtacParams};
 use crate::defaults::{DefaultMappingParams, DefaultParams};
 use crate::utils::chem_utils::QueryInRegistry;
 use clap::{
@@ -111,7 +111,7 @@ pub struct IndexOpts {
     #[arg(
         short = 'k',
         long = "kmer-length",
-        default_value_t = 31,
+        default_value_t = AtacIndexParams::K,
         help_heading = "Index Configuration Options",
         display_order = 3
     )]
@@ -121,7 +121,7 @@ pub struct IndexOpts {
     #[arg(
         short = 'm',
         long = "minimizer-length",
-        default_value_t = 19,
+        default_value_t = AtacIndexParams::M,
         help_heading = "Index Configuration Options",
         display_order = 4
     )]
@@ -276,15 +276,15 @@ pub struct ProcessOpts {
     #[arg(long, help_heading = "Advanced Options")]
     pub use_chr: bool,
 
-    /// threshold to be considered for pseudoalignment, default set to 0.7
+    /// threshold to be considered for pseudoalignment
     #[arg(long, default_value_t = DefaultParams::KMER_FRACTION, help_heading = "Advanced Options")]
     pub thr: f64,
 
-    /// size of virtual color, default set to 1000 [default: 1000]
+    /// size of virtual color intervals
     #[arg(long, default_value_t = DefaultParams::BIN_SIZE, help_heading = "Advanced Options")]
     pub bin_size: u32,
 
-    /// size for bin overlap, default set to 300 [default: 300]
+    /// size for virtual color interval overlap
     #[arg(long, default_value_t = DefaultParams::BIN_OVERLAP, help_heading = "Advanced Options")]
     pub bin_overlap: u32,
 
