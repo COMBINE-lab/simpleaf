@@ -1,16 +1,15 @@
 use anyhow::{anyhow, bail, Context, Result};
 // use cmd_lib::run_fun;
 use phf::phf_map;
-use semver::Version;
 use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonSeparateGeomDesc};
 use seq_geom_xform::{FifoXFormData, FragmentGeomDescExt};
 use serde_json;
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::fmt;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
+use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use tracing::{error, info, warn};
 
@@ -604,6 +603,12 @@ impl ExpectedOri {
             _ => Err(anyhow!("Invalid expected_ori value: {}", s)),
         }
     }
+
+    pub fn all_to_str() -> Vec<String> {
+        ExpectedOri::iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<String>>()
+    }
 }
 
 pub fn parse_resource_json_file(p: &Path, url: Option<&str>) -> Result<Value> {
@@ -638,4 +643,3 @@ pub fn parse_resource_json_file(p: &Path, url: Option<&str>) -> Result<Value> {
         )
     })
 }
-

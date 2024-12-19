@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-use strum::IntoEnumIterator;
 use tracing::{error, info, warn};
 
 use super::MapQuantOpts;
@@ -407,10 +406,7 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
             format!(
                 "Could not parse orientation {}. It must be one of the following: {:?}",
                 o,
-                ExpectedOri::iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
+                ExpectedOri::all_to_str().join(", ")
             )
         })?;
     } else {

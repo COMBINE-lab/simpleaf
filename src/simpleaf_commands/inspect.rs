@@ -3,7 +3,6 @@ use crate::utils::constants::CHEMISTRIES_PATH;
 use crate::utils::{
     af_utils::RnaChemistry,
     chem_utils::{custom_chem_hm_to_json, get_custom_chem_hm},
-    constants::*,
     prog_utils::*,
 };
 use anyhow::Result;
