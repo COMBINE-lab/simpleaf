@@ -1,18 +1,23 @@
-use anyhow::{bail, Result};
-use cmd_lib::run_fun;
+use anyhow::{anyhow, bail, Context, Result};
+// use cmd_lib::run_fun;
 use phf::phf_map;
 use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonSeparateGeomDesc};
 use seq_geom_xform::{FifoXFormData, FragmentGeomDescExt};
+use serde_json;
+use serde_json::Value;
 use std::fmt;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
+use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
-use tracing::error;
+use tracing::{error, info, warn};
 
 use crate::atac::commands::AtacChemistry;
-use crate::utils::prog_utils;
-//use ureq;
-//use minreq::Response;
+use crate::utils::chem_utils::{CustomChemistry, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY};
+use crate::utils::{self, prog_utils};
+
+use super::chem_utils::QueryInRegistry;
 
 /// The map from pre-specified chemistry types that salmon knows
 /// to the corresponding command line flag that salmon should be passed
@@ -124,11 +129,22 @@ impl CellFilterMethod {
 pub enum Chemistry {
     Rna(RnaChemistry),
     Atac(AtacChemistry),
+    Custom(CustomChemistry),
+}
+
+impl QueryInRegistry for Chemistry {
+    fn registry_key(&self) -> &str {
+        match self {
+            Chemistry::Rna(rc) => rc.registry_key(),
+            Chemistry::Atac(ac) => ac.registry_key(),
+            Chemistry::Custom(cc) => cc.registry_key(),
+        }
+    }
 }
 
 /// The builtin geometry types that have special handling to
 /// reduce necessary options in the common case, as well as the
-/// `Other` varant that covers custom geometries.
+/// `Other` variant that covers custom geometries.
 #[derive(EnumIter, Clone, PartialEq)]
 pub enum RnaChemistry {
     TenxV2,
@@ -136,7 +152,13 @@ pub enum RnaChemistry {
     TenxV3,
     TenxV35P,
     TenxV43P,
-    Other(String),
+    Other(String), // this will never be used because we have Chemistry::Custom
+}
+
+impl QueryInRegistry for RnaChemistry {
+    fn registry_key(&self) -> &str {
+        self.as_str()
+    }
 }
 
 /// `&str` representations of the different geometries.
@@ -145,6 +167,15 @@ impl Chemistry {
         match self {
             Chemistry::Rna(rna_chem) => rna_chem.as_str(),
             Chemistry::Atac(atac_chem) => atac_chem.as_str(),
+            Chemistry::Custom(custom_chem) => custom_chem.name.as_str(),
+        }
+    }
+
+    pub fn fragment_geometry_str(&self) -> &str {
+        match self {
+            Chemistry::Rna(rna_chem) => rna_chem.as_str(),
+            Chemistry::Atac(atac_chem) => atac_chem.as_str(),
+            Chemistry::Custom(custom_chem) => custom_chem.geometry(),
         }
     }
 }
@@ -181,10 +212,31 @@ pub enum PermitListResult {
     DownloadSuccessful(PathBuf),
     AlreadyPresent(PathBuf),
     UnregisteredChemistry,
+    MissingPermitKeys,
+}
+
+pub fn validate_geometry(geo: &str) -> Result<()> {
+    if geo != "__builtin" {
+        let fg = FragmentGeomDesc::try_from(geo);
+        return match fg {
+            Ok(_fg) => Ok(()),
+            Err(e) => {
+                bail!("Could not parse geometry {}. Please ensure that it is a valid geometry definition wrapped by quotes. The error message was: {:?}", geo, e);
+            }
+        };
+    }
+    Ok(())
 }
 
 pub fn extract_geometry(geo: &str) -> Result<FragmentGeomDesc> {
-    FragmentGeomDesc::try_from(geo)
+    let fg = FragmentGeomDesc::try_from(geo);
+    match fg {
+        Ok(fg) => Ok(fg),
+        Err(e) => {
+            error!("Could not parse geometry {}. Please ensure that it is a valid geometry definition wrapped by quotes. The error message was: {:?}", geo, e);
+            Err(e)
+        }
+    }
 }
 
 pub fn add_chemistry_to_args_salmon(chem_str: &str, cmd: &mut std::process::Command) -> Result<()> {
@@ -229,151 +281,118 @@ pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Comm
     Ok(())
 }
 
+/// This function try to get permit list for this chemistry. The general algorithm is as follows:
+/// * If this chemsitry is unregistered, then we can't obtain a permit list
+/// * If it is registered and has a plist_name in the chemistries.json, we will look for that file.
+///     - If it is registered and does not have a plist_name, we'll construct a temporary one as
+///       chemistry + ".txt"
+/// * If the file at plist_name exists, then use it (success)
+/// * If the file at plist_name doesn't exist, check for a remote_url key
+/// * If a remote_url key exists, then download the file and place it in the file plist_name
+///   (success)
+/// * If no remote_url key exists, then inform the user that this chemsitry has no keys for
+///   obtaining a permit list
 pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitListResult> {
-    // check if the file already exists
-    let odir = af_home.join("plist");
-    match chem {
-        Chemistry::Rna(rna_chem) => match rna_chem {
-            RnaChemistry::TenxV2 => {
-                let chem_file = "10x_v2_permit.txt";
-                if odir.join(chem_file).exists() {
-                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
-                }
-            }
-            RnaChemistry::TenxV25P => {
-                // v2 and v2-5' use the same permit list
-                let chem_file = "10x_v2_permit.txt";
-                if odir.join(chem_file).exists() {
-                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
-                }
-            }
-            RnaChemistry::TenxV3 => {
-                let chem_file = "10x_v3_permit.txt";
-                if odir.join(chem_file).exists() {
-                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
-                }
-            }
-            RnaChemistry::TenxV35P => {
-                let chem_file = "10x_v3_5p_permit.txt";
-                if odir.join(chem_file).exists() {
-                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
-                }
-            }
-            RnaChemistry::TenxV43P => {
-                let chem_file = "10x_v4_3p_permit.txt";
-                if odir.join(chem_file).exists() {
-                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
-                }
-            }
-            _ => {
-                return Ok(PermitListResult::UnregisteredChemistry);
-            }
-        },
-        Chemistry::Atac(atac_chem) => match atac_chem {
-            AtacChemistry::TenxV11 | AtacChemistry::TenxV2 => {
-                let chem_file = "10x_atac_v1_v11_v2.txt";
-                if odir.join(chem_file).exists() {
-                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
-                }
-            }
-            AtacChemistry::TenxMulti => {
-                let chem_file = "10x_arc_atac_v1.txt";
-                if odir.join(chem_file).exists() {
-                    return Ok(PermitListResult::AlreadyPresent(odir.join(chem_file)));
-                }
-            }
-        },
-    }
+    // consult the chemistry file to see what the permit list for this should be
+    let chem_registry_path = af_home.join(utils::constants::CHEMISTRIES_PATH);
+    // get the existing chemistyr registry, or try to download it
+    let chem_registry =
+        parse_resource_json_file(&chem_registry_path, Some(utils::constants::CHEMISTRIES_URL))?;
 
-    // the file doesn't exist, so get the json file that gives us
-    // the chemistry name to permit list URL mapping.
-    let permit_dict_url = "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/dev/resources/permit_list_info.json";
-    let request_result = minreq::get(permit_dict_url).send().inspect_err( |err| {
-        error!("Could not obtain the permit list metadata from {}; encountered {:?}.", &permit_dict_url, &err);
-        error!("This may be a transient failure, or could be because the client is lacking a network connection. \
-        In the latter case, please consider manually providing the appropriate permit list file directly \
-        via the command line to avoid an attempt by simpleaf to automatically obtain it.");
-    })?;
-    let permit_dict: serde_json::Value = request_result.json::<serde_json::Value>()?;
-    let opt_chem_file: Option<String>;
-    let opt_dl_url: Option<String>;
-    // parse the JSON appropriately based on the chemistry we have
-    match chem {
-        Chemistry::Rna(rna_chem) => match rna_chem {
-            RnaChemistry::TenxV2
-            | RnaChemistry::TenxV25P
-            | RnaChemistry::TenxV3
-            | RnaChemistry::TenxV35P
-            | RnaChemistry::TenxV43P => {
-                let chem_key = chem.as_str();
-                if let Some(d) = permit_dict.get(chem_key) {
-                    opt_chem_file = d
-                        .get("filename")
-                        .expect("value for filename field should be a string")
-                        .as_str()
-                        .map(|cf| cf.to_string());
-                    opt_dl_url = d
-                        .get("url")
-                        .expect("value for url field should be a string")
-                        .as_str()
-                        .map(|url| url.to_string());
-                } else {
-                    bail!(
-                        "could not obtain \"{}\" key from the fetched permit_dict at {} = {:?}",
-                        chem_key,
-                        permit_dict_url,
-                        permit_dict
+    let registry_key = chem.registry_key();
+
+    if let Some(reg_entry) = chem_registry.get(registry_key) {
+        let reg_map = reg_entry.as_object().with_context(|| {
+            format!(
+                "The entry for registry key {} should be a proper JSON object",
+                registry_key
+            )
+        })?;
+
+        let has_local_name;
+        let local_path;
+        // check if the resource has a local url
+        match reg_map.get(LOCAL_PL_PATH_KEY) {
+            // if we didn't have this key or the value was explicitly
+            // null, then we don't even have a place to put this file
+            // when we download it, so it's an error.
+            None | Some(serde_json::Value::Null) => {
+                has_local_name = false;
+                local_path = PathBuf::from(registry_key).with_extension("txt");
+            }
+            Some(lpath) => {
+                let lpath = lpath.as_str().with_context(|| {
+                    format!(
+                        "expected the local url for {}, which was {:#}, to be a string!",
+                        registry_key, lpath
                     )
-                }
+                })?;
+                local_path = PathBuf::from(lpath);
+                has_local_name = true;
             }
-            _ => {
-                return Ok(PermitListResult::UnregisteredChemistry);
-            }
-        },
-        Chemistry::Atac(atac_chem) => match atac_chem {
-            AtacChemistry::TenxV11 | AtacChemistry::TenxV2 | AtacChemistry::TenxMulti => {
-                let chem_key = atac_chem.resource_key();
-                if let Some(d) = permit_dict.get(&chem_key) {
-                    opt_chem_file = d
-                        .get("filename")
-                        .expect("value for filename field should be a string")
-                        .as_str()
-                        .map(|cf| cf.to_string());
-                    opt_dl_url = d
-                        .get("url")
-                        .expect("value for url field should be a string")
-                        .as_str()
-                        .map(|url| url.to_string());
+        }
+
+        let pdir = af_home.join("plist");
+
+        // if we got a name for a local file, check if it exists
+        let local_permit_file = pdir.join(local_path);
+        if has_local_name && local_permit_file.is_file() {
+            return Ok(PermitListResult::AlreadyPresent(local_permit_file));
+        }
+
+        if !pdir.exists() {
+            info!(
+                "The permit list directory ({}) doesn't yet exist; attempting to create it.",
+                pdir.display()
+            );
+            std::fs::create_dir(&pdir).with_context(|| {
+                format!(
+                    "Couldn't create the permit list directory at {}",
+                    pdir.display()
+                )
+            })?;
+        }
+
+        // either we made the name up, or we had a name but the file
+        // wasn't present. In either case, we now want the remote url.
+        match reg_map.get(REMOTE_PL_URL_KEY) {
+            // if we didn't have this key or the value was explicitly
+            // null then we are out of luck.
+            None | Some(serde_json::Value::Null) => {
+                // if we had a local name, then this is a "registered chemistry" but
+                // there is no way to obtain the permit list, so the user should place
+                // the file there explicitly or provide a download url.
+                if has_local_name {
+                    warn!("The chemistry {} is registered in {} with the local permit list file {}.
+                          However, no such file was present, and no remote url was provided from which 
+                          to obtain it. Please either register a local permit list for this chemistry
+                          or provide a \"remote_url\" for this chemistry in the file {} to allow 
+                          downloading it.",
+                        chem.as_str(), chem_registry_path.display(), local_permit_file.display(),
+                        chem_registry_path.display());
+                    Ok(PermitListResult::MissingPermitKeys)
                 } else {
-                    bail!(
-                        "could not obtain \"{}\" key from the fetched permit_dict at {} = {:?}",
-                        chem_key,
-                        permit_dict_url,
-                        permit_dict
-                    )
+                    warn!("The chemistry {} is registered in {} but it has no associated local \"plist_name\" or \"remote url\".
+                          If there is an associated permit list for this chemistry, please update the entry 
+                          associated with this chemistry in {} to reflect the proper file.",
+                        chem.as_str(), chem_registry_path.display(), chem_registry_path.display());
+                    Ok(PermitListResult::MissingPermitKeys)
                 }
             }
-        },
-    }
-
-    // actually download the permit list if we need it and don't have it.
-    if let (Some(chem_file), Some(dl_url)) = (opt_chem_file, opt_dl_url) {
-        if odir.join(&chem_file).exists() {
-            Ok(PermitListResult::AlreadyPresent(odir.join(&chem_file)))
-        } else {
-            run_fun!(mkdir -p $odir)?;
-
-            let output_file = odir.join(&chem_file).to_string_lossy().to_string();
-            prog_utils::download_to_file(dl_url, &output_file)?;
-
-            Ok(PermitListResult::DownloadSuccessful(odir.join(&chem_file)))
+            Some(rpath) => {
+                let rpath = rpath.as_str().with_context(|| {
+                    format!(
+                        "expected the remote url for {}, which was {:#}, to be a string!",
+                        registry_key, rpath
+                    )
+                })?;
+                // download the file
+                prog_utils::download_to_file(rpath, &local_permit_file)?;
+                Ok(PermitListResult::DownloadSuccessful(local_permit_file))
+            }
         }
     } else {
-        bail!(
-            "could not properly parse the permit dictionary obtained from {} = {:?}",
-            permit_dict_url,
-            permit_dict
-        );
+        Ok(PermitListResult::UnregisteredChemistry)
     }
 }
 
@@ -511,4 +530,76 @@ pub fn add_or_transform_fragment_library(
             Ok(FragmentTransformationType::Identity)
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, EnumIter)]
+pub enum ExpectedOri {
+    Forward,
+    Reverse,
+    Both,
+}
+
+impl std::fmt::Display for ExpectedOri {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}", self.as_str())
+    }
+}
+
+impl ExpectedOri {
+    pub fn as_str(&self) -> &str {
+        match self {
+            ExpectedOri::Forward => "fw",
+            ExpectedOri::Reverse => "rc",
+            ExpectedOri::Both => "both",
+        }
+    }
+
+    // construct the expected_ori from a str
+    pub fn from_str(s: &str) -> Result<ExpectedOri> {
+        match s {
+            "fw" => Ok(ExpectedOri::Forward),
+            "rc" => Ok(ExpectedOri::Reverse),
+            "both" => Ok(ExpectedOri::Both),
+            _ => Err(anyhow!("Invalid expected_ori value: {}", s)),
+        }
+    }
+
+    pub fn all_to_str() -> Vec<String> {
+        ExpectedOri::iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<String>>()
+    }
+}
+
+pub fn parse_resource_json_file(p: &Path, url: Option<&str>) -> Result<Value> {
+    // check if the custom_chemistries.json file exists
+    let resource_exists = p.is_file();
+
+    // get the file
+    if !resource_exists {
+        if let Some(dl_url) = url {
+            // download the custom_chemistries.json file if needed
+            prog_utils::download_to_file(dl_url, p)?;
+        } else {
+            bail!(
+                "could not find resource {}, and no remote url was provided",
+                p.display()
+            );
+        }
+    }
+
+    // load the file
+    let resource_file = std::fs::File::open(p).with_context(|| {
+        format!(
+            "Couldn't open the existing resource file. Please consider delete it from {}",
+            p.display()
+        )
+    })?;
+    let resource_reader = BufReader::new(resource_file);
+    serde_json::from_reader(resource_reader).with_context(|| {
+        format!(
+            "Couldn't parse the existing resource file. Please consider delete it from {}",
+            p.display()
+        )
+    })
 }

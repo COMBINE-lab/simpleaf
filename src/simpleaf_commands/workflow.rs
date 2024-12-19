@@ -189,10 +189,8 @@ pub fn list_workflows<T: AsRef<Path>>(af_home_path: T) -> anyhow::Result<()> {
 /// This program takes a string representing the name of a published workflow, and copy the
 /// folder of that workflow in the protocol estuary to the provided output directory
 /// as a sub-directory.
-
 // TODO: implement essential only
-
-pub fn get_wokflow<T: AsRef<Path>>(
+pub fn get_workflow<T: AsRef<Path>>(
     af_home_path: T,
     gw_cmd: WorkflowCommands,
 ) -> anyhow::Result<()> {
@@ -319,7 +317,7 @@ pub fn get_wokflow<T: AsRef<Path>>(
             }
 
             // write log
-            let gwc_info_path = output_path.join("get_wokflow.json");
+            let gwc_info_path = output_path.join("get_workflow.json");
             let gwc_info = json!({
                 "command" : "get-workflow-config",
                 "workflow dir": output_path,
@@ -367,7 +365,6 @@ pub fn get_wokflow<T: AsRef<Path>>(
 ///      higher than 0.11.0
 /// 3. index: (Optional): this field records all simpleaf index commands that need to be run.
 /// 4. quant: (Optional): this field records all simpleaf quant commands that need to be run.
-
 // TODO: add a `skip` argument for skipping steps
 pub fn run_workflow<T: AsRef<Path>>(
     af_home_path: T,

@@ -1,20 +1,166 @@
-use crate::utils::af_utils;
-use crate::utils::af_utils::{
-    CellFilterMethod, Chemistry, FragmentTransformationType, MapperType, PermitListResult,
-    RnaChemistry,
-};
+use crate::utils::{af_utils::*, chem_utils::*};
+
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::{CommandVerbosityLevel, ReqProgs};
 
 use anyhow::{bail, Context};
 use serde_json::json;
 use serde_json::Value;
-use std::io::BufReader;
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
 use super::MapQuantOpts;
+
+struct CBListInfo {
+    pub init_file: PathBuf,
+    pub final_file: PathBuf,
+    pub is_single_column: bool,
+}
+
+impl CBListInfo {
+    fn new() -> Self {
+        CBListInfo {
+            init_file: PathBuf::new(),
+            final_file: PathBuf::new(),
+            is_single_column: true,
+        }
+    }
+    // we iterate the file to see if it only has cb or with affiliated info (by separator \t).
+    fn init(&mut self, pl_file: &PathBuf, output: &PathBuf) -> anyhow::Result<()> {
+        // open pl_file
+        let br = BufReader::new(std::fs::File::open(pl_file).with_context({
+            || format!("Could not open permitlist file {}", pl_file.display())
+        })?);
+
+        // find if there is any "\t"
+        let is_single_column = br
+            .lines()
+            .map(|l| {
+                l.unwrap_or_else(|_| panic!("Could not open permitlist file {}", pl_file.display()))
+            })
+            .any(|l| !l.contains('\t'));
+        // if single column, we are good. Otherwise, we need to write the first column to the final file
+        let final_file: PathBuf;
+        if is_single_column {
+            final_file = pl_file.clone();
+        } else {
+            info!("found multiple columns in the barcode list tsv file, use the first column as the barcodes.");
+
+            // create output dir if doesn't exist
+            if !output.exists() {
+                std::fs::create_dir_all(output)?;
+            }
+            // define final_cb file and open a buffer writer for it
+            final_file = output.join("cb_list.txt");
+            let final_f = std::fs::File::create(&final_file).with_context({
+                || format!("Could not create final cb file {}", final_file.display())
+            })?;
+            let mut final_bw = BufWriter::new(final_f);
+
+            // reinitialize the reader
+            let br = BufReader::new(std::fs::File::open(pl_file)?);
+            for l in br.lines() {
+                // find the tab and write the first column to the final file
+                writeln!(
+                    final_bw,
+                    "{}",
+                    l?.split('\t').next().with_context({
+                        || format!("Could not parse pl file {}", pl_file.display())
+                    })?
+                )?
+            }
+        }
+
+        self.init_file = pl_file.clone();
+        self.final_file = final_file;
+        self.is_single_column = is_single_column;
+        Ok(())
+    }
+    fn update_af_quant_barcodes_tsv(&self, barcode_tsv: &PathBuf) -> anyhow::Result<()> {
+        // if the permit list was single column, then we don't need to do anything
+        // if the permit list was not single column, then we need to add the extra columns into the alevin-fry quants_mat_rows.txt file.
+        if self.is_single_column {
+            return Ok(());
+        }
+
+        // if we are here but the init file doesn't exist, then we have a problem
+        if !self.init_file.exists() {
+            bail!("The CBListInfo struct was not properly initialized. Please report this issue on GitHub.");
+        }
+
+        // if we cannot find the count matrix column files, then complain
+        if !barcode_tsv.exists() {
+            bail!(
+                "The barcode tsv file {} does not exist. Please report it on GitHub",
+                barcode_tsv.display()
+            );
+        }
+
+        info!("Add barcode affiliate info into count matrix row file");
+
+        // The steps are:
+        // 1. read quants_mat_rows.txt as a hashmap
+        // 2. Init a vector to store the final rows, which has the same length as the hashmap
+        // 3. parse the original whitelist file, if we see the cb in the hashmap, then we add the line to the vector at the corresponding position
+        // 4. write the vector to the quants_mat_rows.txt file
+
+        // we read the barcode tsv file as a hashmap where the values are the order of the barcode in the quants_mat_rows.txt file
+        let barcodes_br = BufReader::new(std::fs::File::open(barcode_tsv)?);
+        let mut barcodes: HashMap<String, usize> = HashMap::new();
+        for (lid, l) in barcodes_br.lines().enumerate() {
+            let line: String = l.with_context(|| {
+                format!(
+                    "Could not parse the matrix rows file {}",
+                    barcode_tsv.display()
+                )
+            })?;
+            barcodes.insert(line, lid);
+        }
+
+        // Then, we update the matrix row file.
+        // First, we init a vector to store the rows.
+        let mut row_vec: Vec<String> = vec![String::new(); barcodes.len()];
+
+        // read the whitelist file and parse only those in the matrix row file.
+        let mut allocated_cb = 0;
+        let br = BufReader::new(std::fs::File::open(&self.init_file)?);
+        for l in br.lines() {
+            // identify the cb
+            let line = l?;
+            let cb = line.split('\t').next().with_context({
+                || format!("Could not parse pl file {}", self.init_file.display())
+            })?;
+
+            // if the cb is in the quantified barcodes, then we add the line to the row_vec
+            if let Some(rowid) = barcodes.get(cb) {
+                row_vec[*rowid] = line;
+                allocated_cb += 1;
+            }
+        }
+
+        // if the number of allocated cb is less than the total number of cb in the quantified matrix, we complain
+        if allocated_cb != barcodes.len() {
+            bail!(
+                "Only {} out of {} quantified barcodes are found in the whitelist. Please report this issue on GitHub.",
+                allocated_cb,
+                barcodes.len()
+            );
+        }
+
+        // create a buffer writer to overwrite the quants_mat_rows.txt file
+        let mut final_barcodes_bw = BufWriter::new(std::fs::File::create(barcode_tsv)?);
+
+        // write the row_vec to the final barcodes.tsv file
+        for l in row_vec {
+            writeln!(final_barcodes_bw, "{}", l)?;
+        }
+
+        Ok(())
+    }
+}
 
 enum IndexType {
     Salmon(PathBuf),
@@ -223,57 +369,58 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
 
     // do we have a custom chemistry file
     let custom_chem_p = af_home_path.join("custom_chemistries.json");
-    let custom_chem_exists = custom_chem_p.is_file();
 
     let chem = match opts.chemistry.as_str() {
-        "10xv2" => RnaChemistry::TenxV2,
-        "10xv2-5p" => RnaChemistry::TenxV25P,
-        "10xv3" => RnaChemistry::TenxV3,
-        "10xv3-5p" => RnaChemistry::TenxV35P,
-        "10xv4-3p" => RnaChemistry::TenxV43P,
+        "10xv2" => Chemistry::Rna(RnaChemistry::TenxV2),
+        "10xv2-5p" => Chemistry::Rna(RnaChemistry::TenxV25P),
+        "10xv3" => Chemistry::Rna(RnaChemistry::TenxV3),
+        "10xv3-5p" => Chemistry::Rna(RnaChemistry::TenxV35P),
+        "10xv4-3p" => Chemistry::Rna(RnaChemistry::TenxV43P),
         s => {
-            if custom_chem_exists {
-                // parse the custom chemistry json file
-                let custom_chem_file = std::fs::File::open(&custom_chem_p).with_context({
-                    || {
-                        format!(
-                            "couldn't open the custom chemistry file {}",
-                            custom_chem_p.display()
-                        )
-                    }
-                })?;
-                let custom_chem_reader = BufReader::new(custom_chem_file);
-                let v: Value = serde_json::from_reader(custom_chem_reader)?;
-                let rchem = match v[s.to_string()].as_str() {
-                    Some(chem_str) => {
-                        info!("custom chemistry {} maps to geometry {}", s, &chem_str);
-                        RnaChemistry::Other(chem_str.to_string())
-                    }
-                    None => RnaChemistry::Other(s.to_string()),
-                };
-                rchem
+            // we try to extract the single record for the chemistry and ignore the rest
+            if let Some(chem) =
+                get_single_custom_chem_from_file(&custom_chem_p, opts.chemistry.as_str())?
+            {
+                info!(
+                    "custom chemistry {} maps to geometry {}",
+                    s,
+                    chem.geometry()
+                );
+                Chemistry::Custom(chem)
             } else {
-                // pass along whatever the user gave us
-                RnaChemistry::Other(s.to_string())
+                Chemistry::Custom(CustomChemistry::simple_custom(s).with_context(|| {
+                    format!(
+                        "Could not parse the provided chemistry {}. Please ensure it is a valid chemistry string wrapped by quotes or that it is defined in the custom_chemistries.json file.",
+                        s
+                    )
+                })?)
             }
         }
     };
 
-    let ori;
+    let ori: ExpectedOri;
     // if the user set the orientation, then
     // use that explicitly
     if let Some(o) = opts.expected_ori.clone() {
-        ori = o;
+        ori = ExpectedOri::from_str(&o).with_context(|| {
+            format!(
+                "Could not parse orientation {}. It must be one of the following: {:?}",
+                o,
+                ExpectedOri::all_to_str().join(", ")
+            )
+        })?;
     } else {
         // otherwise, this was not set explicitly. In that case
         // if we have 10xv2, 10xv3, or 10xv4 (3') chemistry, set ori = "fw"
         // if we have 10xv2-5p or 10xv3-5p chemistry, set ori = "rc"
         // otherwise set ori = "both"
-        match chem {
-            RnaChemistry::TenxV2 | RnaChemistry::TenxV3 | RnaChemistry::TenxV43P => {
-                ori = "fw".to_string();
+        match &chem {
+            Chemistry::Rna(RnaChemistry::TenxV2)
+            | Chemistry::Rna(RnaChemistry::TenxV3)
+            | Chemistry::Rna(RnaChemistry::TenxV43P) => {
+                ori = ExpectedOri::Forward;
             }
-            RnaChemistry::TenxV25P | RnaChemistry::TenxV35P => {
+            Chemistry::Rna(RnaChemistry::TenxV25P) | Chemistry::Rna(RnaChemistry::TenxV35P) => {
                 // NOTE: This is because we assume the piscem encoding
                 // that is, these are treated as potentially paired-end protocols and
                 // we infer the orientation of the fragment = orientation of read 1.
@@ -281,15 +428,25 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
                 // above, we separate out the case statement here for clarity.
                 // Further, we may consider changing this or making it more robust if
                 // and when we propagate more information about paired-end mappings.
-                ori = "fw".to_string();
+                ori = ExpectedOri::Forward;
+            }
+            Chemistry::Rna(RnaChemistry::Other(_)) => ori = ExpectedOri::Both,
+            Chemistry::Custom(cc) => {
+                // if the custom chemistry has an orientation, use that
+                if let Some(o) = cc.expected_ori() {
+                    ori = o.clone();
+                } else {
+                    ori = ExpectedOri::Both;
+                }
             }
             _ => {
-                ori = "both".to_string();
+                bail!("Encountered non-RNA chemistry in simpleaf quant. This should not happen. Please report this to simpleaf GitHub issues.");
             }
         }
     }
 
     let mut filter_meth_opt = None;
+    let mut pl_info = CBListInfo::new();
 
     // based on the filtering method
     if let Some(ref pl_file) = opts.unfiltered_pl {
@@ -302,9 +459,13 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
             // the user has explicily passed a file along, so try
             // to use that
             if pl_file.is_file() {
+                // we read the file to see if there is additional columns separated by \t.
+                // unwrap is safe here cuz we defined it above
+                pl_info.init(pl_file, &opts.output)?;
+
                 let min_cells = opts.min_reads;
                 filter_meth_opt = Some(CellFilterMethod::UnfilteredExternalList(
-                    pl_file.to_string_lossy().into_owned(),
+                    pl_info.final_file.to_string_lossy().into_owned(),
                     min_cells,
                 ));
             } else {
@@ -320,19 +481,27 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
             // using 10xv2, 10xv3, or 10xv4
 
             // check the chemistry
-            let rc = Chemistry::Rna(chem.clone());
-            let pl_res = af_utils::get_permit_if_absent(af_home_path, &rc)?;
+            let pl_res = get_permit_if_absent(af_home_path, &chem)?;
             let min_cells = opts.min_reads;
             match pl_res {
                 PermitListResult::DownloadSuccessful(p) | PermitListResult::AlreadyPresent(p) => {
+                    pl_info.init(&p, &opts.output)?;
                     filter_meth_opt = Some(CellFilterMethod::UnfilteredExternalList(
-                        p.to_string_lossy().into_owned(),
+                        pl_info.final_file.to_string_lossy().into_owned(),
                         min_cells,
                     ));
                 }
+                PermitListResult::MissingPermitKeys => {
+                    bail!(
+                        "The chemistry {} was registered in {}, but it contained no keys for the permit list. 
+                        Please either provide a permit list explicitly via the command line, or register a permit 
+                        list for this chemistry.",
+                        chem.as_str(), crate::utils::constants::CHEMISTRIES_PATH
+                    )
+                }
                 PermitListResult::UnregisteredChemistry => {
                     bail!(
-                        "Cannot automatically obtain an unfiltered permit list for non-Chromium chemistry : {}.",
+                        "Cannot automatically obtain an unfiltered permit list for an unregistered chemistry : {}.",
                         chem.as_str()
                     );
                 }
@@ -340,8 +509,9 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
         }
     } else {
         if let Some(ref filtered_path) = opts.explicit_pl {
+            pl_info.init(filtered_path, &opts.output)?;
             filter_meth_opt = Some(CellFilterMethod::ExplicitList(
-                filtered_path.to_string_lossy().into_owned(),
+                pl_info.final_file.to_string_lossy().into_owned(),
             ));
         };
         if let Some(ref num_forced) = opts.forced_cells {
@@ -443,11 +613,12 @@ being used by simpleaf"#,
                     );
                 }
 
+                // we get the final geometry we want to pass to piscem
                 // check if we can parse the geometry directly, or if we are dealing with a
                 // "complex" geometry.
-                let frag_lib_xform = af_utils::add_or_transform_fragment_library(
+                let frag_lib_xform = add_or_transform_fragment_library(
                     MapperType::Piscem,
-                    chem.as_str(),
+                    chem.fragment_geometry_str(),
                     reads1,
                     reads2,
                     &mut piscem_quant_cmd,
@@ -523,9 +694,9 @@ being used by simpleaf"#,
 
                 // check if we can parse the geometry directly, or if we are dealing with a
                 // "complex" geometry.
-                let frag_lib_xform = af_utils::add_or_transform_fragment_library(
+                let frag_lib_xform = add_or_transform_fragment_library(
                     MapperType::Salmon,
-                    chem.as_str(),
+                    chem.fragment_geometry_str(),
                     reads1,
                     reads2,
                     &mut salmon_quant_cmd,
@@ -617,7 +788,7 @@ being used by simpleaf"#,
 
     alevin_gpl_cmd.arg("generate-permit-list");
     alevin_gpl_cmd.arg("-i").arg(&map_output);
-    alevin_gpl_cmd.arg("-d").arg(&ori);
+    alevin_gpl_cmd.arg("-d").arg(ori.as_str());
 
     // add the filter mode
     filter_meth.add_to_args(&mut alevin_gpl_cmd);
@@ -741,6 +912,11 @@ being used by simpleaf"#,
             }
         }
     }
+
+    // If a permit/explit list with auxilary info was provided,
+    // we add the auxilary info to the barcodes.tsv file.
+    let quants_mat_rows_p = gpl_output.join("alevin").join("quants_mat_rows.txt");
+    pl_info.update_af_quant_barcodes_tsv(&quants_mat_rows_p)?;
 
     // write the relevant info about
     // our run to file.

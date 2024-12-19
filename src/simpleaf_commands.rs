@@ -5,7 +5,6 @@ pub mod refresh;
 pub use self::refresh::refresh_prog_info;
 
 pub mod chemistry;
-pub use self::chemistry::add_chemistry;
 
 pub mod paths;
 pub use self::paths::set_paths;
@@ -18,7 +17,8 @@ pub use self::quant::map_and_quant;
 
 pub mod workflow;
 pub use self::workflow::{
-    get_wokflow, list_workflows, patch_manifest_or_template, refresh_protocol_estuary, run_workflow,
+    get_workflow, list_workflows, patch_manifest_or_template, refresh_protocol_estuary,
+    run_workflow,
 };
 
 pub use crate::atac::commands::AtacCommand;
@@ -59,7 +59,7 @@ fn ref_type_parser(s: &str) -> Result<ReferenceType, String> {
     .args(["index", "map_dir"])
 ))]
 pub struct MapQuantOpts {
-    /// chemistry
+    /// chemistry, if a custom geometry is provided, it should be wrapped in quotes
     #[arg(short, long)]
     pub chemistry: String,
 
@@ -441,20 +441,72 @@ pub struct IndexOpts {
     pub sparse: bool,
 }
 
+/// Remove a chemistry from the chemistry registry
+#[derive(Args, Clone, Debug)]
+#[command(arg_required_else_help = true)]
+pub struct ChemistryRemoveOpts {
+    /// the name of the chemistry you wish to remove
+    #[arg(short, long)]
+    pub name: String,
+}
+
+/// Lookup a chemistry in the chemistry registry
+#[derive(Args, Clone, Debug)]
+#[command(arg_required_else_help = true)]
+pub struct ChemistryLookupOpts {
+    /// the name of the chemistry you wish to lookup
+    #[arg(short, long)]
+    pub name: String,
+}
+
+/// Add a new chemistry to the registry of custom chemistries
+#[derive(Args, Clone, Debug)]
+#[command(arg_required_else_help = true, disable_version_flag = true)]
+pub struct ChemistryAddOpts {
+    /// the name to give the chemistry
+    #[arg(short, long)]
+    pub name: String,
+    /// the geometry to which the chemistry maps, wrapped in quotes.
+    #[arg(short, long)]
+    pub geometry: String,
+    /// the expected orientation to give to the chemistry
+    #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(["fw", "rc", "both"]))]
+    pub expected_ori: String,
+    /// the (fully-qualified) path to a local file that will be copied into
+    /// the permit list directory of the ALEVIN_FRY_HOME directory to provide
+    /// a permit list for use with this chemistry.
+    #[arg(long)]
+    pub local_url: Option<PathBuf>,
+    /// the url of a remote file that will be downloaded (*on demand*)
+    /// to provide a permit list for use with this chemistry. This file
+    /// should be obtainable with the equivalent of `wget <local-url>`.
+    /// The file will only be downloaded the first time it is needed and
+    /// will be locally cached in ALEVIN_FRY_HOME after that.
+    #[arg(long)]
+    pub remote_url: Option<String>,
+    /// optionally assign a version number to this chemistry. A chemistry's
+    /// entry can be updated in the future by adding it again with a higher
+    /// version number.
+    #[arg(long)]
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Subcommand)]
+#[command(arg_required_else_help = true)]
+pub enum ChemistryCommand {
+    Refresh,
+    Add(ChemistryAddOpts),
+    Remove(ChemistryRemoveOpts),
+    Lookup(ChemistryLookupOpts),
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     /// build the (expanded) reference index
     Index(IndexOpts),
     /// add a new custom chemistry to geometry mapping
-    #[command(arg_required_else_help = true)]
-    AddChemistry {
-        /// the name to give the chemistry
-        #[arg(short, long)]
-        name: String,
-        /// the geometry to which the chemistry maps
-        #[arg(short, long)]
-        geometry: String,
-    },
+    #[command(subcommand)]
+    Chemistry(ChemistryCommand),
     /// inspect the current configuration
     Inspect {},
     /// quantify a sample

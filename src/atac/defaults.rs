@@ -1,5 +1,12 @@
 use crate::defaults::DefaultParams;
 
+pub(super) struct AtacIndexParams;
+
+impl AtacIndexParams {
+    pub const K: u32 = 25;
+    pub const M: u32 = 17;
+}
+
 pub trait DefaultAtacParams {
     const BIN_SIZE: u32;
     const BIN_OVERLAP: u32;
