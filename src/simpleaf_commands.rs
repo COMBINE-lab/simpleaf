@@ -18,7 +18,8 @@ pub use self::quant::map_and_quant;
 
 pub mod workflow;
 pub use self::workflow::{
-    get_wokflow, list_workflows, patch_manifest_or_template, refresh_protocol_estuary, run_workflow,
+    get_workflow, list_workflows, patch_manifest_or_template, refresh_protocol_estuary,
+    run_workflow,
 };
 
 pub use crate::atac::commands::AtacCommand;
@@ -59,7 +60,7 @@ fn ref_type_parser(s: &str) -> Result<ReferenceType, String> {
     .args(["index", "map_dir"])
 ))]
 pub struct MapQuantOpts {
-    /// chemistry
+    /// chemistry, if a custom geometry is provided, it should be wrapped in quotes
     #[arg(short, long)]
     pub chemistry: String,
 
@@ -448,7 +449,7 @@ pub struct ChemistryAddOpts {
     /// the name to give the chemistry
     #[arg(short, long)]
     pub name: String,
-    /// the geometry to which the chemistry maps
+    /// the geometry to which the chemistry maps, wrapped in quotes.
     #[arg(short, long)]
     pub geometry: String,
     /// the expected orientation to give to the chemistry
@@ -475,7 +476,8 @@ pub enum Commands {
         /// the name to give the chemistry
         #[arg(short, long)]
         name: String,
-        /// the geometry to which the chemistry maps. Details can be found at https://hackmd.io/@PI7Og0l1ReeBZu_pjQGUQQ/rJMgmvr13
+        /// the geometry to which the chemistry maps, wrapped in quotes.
+        /// Details can be found at https://hackmd.io/@PI7Og0l1ReeBZu_pjQGUQQ/rJMgmvr13
         #[arg(short, long)]
         geometry: String,
         /// the expected orientation to give to the chemistry
@@ -484,13 +486,12 @@ pub enum Commands {
         /// the path to a local permit list if applicable
         #[arg(short, long)]
         local_pl_path: Option<String>,
-        /// the url to a remote permit list tsv file, if applicable, where the first column must records the barcodes 
+        /// the url to a remote permit list tsv file, if applicable, where the first column must records the barcodes
         #[arg(short, long)]
         remote_pl_url: Option<String>,
         /// the version of the chemistry.
         #[arg(short, long, default_value = "0.0.1")]
         version: String,
-
     },
     /// inspect the current configuration
     Inspect {},

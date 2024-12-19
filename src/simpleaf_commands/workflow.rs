@@ -190,7 +190,7 @@ pub fn list_workflows<T: AsRef<Path>>(af_home_path: T) -> anyhow::Result<()> {
 /// folder of that workflow in the protocol estuary to the provided output directory
 /// as a sub-directory.
 // TODO: implement essential only
-pub fn get_wokflow<T: AsRef<Path>>(
+pub fn get_workflow<T: AsRef<Path>>(
     af_home_path: T,
     gw_cmd: WorkflowCommands,
 ) -> anyhow::Result<()> {
@@ -317,7 +317,7 @@ pub fn get_wokflow<T: AsRef<Path>>(
             }
 
             // write log
-            let gwc_info_path = output_path.join("get_wokflow.json");
+            let gwc_info_path = output_path.join("get_workflow.json");
             let gwc_info = json!({
                 "command" : "get-workflow-config",
                 "workflow dir": output_path,

@@ -165,7 +165,7 @@ fn main() -> anyhow::Result<()> {
                     output,
                     name,
                     // essential_only,
-                } => get_wokflow(
+                } => get_workflow(
                     af_home_path.as_path(),
                     WorkflowCommands::Get {
                         output,

@@ -1,10 +1,11 @@
 use crate::utils::af_utils::*;
+use crate::utils::chem_utils::{custom_chem_hm_to_json, get_custom_chem_hm, CustomChemistry};
 
 use anyhow::{anyhow, bail, Context, Result};
+use semver::Version;
 use std::io::{Seek, Write};
 use std::path::PathBuf;
 use tracing::info;
-use semver::Version;
 
 use super::Commands;
 
@@ -20,22 +21,17 @@ pub fn add_chemistry(af_home_path: PathBuf, add_chem_cmd: Commands) -> Result<()
         } => {
             // check geometry string, if no good then
             // propagate error.
-            match extract_geometry(&geometry) {
-                Ok(_) => {}
-                Err(e) => {
-                    Err(anyhow!("Could not parse the input string to --geometry. Please make sure it is valid and wrapped in quotes. The error message was: {}", e))?;
-                }
-            };
+            extract_geometry(&geometry)?;
             Version::parse(version.as_ref()).with_context(|| format!("could not parse version {}. Please follow https://semver.org/. A valid example is 0.1.0", version))?;
 
             // init the custom chemistry struct
             let custom_chem = CustomChemistry {
-                name: name.clone(),
-                geometry: geometry.clone(),
+                name,
+                geometry,
                 expected_ori: Some(ExpectedOri::from_str(&expected_ori)?),
-                local_pl_path: local_pl_path,
-                remote_pl_url: remote_pl_url,
-                version: None
+                local_pl_path,
+                remote_pl_url,
+                version: None,
             };
 
             // read in the custom chemistry file
@@ -44,14 +40,18 @@ pub fn add_chemistry(af_home_path: PathBuf, add_chem_cmd: Commands) -> Result<()
             let mut custom_chem_hm = get_custom_chem_hm(&custom_chem_p)?;
 
             // check if the chemistry already exists and log
-            if let Some(cc) = custom_chem_hm.get(&name) {
-                info!("chemistry {} already existed, with geometry {}; overwriting geometry specification", name, cc.geometry());
+            if let Some(cc) = custom_chem_hm.get(custom_chem.name()) {
+                info!("chemistry {} already existed, with geometry {} the one recorded: {}; overwriting geometry specification", custom_chem.name(), if cc.geometry() == custom_chem.geometry() {"same as"} else {"different with"}, cc.geometry());
                 custom_chem_hm
-                    .entry(name.clone())
+                    .entry(custom_chem.name().to_string())
                     .and_modify(|e| *e = custom_chem);
             } else {
-                info!("inserting chemistry {} with geometry {}", name, geometry);
-                custom_chem_hm.insert(name.clone(), custom_chem);
+                info!(
+                    "inserting chemistry {} with geometry {}",
+                    custom_chem.name(),
+                    custom_chem.geometry()
+                );
+                custom_chem_hm.insert(custom_chem.name().to_string(), custom_chem);
             }
 
             // convert the custom chemistry hashmap to json

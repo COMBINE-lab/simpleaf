@@ -1,6 +1,7 @@
 use crate::atac::commands::AtacChemistry;
 use crate::utils::{
-    af_utils::{custom_chem_hm_to_json, get_custom_chem_hm, RnaChemistry},
+    af_utils::RnaChemistry,
+    chem_utils::{custom_chem_hm_to_json, get_custom_chem_hm},
     prog_utils::*,
 };
 use strum::IntoEnumIterator;

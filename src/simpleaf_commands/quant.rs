@@ -1,4 +1,4 @@
-use crate::utils::af_utils::*;
+use crate::utils::{af_utils::*, chem_utils::*};
 
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::{CommandVerbosityLevel, ReqProgs};
@@ -6,11 +6,11 @@ use crate::utils::prog_utils::{CommandVerbosityLevel, ReqProgs};
 use anyhow::{bail, Context};
 use serde_json::json;
 use serde_json::Value;
-use strum::IntoEnumIterator;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+use strum::IntoEnumIterator;
 use tracing::{error, info, warn};
 
 use super::MapQuantOpts;
@@ -379,7 +379,9 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
         "10xv4-3p" => Chemistry::Rna(RnaChemistry::TenxV43P),
         s => {
             // we try to extract the single record for the chemistry and ignore the rest
-            if let Some(chem) = get_single_custom_chem_from_file(&custom_chem_p,opts.chemistry.as_str())? {
+            if let Some(chem) =
+                get_single_custom_chem_from_file(&custom_chem_p, opts.chemistry.as_str())?
+            {
                 info!(
                     "custom chemistry {} maps to geometry {}",
                     s,
@@ -401,15 +403,25 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
     // if the user set the orientation, then
     // use that explicitly
     if let Some(o) = opts.expected_ori.clone() {
-        ori = ExpectedOri::from_str(&o)
-            .with_context(|| format!("Could not parse orientation {}. It must be one of the following: {:?}", o, ExpectedOri::iter().map(|v| v.to_string()).collect::<Vec<String>>().join(", ")))?;
+        ori = ExpectedOri::from_str(&o).with_context(|| {
+            format!(
+                "Could not parse orientation {}. It must be one of the following: {:?}",
+                o,
+                ExpectedOri::iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            )
+        })?;
     } else {
         // otherwise, this was not set explicitly. In that case
         // if we have 10xv2, 10xv3, or 10xv4 (3') chemistry, set ori = "fw"
         // if we have 10xv2-5p or 10xv3-5p chemistry, set ori = "rc"
         // otherwise set ori = "both"
         match &chem {
-            Chemistry::Rna(RnaChemistry::TenxV2) | Chemistry::Rna(RnaChemistry::TenxV3) | Chemistry::Rna(RnaChemistry::TenxV43P) => {
+            Chemistry::Rna(RnaChemistry::TenxV2)
+            | Chemistry::Rna(RnaChemistry::TenxV3)
+            | Chemistry::Rna(RnaChemistry::TenxV43P) => {
                 ori = ExpectedOri::Forward;
             }
             Chemistry::Rna(RnaChemistry::TenxV25P) | Chemistry::Rna(RnaChemistry::TenxV35P) => {
@@ -422,9 +434,7 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
                 // and when we propagate more information about paired-end mappings.
                 ori = ExpectedOri::Forward;
             }
-            Chemistry::Rna(RnaChemistry::Other(_)) => {
-                ori = ExpectedOri::Both
-            }
+            Chemistry::Rna(RnaChemistry::Other(_)) => ori = ExpectedOri::Both,
             Chemistry::Custom(cc) => {
                 // if the custom chemistry has an orientation, use that
                 if let Some(o) = cc.expected_ori() {
