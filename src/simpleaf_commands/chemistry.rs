@@ -3,7 +3,7 @@ use crate::utils::chem_utils::{custom_chem_hm_to_json, get_custom_chem_hm, Custo
 use crate::utils::constants::*;
 use crate::utils::prog_utils;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use semver::Version;
 use serde_json::json;
 use std::io::{Seek, Write};

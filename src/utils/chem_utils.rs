@@ -1,12 +1,12 @@
 use crate::utils::af_utils::{
-    extract_geometry, parse_resource_json_file, validate_geometry, ExpectedOri,
+    parse_resource_json_file, validate_geometry, ExpectedOri,
 };
 use crate::utils::constants::*;
 use anyhow::{anyhow, bail, Context, Result};
 use semver::Version;
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tracing::info;
 
 // TODO: Change to main repo when we are ready
@@ -31,7 +31,7 @@ pub struct CustomChemistry {
 #[allow(dead_code)]
 impl CustomChemistry {
     pub fn simple_custom(geometry: &str) -> Result<CustomChemistry> {
-        // TODO: if we
+        // TODO: once we ensure the geometry must be a valid geometry, we do validation here
         // extract_geometry(geometry)?;
         Ok(CustomChemistry {
             name: geometry.to_string(),
@@ -217,7 +217,7 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
         }
         Value::Object(obj) => {
             let geometry = try_get_str_from_json(GEOMETRY_KEY, obj, FieldType::Mandatory, None)?;
-            let geometry = geometry.unwrap(); // we made this value, so it must be valid
+            let geometry = geometry.unwrap(); // we made this Some, safe to unwrap
                                               // check if geometry is valid
             validate_geometry(&geometry)?;
 
@@ -226,8 +226,19 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
                 obj,
                 FieldType::Optional,
                 Some(ExpectedOri::Both.to_string()),
-            )?;
-            let expected_ori = expected_ori.map(|v| ExpectedOri::from_str(&v).unwrap()); // we made this value, so it must be valid
+            )?
+            .unwrap(); // we made this Some, safe to unwrap
+
+            let expected_ori = Some(
+                ExpectedOri::from_str(&expected_ori)
+                .with_context(|| {
+                    format!(
+                        "Found invalid expected_ori string for the custom chemistry {}: {}. It should be one of {}",
+                        key, &expected_ori,
+                        ExpectedOri::all_to_str().join(", ")
+                    )
+                })?
+            );
 
             let version = try_get_str_from_json(
                 VERSION_KEY,
@@ -274,7 +285,7 @@ pub(crate) enum FieldType {
 }
 
 pub fn custom_chem_hm_to_json(custom_chem_hm: &HashMap<String, CustomChemistry>) -> Result<Value> {
-    // first create the name to genometry mapping
+    // first create the name to geometry mapping
     let v: Value = custom_chem_hm
         .iter()
         .map(|(k, v)| {
