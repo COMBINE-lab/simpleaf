@@ -494,6 +494,7 @@ pub struct ChemistryAddOpts {
 #[derive(Debug, Subcommand)]
 #[command(arg_required_else_help = true)]
 pub enum ChemistryCommand {
+    /// Add or refresh chemistry definitions from the upstream repository
     Refresh,
     Add(ChemistryAddOpts),
     Remove(ChemistryRemoveOpts),
@@ -504,7 +505,7 @@ pub enum ChemistryCommand {
 pub enum Commands {
     /// build the (expanded) reference index
     Index(IndexOpts),
-    /// add a new custom chemistry to geometry mapping
+    /// operate on or inspect the chemistry registry
     #[command(subcommand)]
     Chemistry(ChemistryCommand),
     /// inspect the current configuration

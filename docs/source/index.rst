@@ -41,7 +41,7 @@ That's it for initial notes.  Use the menu below to learn more about the `simple
 
    installation.rst
    set-paths.rst
-   add-chemistry-command.rst
+   chemistry-command.rst
    inspect-command.rst
    index-command.rst
    quant-command.rst

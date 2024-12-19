@@ -62,6 +62,9 @@ pub fn add_chemistry(
         } else {
             bail!("The local-url {} was provided, but no file could be found at that location. Cannot continue.", local_url.display());
         }
+    } else if add_opts.remote_url.is_some() {
+        let local_name = format!("{}.txt", name);
+        local_plist = Some(local_name);
     } else {
         local_plist = None;
     }
@@ -74,6 +77,7 @@ pub fn add_chemistry(
         plist_name: local_plist,
         remote_pl_url: add_opts.remote_url,
         version: Some(version),
+        meta: None,
     };
 
     // read in the custom chemistry file

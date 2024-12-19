@@ -336,7 +336,12 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
 
         // if we got a name for a local file, check if it exists
         let local_permit_file = pdir.join(local_path);
-        if has_local_name && local_permit_file.is_file() {
+        if local_permit_file.is_file() {
+            // it looks like we previously downloaded this file, yet there is no plist name
+            // given in the registry.  That's odd and should be noted.
+            if !has_local_name {
+                warn!("The file {} is being used as the permit list, though no \"plist_name\" entry for this chemistry appeared in the registry. Please ensure this is the correct file.", local_permit_file.display());
+            }
             return Ok(PermitListResult::AlreadyPresent(local_permit_file));
         }
 

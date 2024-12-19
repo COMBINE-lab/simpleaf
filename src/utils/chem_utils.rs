@@ -12,6 +12,8 @@ use tracing::info;
 static GEOMETRY_KEY: &str = "geometry";
 static EXPECTED_ORI_KEY: &str = "expected_ori";
 static VERSION_KEY: &str = "version";
+static META_KEY: &str = "meta";
+
 pub(crate) static LOCAL_PL_PATH_KEY: &str = "plist_name";
 pub(crate) static REMOTE_PL_URL_KEY: &str = "remote_url";
 
@@ -28,6 +30,7 @@ pub struct CustomChemistry {
     pub version: Option<String>,
     pub plist_name: Option<String>,
     pub remote_pl_url: Option<String>,
+    pub meta: Option<Value>,
 }
 
 impl QueryInRegistry for CustomChemistry {
@@ -48,6 +51,7 @@ impl CustomChemistry {
             version: None,
             plist_name: None,
             remote_pl_url: None,
+            meta: None,
         })
     }
     pub fn geometry(&self) -> &str {
@@ -165,7 +169,7 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
                     version: None,
                     plist_name: None,
                     remote_pl_url: None,
-                    //meta: None,
+                    meta: None,
                 }),
                 Err(e) => Err(anyhow!(
                     "Found invalid custom chemistry geometry for {}: {}.\nThe error message was {}",
@@ -221,6 +225,8 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
             let remote_pl_url =
                 try_get_str_from_json(REMOTE_PL_URL_KEY, obj, FieldType::Optional, None)?;
 
+            let meta = obj.get(META_KEY).map(|v| v.clone());
+
             Ok(CustomChemistry {
                 name: key.to_string(),
                 geometry,
@@ -228,6 +234,7 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
                 version,
                 plist_name,
                 remote_pl_url,
+                meta,
             })
         }
         _ => Err(anyhow!(
