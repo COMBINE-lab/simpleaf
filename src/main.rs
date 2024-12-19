@@ -1,3 +1,4 @@
+use chemistry::refresh_chemistries;
 use tracing_subscriber::{filter::LevelFilter, fmt, prelude::*, EnvFilter};
 
 use anyhow::bail;
@@ -85,9 +86,7 @@ fn main() -> anyhow::Result<()> {
                 version: String::from("0.0.0"),
             },
         ),
-        Commands::Chemistry(ChemistryCommand::Refresh) => {
-            todo!("implement chemistry refresh")
-        }
+        Commands::Chemistry(ChemistryCommand::Refresh) => refresh_chemistries(af_home_path),
         Commands::AddChemistry {
             name,
             geometry,

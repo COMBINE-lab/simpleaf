@@ -208,6 +208,19 @@ pub enum PermitListResult {
     UnregisteredChemistry,
 }
 
+pub fn validate_geometry(geo: &str) -> Result<()> {
+    if geo != "__builtin" {
+        let fg = FragmentGeomDesc::try_from(geo);
+        return match fg {
+            Ok(_fg) => Ok(()),
+            Err(e) => {
+                bail!("Could not parse geometry {}. Please ensure that it is a valid geometry definition wrapped by quotes. The error message was: {:?}", geo, e);
+            }
+        };
+    }
+    Ok(())
+}
+
 pub fn extract_geometry(geo: &str) -> Result<FragmentGeomDesc> {
     let fg = FragmentGeomDesc::try_from(geo);
     match fg {
@@ -327,7 +340,7 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
     info!("Try to get the permit list file from predefined permit list info file");
 
     let permit_info_p = af_home.join("permit_list_info.json");
-    let v: Value = parse_resource_json_file(&permit_info_p, PERMIT_LIST_INFO_URL)?;
+    let v: Value = parse_resource_json_file(&permit_info_p, Some(PERMIT_LIST_INFO_URL))?;
 
     let fake_version = json!("0.0.0");
     // get the version. If it is an old version, suggest the user to delete it
@@ -593,14 +606,21 @@ impl ExpectedOri {
     }
 }
 
-pub fn parse_resource_json_file(p: &Path, url: &str) -> Result<Value> {
+pub fn parse_resource_json_file(p: &Path, url: Option<&str>) -> Result<Value> {
     // check if the custom_chemistries.json file exists
     let resource_exists = p.is_file();
 
     // get the file
     if !resource_exists {
-        // download the custom_chemistries.json file if needed
-        prog_utils::download_to_file(url, p)?;
+        if let Some(dl_url) = url {
+            // download the custom_chemistries.json file if needed
+            prog_utils::download_to_file(dl_url, p)?;
+        } else {
+            bail!(
+                "could not find resource {}, and no remote url was provided",
+                p.display()
+            );
+        }
     }
 
     // load the file

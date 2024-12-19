@@ -1,4 +1,7 @@
-use crate::utils::af_utils::{extract_geometry, parse_resource_json_file, ExpectedOri};
+use crate::utils::af_utils::{
+    extract_geometry, parse_resource_json_file, validate_geometry, ExpectedOri,
+};
+use crate::utils::constants::*;
 use anyhow::{anyhow, bail, Context, Result};
 use semver::Version;
 use serde_json::{json, Map, Value};
@@ -7,7 +10,6 @@ use std::path::{Path, PathBuf};
 use tracing::info;
 
 // TODO: Change to main repo when we are ready
-static CUSTOM_CHEMISTRIES_URL: &str = "https://raw.githubusercontent.com/an-altosian/simpleaf/spatial/resources/custom_chemistries.json";
 
 static GEOMETRY_KEY: &str = "geometry";
 static EXPECTED_ORI_KEY: &str = "expected_ori";
@@ -85,7 +87,7 @@ pub(crate) fn get_validated_geometry_from_value<'a>(
     })?;
     // it should be a valid geometry
     // TODO: what if isn't a "custom" geometry?
-    extract_geometry(geometry_str).with_context(|| {
+    validate_geometry(geometry_str).with_context(|| {
         format!(
             "Found invalid custom geometry for {}: {}.",
             key, geometry_str
@@ -94,10 +96,29 @@ pub(crate) fn get_validated_geometry_from_value<'a>(
     Ok(geometry_str)
 }
 
+/// Parse the **now-deprecated** "custom_chemistries.json" format file and return
+/// the result in a simple HashMap
+pub fn get_deprecated_custom_chem_hm(
+    custom_chem_p: &Path,
+) -> Result<HashMap<String, CustomChemistry>> {
+    let v: Value = parse_resource_json_file(custom_chem_p, Some(CHEMISTRIES_URL))?;
+    let chem_hm = get_custom_chem_hm_from_value(v);
+    match chem_hm {
+        Ok(hm) => Ok(hm),
+        Err(e) => {
+            bail!(
+                "{}; Please consider delete it from {}",
+                e,
+                custom_chem_p.display()
+            );
+        }
+    }
+}
+
 /// This function gets the custom chemistry from the `af_home_path` directory.
 /// If the file doesn't exist, it downloads the file from the `url` and saves it
 pub fn get_custom_chem_hm(custom_chem_p: &Path) -> Result<HashMap<String, CustomChemistry>> {
-    let v: Value = parse_resource_json_file(custom_chem_p, CUSTOM_CHEMISTRIES_URL)?;
+    let v: Value = parse_resource_json_file(custom_chem_p, Some(CHEMISTRIES_URL))?;
     let chem_hm = get_custom_chem_hm_from_value(v);
     match chem_hm {
         Ok(hm) => Ok(hm),
@@ -176,7 +197,7 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
     match value {
         Value::String(record_v) => {
             // if it is a string, it should be a geometry
-            match extract_geometry(record_v) {
+            match validate_geometry(record_v) {
                 Ok(_) => Ok(CustomChemistry {
                     name: key.to_string(),
                     geometry: record_v.to_string(),
@@ -198,7 +219,7 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
             let geometry = try_get_str_from_json(GEOMETRY_KEY, obj, FieldType::Mandatory, None)?;
             let geometry = geometry.unwrap(); // we made this value, so it must be valid
                                               // check if geometry is valid
-            extract_geometry(&geometry)?;
+            validate_geometry(&geometry)?;
 
             let expected_ori = try_get_str_from_json(
                 EXPECTED_ORI_KEY,
@@ -301,7 +322,7 @@ pub fn get_single_custom_chem_from_file(
     custom_chem_p: &Path,
     chem_name: &str,
 ) -> Result<Option<CustomChemistry>> {
-    let v: Value = parse_resource_json_file(custom_chem_p, CUSTOM_CHEMISTRIES_URL)?;
+    let v: Value = parse_resource_json_file(custom_chem_p, Some(CHEMISTRIES_URL))?;
     if let Some(chem_v) = v.get(chem_name) {
         let custom_chem = parse_single_custom_chem_from_value(chem_name, chem_v)?;
         Ok(Some(custom_chem))

@@ -63,6 +63,7 @@
     "geometry": "__builtin",
     "expected_ori": "fw",
     "local_url": "10x_v2_permit.txt",
+    "version": "0.1.0",
     "meta": {
       "cr_filename": "737k-august-2016.txt"
     },
@@ -72,6 +73,7 @@
     "geometry": "__builtin",
     "expected_ori": "fw",
     "local_url": "10x_v2_permit.txt",
+    "version": "0.1.0",
     "meta": {
       "cr_filename": "737k-august-2016.txt"
     },
@@ -81,6 +83,7 @@
     "geometry": "__builtin",
     "expected_ori": "fw",
     "local_url": "10x_v3_permit.txt",
+    "version": "0.1.0",
     "meta": {
       "cr_filename": "3M-febrary-2018.txt.gz"
     },
@@ -90,6 +93,7 @@
     "geometry": "__builtin",
     "expected_ori": "fw",
     "local_url": "10x_v3_5p_permit.txt",
+    "version": "0.1.0",
     "meta": {
       "cr_filename": "3M-5pgex-jan-2023.txt.gz"
     },
@@ -99,6 +103,7 @@
     "geometry": "__builtin",
     "expected_ori": "fw",
     "local_url": "10x_v4_3p_permit.txt",
+    "version": "0.1.0",
     "meta": {
       "cr_filename": "3M-3pgex-may-2023.txt.gz"
     },
@@ -109,6 +114,7 @@
     "expected_ori": "fw",
     "local_url": "10x_atac_v1_v11_v2.txt",
     "remote_url": "https://umd.box.com/shared/static/2fni966esnkorl92ca3jxjogz8dyt1ki",
+    "version": "0.1.0",
     "meta": {
       "cr_filename": "737K-cratac-v1.txt"
     }
@@ -118,6 +124,7 @@
     "expected_ori": "fw",
     "local_url": "10x_atac_v1_v11_v2.txt",
     "remote_url": "https://umd.box.com/shared/static/2fni966esnkorl92ca3jxjogz8dyt1ki",
+    "version": "0.1.0",
     "meta": {
       "cr_filename": "737K-cratac-v1.txt"
     }
@@ -127,6 +134,7 @@
     "expected_ori": "fw",
     "local_url": "10x_arc_atac_v1.txt",
     "remote_url": "https://umd.box.com/shared/static/4bs2mf4nkvvhviyz90ntdnpfzf6exnlj",
+    "version": "0.1.0",
     "meta": {
       "cr_filename": "737K-arc-v1.txt"
     }
