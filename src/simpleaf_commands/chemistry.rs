@@ -20,7 +20,9 @@ pub fn add_chemistry(
     // propagate error.
     validate_geometry(&geometry)?;
 
-    let version = add_opts.version.unwrap_or("0.0.0".to_string());
+    let version = add_opts
+        .version
+        .unwrap_or(CustomChemistry::default_version());
     Version::parse(version.as_ref()).with_context(|| format!("could not parse version {}. Please follow https://semver.org/. A valid example is 0.1.0", version))?;
 
     let name = add_opts.name;
