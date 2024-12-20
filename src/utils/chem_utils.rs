@@ -83,16 +83,6 @@ impl CustomChemistry {
     }
 }
 
-/// This function determines the plist_name that is implied for a given
-/// chemistry record, based on the name of the chemistry and the version
-/// of the current entry
-pub(crate) fn implied_plist_name(chem_key: &str, ver: &str) -> String {
-    let mut pln = chem_key.to_owned();
-    pln.push('_');
-    pln.push_str(ver);
-    pln
-}
-
 /// This function gets the custom chemistry from the `af_home_path` directory.
 /// If the file doesn't exist, it downloads the file from the `url` and saves it
 pub fn get_custom_chem_hm(custom_chem_p: &Path) -> Result<HashMap<String, CustomChemistry>> {

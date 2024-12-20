@@ -484,14 +484,6 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
                         min_cells,
                     ));
                 }
-                af_utils::PermitListResult::MissingPermitKeys => {
-                    bail!(
-                        "The chemistry {} was registered in {}, but it contained no keys for the permit list. 
-                        Please either provide a permit list explicitly via the command line, or register a permit 
-                        list for this chemistry.",
-                        opts.chemistry.as_str(), crate::utils::constants::CHEMISTRIES_PATH
-                    )
-                }
                 af_utils::PermitListResult::UnregisteredChemistry => {
                     bail!(
                         "Cannot automatically obtain an unfiltered permit list for an unregistered chemistry : {}.",
