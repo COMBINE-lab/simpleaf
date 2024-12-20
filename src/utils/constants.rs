@@ -8,3 +8,5 @@ pub(crate) static CUSTOM_CHEMISTRIES_PATH: &str = "custom_chemistries.json";
 pub(crate) static CHEMISTRIES_PATH: &str = "chemistries.json";
 pub(crate) static CHEMISTRIES_URL: &str =
     "https://raw.githubusercontent.com/COMBINE-lab/simpleaf/spatial/resources/chemistries.json";
+
+pub(crate) static NUM_SAMPLE_LINES: usize = 100;

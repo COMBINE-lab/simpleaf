@@ -79,6 +79,7 @@ minreq = { version = "2.13.0", features = [
 ] }
 strum = { version = "0.26.3", features = ["derive", "phf"] }
 strum_macros = "0.26.4"
+niffler = { version = "2.6.0", default-features = false, features = ["gz", "gz_cloudflare_zlib"] }
 
 [profile.release]
 lto = "thin"

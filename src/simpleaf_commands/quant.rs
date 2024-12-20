@@ -13,6 +13,17 @@ use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
 use super::MapQuantOpts;
+use crate::utils::constants::NUM_SAMPLE_LINES;
+
+fn get_generic_buf_reader(ipath: &PathBuf) -> anyhow::Result<impl BufRead> {
+    let (reader, compression) = niffler::from_path(ipath)
+        .with_context(|| format!("Could not open requsted file {}", ipath.display()))?;
+    match compression {
+        niffler::compression::Format::No => info!("found uncompressed file"),
+        f => info!("found file compressed using {:?}", f),
+    }
+    Ok(BufReader::new(reader))
+}
 
 struct CBListInfo {
     pub init_file: PathBuf,
@@ -31,17 +42,18 @@ impl CBListInfo {
     // we iterate the file to see if it only has cb or with affiliated info (by separator \t).
     fn init(&mut self, pl_file: &PathBuf, output: &PathBuf) -> anyhow::Result<()> {
         // open pl_file
-        let br = BufReader::new(std::fs::File::open(pl_file).with_context({
-            || format!("Could not open permitlist file {}", pl_file.display())
-        })?);
+        let br = get_generic_buf_reader(pl_file)
+            .with_context(|| "failed to successfully open permit-list file.")?;
 
         // find if there is any "\t"
         let is_single_column = br
             .lines()
+            .take(NUM_SAMPLE_LINES) // don't read the whole file in the single-coumn case
             .map(|l| {
                 l.unwrap_or_else(|_| panic!("Could not open permitlist file {}", pl_file.display()))
             })
             .any(|l| !l.contains('\t'));
+
         // if single column, we are good. Otherwise, we need to write the first column to the final file
         let final_file: PathBuf;
         if is_single_column {
@@ -61,7 +73,10 @@ impl CBListInfo {
             let mut final_bw = BufWriter::new(final_f);
 
             // reinitialize the reader
-            let br = BufReader::new(std::fs::File::open(pl_file)?);
+            let br = get_generic_buf_reader(pl_file)
+                .with_context(|| "failed to successfully re-open permit-list file.")?;
+
+            // TODO: consider using byte_lines (from bytelines crate) here instead
             for l in br.lines() {
                 // find the tab and write the first column to the final file
                 writeln!(
@@ -79,6 +94,7 @@ impl CBListInfo {
         self.is_single_column = is_single_column;
         Ok(())
     }
+
     fn update_af_quant_barcodes_tsv(&self, barcode_tsv: &PathBuf) -> anyhow::Result<()> {
         // if the permit list was single column, then we don't need to do anything
         // if the permit list was not single column, then we need to add the extra columns into the alevin-fry quants_mat_rows.txt file.
@@ -126,7 +142,8 @@ impl CBListInfo {
 
         // read the whitelist file and parse only those in the matrix row file.
         let mut allocated_cb = 0;
-        let br = BufReader::new(std::fs::File::open(&self.init_file)?);
+        let br = get_generic_buf_reader(&self.init_file)
+            .with_context(|| "failed to successfully re-open permit-list file.")?;
         for l in br.lines() {
             // identify the cb
             let line = l?;
