@@ -217,6 +217,19 @@ pub enum PermitListResult {
     MissingPermitKeys,
 }
 
+pub fn create_dir_if_absent<T: AsRef<Path>>(odir: T) -> Result<()> {
+    let pdir = odir.as_ref();
+    if !pdir.exists() {
+        info!(
+            "The directory {} doesn't yet exist; attempting to create it.",
+            pdir.display()
+        );
+        std::fs::create_dir(pdir)
+            .with_context(|| format!("Couldn't create the directory at {}", pdir.display()))?;
+    }
+    Ok(())
+}
+
 pub fn validate_geometry(geo: &str) -> Result<()> {
     if geo != "__builtin" {
         let fg = FragmentGeomDesc::try_from(geo);

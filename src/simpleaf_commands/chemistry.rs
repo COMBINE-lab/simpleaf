@@ -1,5 +1,7 @@
 use crate::utils::af_utils::*;
-use crate::utils::chem_utils::{custom_chem_hm_to_json, get_custom_chem_hm, CustomChemistry};
+use crate::utils::chem_utils::{
+    custom_chem_hm_to_json, get_custom_chem_hm, get_single_custom_chem_from_file, CustomChemistry,
+};
 use crate::utils::constants::*;
 use crate::utils::prog_utils::{self, download_to_file_compute_hash};
 
@@ -7,28 +9,10 @@ use anyhow::{bail, Context, Result};
 use semver::Version;
 use serde_json::json;
 use std::fs;
-use std::hash::Hash;
 use std::io::{Seek, Write};
 use std::os::unix::fs::MetadataExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tracing::{info, warn};
-
-fn create_dir_if_absent<T: AsRef<Path>>(odir: T) -> Result<()> {
-    let pdir = odir.as_ref();
-    if !pdir.exists() {
-        info!(
-            "The permit list directory ({}) doesn't yet exist; attempting to create it.",
-            pdir.display()
-        );
-        std::fs::create_dir(&pdir).with_context(|| {
-            format!(
-                "Couldn't create the permit list directory at {}",
-                pdir.display()
-            )
-        })?;
-    }
-    Ok(())
-}
 
 pub fn add_chemistry(
     af_home_path: PathBuf,
@@ -40,9 +24,29 @@ pub fn add_chemistry(
     validate_geometry(&geometry)?;
 
     let version = add_opts.version.unwrap_or("0.0.0".to_string());
-    Version::parse(version.as_ref()).with_context(|| format!("could not parse version {}. Please follow https://semver.org/. A valid example is 0.1.0", version))?;
+    let add_ver = Version::parse(version.as_ref()).with_context(|| format!("could not parse version {}. Please follow https://semver.org/. A valid example is 0.1.0", version))?;
 
     let name = add_opts.name;
+
+    // read in the custom chemistry file
+    let chem_p = af_home_path.join(CHEMISTRIES_PATH);
+
+    if let Some(existing_entry) = get_single_custom_chem_from_file(&chem_p, &name)? {
+        let existing_ver_str = existing_entry
+            .version()
+            .clone()
+            .unwrap_or("0.0.0".to_string());
+        let existing_ver = Version::parse(existing_ver_str.as_ref()).with_context( || format!("could not parse version {} found in existing chemistries.json file. Please correct this entry", existing_ver_str))?;
+        if add_ver <= existing_ver {
+            info!("Attempting to add chemistry with version {:#} which is <= than the existing version ({:#}) for this chemistry. Skipping addition", add_ver, existing_ver);
+            return Ok(());
+        } else {
+            info!(
+                "Updating existing version {:#} of chemistry {} to {:#}",
+                existing_ver, name, add_ver
+            );
+        }
+    }
 
     let local_plist;
     if let Some(local_url) = add_opts.local_url {
@@ -133,9 +137,6 @@ pub fn add_chemistry(
         version: Some(version),
         meta: None,
     };
-
-    // read in the custom chemistry file
-    let chem_p = af_home_path.join(CHEMISTRIES_PATH);
 
     let mut chem_hm = get_custom_chem_hm(&chem_p)?;
 

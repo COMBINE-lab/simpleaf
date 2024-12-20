@@ -1,0 +1,142 @@
+{
+  "visiumv1-probe": {
+    "geometry": "1{b[16]u[12]x:}2{r[50]x:}",
+    "expected_ori": "fw",
+    "version": "0.1.0",
+    "plist_name": "1369de4f999ab7255c062307ea9ccfd225109003f62a6a4ecf7d530576989fb4",
+    "remote_url": "https://umd.box.com/shared/static/851sydyypct2cy4nri98yhelb4a9q3sg.txt",
+    "meta": {
+      "cr_filename": "visium-v1_coordinates.txt"
+    }
+  },
+  "visiumv1": {
+    "geometry": "1{b[16]u[12]x:}2{r:}",
+    "expected_ori": "fw",
+    "version": "0.1.0",
+    "plist_name": "1369de4f999ab7255c062307ea9ccfd225109003f62a6a4ecf7d530576989fb4",
+    "remote_url": "https://umd.box.com/shared/static/851sydyypct2cy4nri98yhelb4a9q3sg.txt",
+    "meta": {
+      "cr_filename": "visium-v1_coordinates.txt"
+    }
+  },
+  "visiumv4-probe": {
+    "geometry": "1{b[16]u[12]x:}2{r[50]x:}",
+    "expected_ori": "fw",
+    "version": "0.1.0",
+    "plist_name": "796f09977e37c216d69473a9677e570e895497e62ee66cda8a670fff4c1bba79",
+    "remote_url": "https://umd.box.com/shared/static/i4udjwaceixd1em71fol50c3izl1wbzk.txt",
+    "meta": {
+      "cr_filename": "visium-v4_coordinates.txt"
+    }
+  },
+  "visiumv4": {
+    "geometry": "1{b[16]u[12]x:}2{r:}",
+    "expected_ori": "fw",
+    "version": "0.1.0",
+    "plist_name": "796f09977e37c216d69473a9677e570e895497e62ee66cda8a670fff4c1bba79",
+    "remote_url": "https://umd.box.com/shared/static/i4udjwaceixd1em71fol50c3izl1wbzk.txt",
+    "meta": {
+      "cr_filename": "visium-v4_coordinates.txt"
+    }
+  },
+  "visiumv5-probe": {
+    "geometry": "1{b[16]u[12]x:}2{r[50]x:}",
+    "expected_ori": "fw",
+    "version": "0.1.0",
+    "plist_name": "b83c0bd5887e4e13a1dd2d0f1bca7e1963d666d932b08ccdd7230b9501139c8c",
+    "remote_url": "https://umd.box.com/shared/static/518elp0hmb0es0qbhmp2o34evup4qwwr.txt",
+    "meta": {
+      "cr_filename": "visium-v5_coordinates.txt"
+    }
+  },
+  "visiumv5": {
+    "geometry": "1{b[16]u[12]x:}2{r:}",
+    "expected_ori": "fw",
+    "version": "0.1.0",
+    "plist_name": "b83c0bd5887e4e13a1dd2d0f1bca7e1963d666d932b08ccdd7230b9501139c8c",
+    "remote_url": "https://umd.box.com/shared/static/518elp0hmb0es0qbhmp2o34evup4qwwr.txt",
+    "meta": {
+      "cr_filename": "visium-v5_coordinates.txt"
+    }
+  },
+  "10xv2": {
+    "geometry": "__builtin",
+    "expected_ori": "fw",
+    "plist_name": "dda0309f511ded5d801081a55c66b9a44cab4edbf0e07a9223f539e248d8e090",
+    "version": "0.1.0",
+    "meta": {
+      "cr_filename": "737k-august-2016.txt"
+    },
+    "remote_url": "https://umd.box.com/shared/static/jbs2wszgbj7k4ic2hass9ts6nhqkwq1p"
+  },
+  "10xv2-5p": {
+    "geometry": "__builtin",
+    "expected_ori": "fw",
+    "plist_name": "dda0309f511ded5d801081a55c66b9a44cab4edbf0e07a9223f539e248d8e090",
+    "version": "0.1.0",
+    "meta": {
+      "cr_filename": "737k-august-2016.txt"
+    },
+    "remote_url": "https://umd.box.com/shared/static/jbs2wszgbj7k4ic2hass9ts6nhqkwq1p"
+  },
+  "10xv3": {
+    "geometry": "__builtin",
+    "expected_ori": "fw",
+    "plist_name": "2c9dfb98babe5a57ae763778adb9ebb7bfa531e105823bc26163892089333f8c",
+    "version": "0.1.0",
+    "meta": {
+      "cr_filename": "3M-febrary-2018.txt.gz"
+    },
+    "remote_url": "https://umd.box.com/shared/static/vc9zd4qyjj581gvtolw5kj638wmg4f3s"
+  },
+  "10xv3-5p": {
+    "geometry": "__builtin",
+    "expected_ori": "fw",
+    "plist_name": "0acedbe7ef38360c3731dbda78043b7bacbd75a0bb4e7e749e4fefa70e76a537",
+    "version": "0.1.0",
+    "meta": {
+      "cr_filename": "3M-5pgex-jan-2023.txt.gz"
+    },
+    "remote_url": "https://umd.box.com/shared/static/cbpv1c4zi6ty81nvcgy3pyta2oj7vea1.txt"
+  },
+  "10xv4-3p": {
+    "geometry": "__builtin",
+    "expected_ori": "fw",
+    "plist_name": "0bfa4a0bea1d636e7ec1908aabb94307c53778185c12fc164da32dd085848131",
+    "version": "0.1.0",
+    "meta": {
+      "cr_filename": "3M-3pgex-may-2023.txt.gz"
+    },
+    "remote_url": "https://umd.box.com/shared/static/4a2q2lxngogaq4vkniptpu2gts5a38fb.txt"
+  },
+  "10x-atac-v1": {
+    "geometry": "__builtin",
+    "expected_ori": "fw",
+    "plist_name": "b2c57ce716104a6b27d2ccf72087f74ba29de6977d899992a2f0237341f2a71b",
+    "remote_url": "https://umd.box.com/shared/static/2fni966esnkorl92ca3jxjogz8dyt1ki",
+    "version": "0.1.0",
+    "meta": {
+      "cr_filename": "737K-cratac-v1.txt"
+    }
+  },
+  "10x-atac-v2": {
+    "geometry": "__builtin",
+    "expected_ori": "fw",
+    "plist_name": "b2c57ce716104a6b27d2ccf72087f74ba29de6977d899992a2f0237341f2a71b",
+    "remote_url": "https://umd.box.com/shared/static/2fni966esnkorl92ca3jxjogz8dyt1ki",
+    "version": "0.1.0",
+    "meta": {
+      "cr_filename": "737K-cratac-v1.txt"
+    }
+  },
+  "10x-arc-atac-v1": {
+    "geometry": "__builtin",
+    "expected_ori": "fw",
+    "plist_name": "5cc55109de3ccc553b97044794e686ab0a80649a37c6953d271a0e6628469fc0",
+    "remote_url": "https://umd.box.com/shared/static/4bs2mf4nkvvhviyz90ntdnpfzf6exnlj",
+    "version": "0.1.0",
+    "meta": {
+      "cr_filename": "737K-arc-v1.txt"
+    }
+  }
+}
