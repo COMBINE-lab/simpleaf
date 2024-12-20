@@ -70,6 +70,10 @@ impl CustomChemistry {
         &self.version
     }
 
+    pub fn default_version() -> String {
+        String::from("0.0.0")
+    }
+
     pub fn plist_name(&self) -> &Option<String> {
         &self.plist_name
     }
@@ -169,26 +173,22 @@ pub fn try_get_str_from_json(
 /// warn by default when we see it.
 pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<CustomChemistry> {
     match value {
+        // deprecated case. Need to warn and return an error
         Value::String(record_v) => {
-            // if it is a string, it should be a geometry
             match validate_geometry(record_v) {
-                Ok(_) => Ok(CustomChemistry {
-                    name: key.to_string(),
-                    geometry: record_v.to_string(),
-                    expected_ori: None,
-                    version: None,
-                    plist_name: None,
-                    remote_pl_url: None,
-                    meta: None,
-                }),
-                Err(e) => Err(anyhow!(
-                    "Found invalid custom chemistry geometry for {}: {}.\nThe error message was {}",
+                Ok(_) => Err(anyhow!(
+                    "Found string version of custom chemistry {}: {}. This is deprecated. Please add the chemistry again using simpleaf chem add.",
                     key,
-                    record_v,
-                    e
+                    record_v
+                )),
+                Err(_) => Err(anyhow!(
+                    "Found invalid custom chemistry record for {}: {}",
+                    key,
+                    record_v
                 )),
             }
         }
+
         Value::Object(obj) => {
             let geometry = try_get_str_from_json(GEOMETRY_KEY, obj, FieldType::Mandatory, None)?;
             let geometry = geometry.unwrap(); // we made this Some, safe to unwrap
@@ -199,7 +199,7 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
                 EXPECTED_ORI_KEY,
                 obj,
                 FieldType::Optional,
-                Some(ExpectedOri::Both.to_string()),
+                Some(ExpectedOri::default().to_string()),
             )?
             .unwrap(); // we made this Some, safe to unwrap
 
@@ -207,7 +207,8 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
                 ExpectedOri::from_str(&expected_ori)
                 .with_context(|| {
                     format!(
-                        "Found invalid expected_ori string for the custom chemistry {}: {}. It should be one of {}",
+                        "Found invalid {} string for the custom chemistry {}: {}. It should be one of {}",
+                        EXPECTED_ORI_KEY,
                         key, &expected_ori,
                         ExpectedOri::all_to_str().join(", ")
                     )
@@ -218,13 +219,15 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
                 VERSION_KEY,
                 obj,
                 FieldType::Optional,
-                Some(String::from("0.0.1")),
+                Some(CustomChemistry::default_version()),
             )?;
             if let Some(version) = &version {
                 Version::parse(version).with_context(|| {
                     format!(
-                        "Found invalid version string for the custom chemistry {}: {}",
-                        key, &version
+                        "Found invalid {} string for the custom chemistry {}: {}",
+                        VERSION_KEY,
+                        key,
+                        &version
                     )
                 })?;
             };
@@ -275,18 +278,19 @@ pub fn custom_chem_hm_to_json(custom_chem_hm: &HashMap<String, CustomChemistry>)
                 info!(
                     "`expected_ori` is missing for custom chemistry {}; Set as {}",
                     k,
-                    ExpectedOri::Both.as_str()
+                    ExpectedOri::default().as_str()
                 );
-                json!(ExpectedOri::Both.as_str())
+                json!(ExpectedOri::default().as_str())
             };
             value[VERSION_KEY] = if let Some(ver) = &v.version {
                 json!(ver)
             } else {
                 info!(
                     "`version` is missing for custom chemistry {}; Set as {}",
-                    k, "0.0.1"
+                    k,
+                    CustomChemistry::default_version()
                 );
-                json!("0.0.1")
+                json!(CustomChemistry::default_version())
             };
             value[LOCAL_PL_PATH_KEY] = if let Some(lpp) = &v.plist_name {
                 json!(lpp)

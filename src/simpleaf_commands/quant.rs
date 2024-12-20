@@ -447,13 +447,13 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
                 // and when we propagate more information about paired-end mappings.
                 ori = ExpectedOri::Forward;
             }
-            Chemistry::Rna(RnaChemistry::Other(_)) => ori = ExpectedOri::Both,
+            Chemistry::Rna(RnaChemistry::Other(_)) => ori = ExpectedOri::default(),
             Chemistry::Custom(cc) => {
                 // if the custom chemistry has an orientation, use that
                 if let Some(o) = cc.expected_ori() {
                     ori = o.clone();
                 } else {
-                    ori = ExpectedOri::Both;
+                    ori = ExpectedOri::default();
                 }
             }
             _ => {

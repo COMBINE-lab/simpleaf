@@ -11,12 +11,10 @@ use std::path::{Path, PathBuf};
 
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
-use tracing::{error, info, warn};
+use tracing::{error, warn};
 
 use crate::atac::commands::AtacChemistry;
-use crate::utils::chem_utils::{
-    implied_plist_name, CustomChemistry, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY,
-};
+use crate::utils::chem_utils::{get_single_custom_chem_from_file, CustomChemistry};
 use crate::utils::{self, prog_utils};
 
 use super::chem_utils::QueryInRegistry;
@@ -296,8 +294,8 @@ pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Comm
     Ok(())
 }
 
-/// This function try to get permit list for this chemistry. The general algorithm is as follows:
-/// * If this chemsitry is unregistered, then we can't obtain a permit list
+/// This function tries to get permit list for this chemistry. The general algorithm is as follows:
+/// * If this chemistry is unregistered, then we can't obtain a permit list
 /// * If it is registered and has a plist_name in the chemistries.json, we will look for that file.
 ///     - If it is registered and does not have a plist_name, we'll construct a temporary one as
 ///       chemistry + "_" + version
@@ -305,50 +303,29 @@ pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Comm
 /// * If the file at plist_name doesn't exist, check for a remote_url key
 /// * If a remote_url key exists, then download the file and place it in the file plist_name
 ///   (success)
-/// * If no remote_url key exists, then inform the user that this chemsitry has no keys for
+/// * If no remote_url key exists, then inform the user that this chemistry has no keys for
 ///   obtaining a permit list
 pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitListResult> {
     // consult the chemistry file to see what the permit list for this should be
     let chem_registry_path = af_home.join(utils::constants::CHEMISTRIES_PATH);
-    // get the existing chemistyr registry, or try to download it
-    let chem_registry =
-        parse_resource_json_file(&chem_registry_path, Some(utils::constants::CHEMISTRIES_URL))?;
+    // get the existing chemistry registry, or try to download it
 
-    let registry_key = chem.registry_key();
-
-    if let Some(reg_entry) = chem_registry.get(registry_key) {
-        let reg_map = reg_entry.as_object().with_context(|| {
-            format!(
-                "The entry for registry key {} should be a proper JSON object",
-                registry_key
-            )
-        })?;
-
-        let version = reg_entry
-            .get("version")
-            .unwrap_or(&Value::String(String::from("0.1.0")))
-            .as_str()
-            .context("version field of chemistry should be a string")?
-            .to_owned();
-
+    // we try to get the registry entry for this chemistry
+    if let Some(reg_cc) =
+        get_single_custom_chem_from_file(&chem_registry_path, chem.registry_key())?
+    {
         let has_local_name;
         let local_path;
         // check if the resource has a local url
-        match reg_map.get(LOCAL_PL_PATH_KEY) {
+        match reg_cc.plist_name() {
             // if we didn't have this key or the value was explicitly
             // null, then we don't even have a place to put this file
             // when we download it, so it's an error.
-            None | Some(serde_json::Value::Null) => {
+            None => {
                 has_local_name = false;
-                local_path = PathBuf::from(implied_plist_name(registry_key, &version));
+                local_path = PathBuf::from(reg_cc.registry_key()).with_extension("txt");
             }
             Some(lpath) => {
-                let lpath = lpath.as_str().with_context(|| {
-                    format!(
-                        "expected the local url for {}, which was {:#}, to be a string!",
-                        registry_key, lpath
-                    )
-                })?;
                 local_path = PathBuf::from(lpath);
                 has_local_name = true;
             }
@@ -367,25 +344,12 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
             return Ok(PermitListResult::AlreadyPresent(local_permit_file));
         }
 
-        if !pdir.exists() {
-            info!(
-                "The permit list directory ({}) doesn't yet exist; attempting to create it.",
-                pdir.display()
-            );
-            std::fs::create_dir(&pdir).with_context(|| {
-                format!(
-                    "Couldn't create the permit list directory at {}",
-                    pdir.display()
-                )
-            })?;
-        }
-
         // either we made the name up, or we had a name but the file
         // wasn't present. In either case, we now want the remote url.
-        match reg_map.get(REMOTE_PL_URL_KEY) {
+        match reg_cc.remote_pl_url() {
             // if we didn't have this key or the value was explicitly
             // null then we are out of luck.
-            None | Some(serde_json::Value::Null) => {
+            None => {
                 // if we had a local name, then this is a "registered chemistry" but
                 // there is no way to obtain the permit list, so the user should place
                 // the file there explicitly or provide a download url.
@@ -399,6 +363,7 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
                         chem_registry_path.display());
                     Ok(PermitListResult::MissingPermitKeys)
                 } else {
+                    // @rob: Instead of warning, do we want to give a default permit list file path?
                     warn!("The chemistry {} is registered in {} but it has no associated local \"plist_name\" or \"remote url\".
                           If there is an associated permit list for this chemistry, please update the entry 
                           associated with this chemistry in {} to reflect the proper file.",
@@ -407,12 +372,6 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
                 }
             }
             Some(rpath) => {
-                let rpath = rpath.as_str().with_context(|| {
-                    format!(
-                        "expected the remote url for {}, which was {:#}, to be a string!",
-                        registry_key, rpath
-                    )
-                })?;
                 // download the file
                 prog_utils::download_to_file(rpath, &local_permit_file)?;
                 Ok(PermitListResult::DownloadSuccessful(local_permit_file))
@@ -573,6 +532,10 @@ impl std::fmt::Display for ExpectedOri {
 }
 
 impl ExpectedOri {
+    pub fn default() -> ExpectedOri {
+        ExpectedOri::Both
+    }
+
     pub fn as_str(&self) -> &str {
         match self {
             ExpectedOri::Forward => "fw",
