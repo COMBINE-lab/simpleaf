@@ -474,8 +474,7 @@ pub struct ChemistryAddOpts {
     pub expected_ori: String,
     /// the (fully-qualified) path to a local file that will be copied into
     /// the permit list directory of the ALEVIN_FRY_HOME directory to provide
-    /// a permit list for use with this chemistry. If this is missing but a remote _url
-    /// is provided, it will be automatically assigned as the provided chemistry name
+    /// a permit list for use with this chemistry.
     #[arg(long)]
     pub local_url: Option<PathBuf>,
     /// the url of a remote file that will be downloaded (*on demand*)
