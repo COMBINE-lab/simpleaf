@@ -42,6 +42,46 @@ pub fn shell<S: AsRef<OsStr>>(cmd: S) -> Command {
     command
 }
 
+pub fn download_to_file_compute_hash<T: AsRef<str>>(
+    url: T,
+    file_path: &Path,
+) -> Result<blake3::Hash> {
+    let url = url.as_ref();
+
+    debug!(
+        "Downloading file from {} and writing to file {}",
+        url,
+        file_path.display()
+    );
+
+    let request = minreq::get(url).with_timeout(120).send()?;
+    match request.status_code {
+        200..=299 => {
+            // success
+            debug!(
+                "Obtained status code {} from final url {}",
+                request.status_code, request.url
+            );
+        }
+        x => {
+            return Err(anyhow!(
+                "could not obtain the requested file from {}; HTTP status code {}, reason {}",
+                url,
+                x,
+                request.reason_phrase
+            ))
+        }
+    }
+
+    let mut out_file = std::fs::File::create(file_path)?;
+    let mut hasher = blake3::Hasher::new();
+    let bytes = request.as_bytes();
+    hasher.update(bytes);
+    let hash = hasher.finalize();
+    out_file.write_all(bytes)?;
+    Ok(hash)
+}
+
 pub fn download_to_file<T: AsRef<str>>(url: T, file_path: &Path) -> Result<()> {
     let url = url.as_ref();
 

@@ -14,7 +14,9 @@ use strum_macros::EnumIter;
 use tracing::{error, info, warn};
 
 use crate::atac::commands::AtacChemistry;
-use crate::utils::chem_utils::{CustomChemistry, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY};
+use crate::utils::chem_utils::{
+    implied_plist_name, CustomChemistry, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY,
+};
 use crate::utils::{self, prog_utils};
 
 use super::chem_utils::QueryInRegistry;
@@ -285,7 +287,7 @@ pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Comm
 /// * If this chemsitry is unregistered, then we can't obtain a permit list
 /// * If it is registered and has a plist_name in the chemistries.json, we will look for that file.
 ///     - If it is registered and does not have a plist_name, we'll construct a temporary one as
-///       chemistry + ".txt"
+///       chemistry + "_" + version
 /// * If the file at plist_name exists, then use it (success)
 /// * If the file at plist_name doesn't exist, check for a remote_url key
 /// * If a remote_url key exists, then download the file and place it in the file plist_name
@@ -309,6 +311,13 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
             )
         })?;
 
+        let version = reg_entry
+            .get("version")
+            .unwrap_or(&Value::String(String::from("0.1.0")))
+            .as_str()
+            .context("version field of chemistry should be a string")?
+            .to_owned();
+
         let has_local_name;
         let local_path;
         // check if the resource has a local url
@@ -318,7 +327,7 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
             // when we download it, so it's an error.
             None | Some(serde_json::Value::Null) => {
                 has_local_name = false;
-                local_path = PathBuf::from(registry_key).with_extension("txt");
+                local_path = PathBuf::from(implied_plist_name(registry_key, &version));
             }
             Some(lpath) => {
                 let lpath = lpath.as_str().with_context(|| {

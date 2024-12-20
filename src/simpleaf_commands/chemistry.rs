@@ -1,15 +1,34 @@
 use crate::utils::af_utils::*;
 use crate::utils::chem_utils::{custom_chem_hm_to_json, get_custom_chem_hm, CustomChemistry};
 use crate::utils::constants::*;
-use crate::utils::prog_utils;
+use crate::utils::prog_utils::{self, download_to_file_compute_hash};
 
 use anyhow::{bail, Context, Result};
 use semver::Version;
 use serde_json::json;
+use std::fs;
+use std::hash::Hash;
 use std::io::{Seek, Write};
 use std::os::unix::fs::MetadataExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::{info, warn};
+
+fn create_dir_if_absent<T: AsRef<Path>>(odir: T) -> Result<()> {
+    let pdir = odir.as_ref();
+    if !pdir.exists() {
+        info!(
+            "The permit list directory ({}) doesn't yet exist; attempting to create it.",
+            pdir.display()
+        );
+        std::fs::create_dir(&pdir).with_context(|| {
+            format!(
+                "Couldn't create the permit list directory at {}",
+                pdir.display()
+            )
+        })?;
+    }
+    Ok(())
+}
 
 pub fn add_chemistry(
     af_home_path: PathBuf,
@@ -34,37 +53,72 @@ pub fn add_chemistry(
                 warn!("The file provided to local-url ({}) is {} bytes. This file will be *copied* into the ALEVIN_FRY_HOME directory", local_url.display(), flen);
             }
 
-            let local_plist_name = PathBuf::from(&name).with_extension("txt");
+            let mut hasher = blake3::Hasher::new();
+            hasher.update_mmap(&local_url)?;
+            let content_hash = hasher.finalize();
+            let hash_str = content_hash.to_string();
+
+            info!(
+                "The provided permit list file {}, had Blake3 hash {}",
+                local_url.display(),
+                hash_str
+            );
+
+            let local_plist_name = PathBuf::from(hash_str);
             let pdir = af_home_path.join("plist");
             let local_plist_path = pdir.join(&local_plist_name);
 
-            if !pdir.exists() {
+            create_dir_if_absent(&pdir)?;
+
+            // check if the file already exists
+            if local_plist_path.is_file() {
+                info!("A content-equivalent permit list file already exists; will use the exising file.");
+            } else {
                 info!(
-                    "The permit list directory ({}) doesn't yet exist; attempting to create it.",
-                    pdir.display()
+                    "Copying {} to {}",
+                    local_url.display(),
+                    local_plist_path.display()
                 );
-                std::fs::create_dir(&pdir).with_context(|| {
+                std::fs::copy(&local_url, &local_plist_path).with_context(|| {
                     format!(
-                        "Couldn't create the permit list directory at {}",
-                        pdir.display()
+                        "failed to copy local permit list url {} to location {}",
+                        local_url.display(),
+                        local_plist_path.display()
                     )
                 })?;
             }
-
-            std::fs::copy(&local_url, &local_plist_path).with_context(|| {
-                format!(
-                    "failed to copy local permit list url {} to location {}",
-                    local_url.display(),
-                    local_plist_path.display()
-                )
-            })?;
             local_plist = Some(local_plist_name.display().to_string());
         } else {
             bail!("The local-url {} was provided, but no file could be found at that location. Cannot continue.", local_url.display());
         }
-    } else if add_opts.remote_url.is_some() {
-        let local_name = format!("{}.txt", name);
-        local_plist = Some(local_name);
+    } else if let Some(ref remote_url) = add_opts.remote_url {
+        let pdir = af_home_path.join("plist");
+        create_dir_if_absent(&pdir)?;
+
+        let tmpfile = {
+            let mut h = blake3::Hasher::new();
+            h.update(remote_url.as_bytes());
+            let hv = h.finalize();
+            pdir.join(PathBuf::from(hv.to_string()))
+        };
+
+        let hash = download_to_file_compute_hash(remote_url, &tmpfile)?;
+        let hash_str = hash.to_string();
+        let local_plist_name = PathBuf::from(&hash_str);
+        let local_plist_path = pdir.join(&local_plist_name);
+
+        // check if the file already exists
+        if local_plist_path.is_file() {
+            info!(
+                "A content-equivalent permit list file already exists; will use the exising file."
+            );
+            // remove what we just downloaded
+            fs::remove_file(tmpfile)?;
+        } else {
+            info!("Copying {} to {}", remote_url, local_plist_path.display());
+            std::fs::rename(tmpfile, local_plist_path)?;
+        }
+        local_plist = Some(hash_str);
     } else {
         local_plist = None;
     }
