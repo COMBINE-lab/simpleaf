@@ -252,7 +252,6 @@ pub fn refresh_chemistries(
                     }
                 }
 
-                info!("{:#?}", existing_chem);
                 // write out the merged chemistry file
                 let mut chem_file = std::fs::File::create(&chem_path)
                     .with_context(|| format!("could not create {}", chem_path.display()))?;
