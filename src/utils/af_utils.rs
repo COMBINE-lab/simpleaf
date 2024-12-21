@@ -14,7 +14,7 @@ use strum_macros::EnumIter;
 use tracing::{error, info, warn};
 
 use crate::atac::commands::AtacChemistry;
-use crate::utils::chem_utils::CustomChemistry;
+use crate::utils::chem_utils::{get_single_custom_chem_from_file, CustomChemistry};
 use crate::utils::{self, prog_utils};
 
 use super::chem_utils::{QueryInRegistry, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY};
@@ -201,6 +201,7 @@ impl Chemistry {
                 // and when we propagate more information about paired-end mappings.
                 ExpectedOri::Forward
             }
+            Chemistry::Rna(RnaChemistry::Other(_)) => ExpectedOri::default(),
             _ => ExpectedOri::default(),
         }
     }
@@ -225,7 +226,7 @@ impl Chemistry {
             s => {
                 // first, we check if the chemistry is a known chemistry for the given mapper
                 // Second, we check if its a registered custom chemistry
-                // Third, we check if its a custom chemistry string
+                // Third, we check if its a custom geometry string
                 if index_type.is_known_chem(s) {
                     Chemistry::Rna(RnaChemistry::Other(s.to_string()))
                 } else if let Some(chem) =

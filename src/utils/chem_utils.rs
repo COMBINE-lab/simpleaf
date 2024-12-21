@@ -107,13 +107,8 @@ impl CustomChemistry {
     }
 
     /// Parse the value that corresponds to a key in the top-level custom chemistry JSON object.
-    /// The key ONLY is used for error messages and assigning the name field of the CustomChemistry struct.
+    /// The key is ONLY used for error messages and assigning the name field of the CustomChemistry struct.
     /// The value must be an json value object with a valid geometry field that can be parsed into a CustomChemistry struct.
-    /// The value corresponding to this key can be either
-    ///     1. An object having the associated / expected keys
-    ///     2. A string representing the geometry
-    /// The second case here is legacy from older versions of simpleaf and deprecated, so we should
-    /// warn by default when we see it.
     pub fn from_value(key: &str, value: &Value) -> Result<CustomChemistry> {
         match value {
             // deprecated case. Need to warn and return an error

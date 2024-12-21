@@ -479,7 +479,7 @@ pub struct ChemistryAddOpts {
     /// the geometry to which the chemistry maps, wrapped in quotes.
     #[arg(short, long)]
     pub geometry: String,
-    /// the expected orientation indicating the direction to the reference sequences.
+    /// the expected orientation indicating the direction of biological reads to reference sequences.
     #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(["fw", "rc", "both"]))]
     pub expected_ori: String,
     /// the (fully-qualified) path to a local file that will be copied into

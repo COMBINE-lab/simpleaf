@@ -386,8 +386,8 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
     let ori: ExpectedOri;
     // if the user set the orientation, then
     // use that explicitly
-    if let Some(o) = opts.expected_ori.clone() {
-        ori = ExpectedOri::from_str(&o).with_context(|| {
+    if let Some(o) = &opts.expected_ori {
+        ori = ExpectedOri::from_str(o).with_context(|| {
             format!(
                 "Could not parse orientation {}. It must be one of the following: {:?}",
                 o,
