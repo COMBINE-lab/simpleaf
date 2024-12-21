@@ -8,6 +8,7 @@ use crate::utils::prog_utils::{self, download_to_file_compute_hash};
 use anyhow::{bail, Context, Result};
 use semver::Version;
 use serde_json::json;
+use std::collections::HashSet;
 use std::fs;
 use std::io::{Seek, Write};
 use std::os::unix::fs::MetadataExt;
@@ -280,6 +281,55 @@ pub fn refresh_chemistries(af_home: PathBuf) -> Result<()> {
             bail!("Could not parse newly downloaded \"chemistries.json\" file as a JSON object, something is wrong. Please report this on GitHub.");
         }
     }
+    Ok(())
+}
+
+pub fn clean_chemistries(
+    af_home_path: PathBuf,
+    clean_opts: crate::simpleaf_commands::ChemistryCleanOpts,
+) -> Result<()> {
+    let dry_run = clean_opts.dry_run;
+
+    // read in the custom chemistry file
+    let chem_p = af_home_path.join(CHEMISTRIES_PATH);
+    let plist_path = af_home_path.join("plist");
+    if !plist_path.is_dir() {
+        return Ok(());
+    }
+
+    let chem_hm = get_custom_chem_hm(&chem_p)?;
+
+    let used_pls = chem_hm
+        .values()
+        .filter_map(|v| v.plist_name().as_ref().map(|s| PathBuf::from(s.clone())))
+        .collect::<HashSet<PathBuf>>();
+
+    let present_pls = std::fs::read_dir(&plist_path)?
+        .filter_map(|de| {
+            if let Ok(entry) = de {
+                let path = entry.path();
+                if path.is_file() {
+                    Some(path)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect::<HashSet<PathBuf>>();
+
+    let rem_pls = &present_pls - &used_pls;
+    // check if the chemistry already exists and log
+    if dry_run {
+        info!("The following files in the permit list directory are unused and would be removed: {:#?}", rem_pls);
+    } else {
+        for pl in rem_pls {
+            info!("removing {}", pl.display());
+            std::fs::remove_file(pl)?;
+        }
+    }
+
     Ok(())
 }
 

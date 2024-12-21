@@ -450,6 +450,16 @@ pub struct ChemistryRemoveOpts {
     pub name: String,
 }
 
+/// Search for unused permit lists and remove them
+/// from the ALEVIN_FRY_HOME cache
+#[derive(Args, Clone, Debug)]
+#[command(arg_required_else_help = true)]
+pub struct ChemistryCleanOpts {
+    /// just show what is to be removed rather than
+    #[arg(short, long)]
+    pub dry_run: bool,
+}
+
 /// Lookup a chemistry in the chemistry registry
 #[derive(Args, Clone, Debug)]
 #[command(arg_required_else_help = true)]
@@ -498,6 +508,7 @@ pub enum ChemistryCommand {
     Refresh,
     Add(ChemistryAddOpts),
     Remove(ChemistryRemoveOpts),
+    Clean(ChemistryCleanOpts),
     Lookup(ChemistryLookupOpts),
 }
 
