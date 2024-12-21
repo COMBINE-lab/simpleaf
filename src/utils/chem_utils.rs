@@ -228,7 +228,7 @@ pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<C
             let remote_pl_url =
                 try_get_str_from_json(REMOTE_PL_URL_KEY, obj, FieldType::Optional, None)?;
 
-            let meta = obj.get(META_KEY).map(|v| v.clone());
+            let meta = obj.get(META_KEY).cloned();
 
             Ok(CustomChemistry {
                 name: key.to_string(),

@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
 use super::MapQuantOpts;
-use crate::utils::constants::NUM_SAMPLE_LINES;
+use crate::utils::constants::{CHEMISTRIES_PATH, NUM_SAMPLE_LINES};
 
 fn get_generic_buf_reader(ipath: &PathBuf) -> anyhow::Result<impl BufRead> {
     let (reader, compression) = niffler::from_path(ipath)
@@ -384,8 +384,8 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
         IndexType::NoIndex => {}
     }
 
-    // do we have a custom chemistry file
-    let custom_chem_p = af_home_path.join("custom_chemistries.json");
+    // the chemistries file
+    let custom_chem_p = af_home_path.join(CHEMISTRIES_PATH);
 
     let chem = match opts.chemistry.as_str() {
         "10xv2" => Chemistry::Rna(RnaChemistry::TenxV2),
@@ -429,7 +429,7 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
     } else {
         // otherwise, this was not set explicitly. In that case
         // if we have 10xv2, 10xv3, or 10xv4 (3') chemistry, set ori = "fw"
-        // if we have 10xv2-5p or 10xv3-5p chemistry, set ori = "rc"
+        // if we have 10xv2-5p or 10xv3-5p chemistry, set ori = "fw"
         // otherwise set ori = "both"
         match &chem {
             Chemistry::Rna(RnaChemistry::TenxV2)
