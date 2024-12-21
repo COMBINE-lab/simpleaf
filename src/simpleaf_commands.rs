@@ -479,7 +479,7 @@ pub struct ChemistryAddOpts {
     /// the geometry to which the chemistry maps, wrapped in quotes.
     #[arg(short, long)]
     pub geometry: String,
-    /// the expected orientation to give to the chemistry
+    /// the expected orientation indicating the direction to the reference sequences.
     #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(["fw", "rc", "both"]))]
     pub expected_ori: String,
     /// the (fully-qualified) path to a local file that will be copied into
@@ -497,7 +497,7 @@ pub struct ChemistryAddOpts {
     /// optionally assign a version number to this chemistry. A chemistry's
     /// entry can be updated in the future by adding it again with a higher
     /// version number.
-    #[arg(long)]
+    #[arg(long, default_value = "0.0.0")]
     pub version: Option<String>,
 }
 
