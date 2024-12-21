@@ -244,13 +244,15 @@ pub fn refresh_chemistries(
                                     .as_str()
                                     .expect("version should be a string"),
                             )?;
-                            if new_ver > curr_ver || refresh_opts.force {
+                            if refresh_opts.force || new_ver > curr_ver {
+                                info!("updating {}", k);
                                 existing_chem.insert(k.clone(), v.clone());
                             }
                         }
                     }
                 }
 
+                info!("{:#?}", existing_chem);
                 // write out the merged chemistry file
                 let mut chem_file = std::fs::File::create(&chem_path)
                     .with_context(|| format!("could not create {}", chem_path.display()))?;
