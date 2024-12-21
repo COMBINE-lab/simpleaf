@@ -197,7 +197,10 @@ pub fn add_chemistry(
 /// if the remote entry's version is stricly greater than the local version.
 /// Otherwise, it retains the local version.  Any chemistries that are not present
 /// in the remote file remain unmodified.
-pub fn refresh_chemistries(af_home: PathBuf) -> Result<()> {
+pub fn refresh_chemistries(
+    af_home: PathBuf,
+    refresh_opts: crate::simpleaf_commands::ChemistryRefreshOpts,
+) -> Result<()> {
     // if the old custom chem file exists, then warn the user about it
     // but read it in and attempt to populate.
     let custom_chem_file = af_home.join(CUSTOM_CHEMISTRIES_PATH);
@@ -238,7 +241,8 @@ pub fn refresh_chemistries(af_home: PathBuf) -> Result<()> {
                                     .as_str()
                                     .expect("version should be a string"),
                             )?;
-                            if new_ver > curr_ver {
+                            if refresh_opts.force || new_ver > curr_ver {
+                                info!("updating {}", k);
                                 existing_chem.insert(k.clone(), v.clone());
                             }
                         }
