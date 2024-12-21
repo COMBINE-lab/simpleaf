@@ -14,10 +14,10 @@ use strum_macros::EnumIter;
 use tracing::{error, info, warn};
 
 use crate::atac::commands::AtacChemistry;
-use crate::utils::chem_utils::{get_single_custom_chem_from_file, CustomChemistry};
+use crate::utils::chem_utils::CustomChemistry;
 use crate::utils::{self, prog_utils};
 
-use super::chem_utils::QueryInRegistry;
+use super::chem_utils::{QueryInRegistry, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY};
 
 /// The map from pre-specified chemistry types that salmon knows
 /// to the corresponding command line flag that salmon should be passed
@@ -307,6 +307,14 @@ pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Comm
 pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitListResult> {
     // consult the chemistry file to see what the permit list for this should be
     let chem_registry_path = af_home.join(utils::constants::CHEMISTRIES_PATH);
+    let chem_registry =
+        parse_resource_json_file(&chem_registry_path, Some(utils::constants::CHEMISTRIES_URL))
+            .with_context(|| {
+                format!(
+                    "couldn't obtain and/or parse {}",
+                    chem_registry_path.display()
+                )
+            })?;
 
     // make sure the output directory exists
     let pdir = af_home.join("plist");
@@ -315,54 +323,73 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
     let expected_file_path;
     let expected_file_name;
     // we try to get the registry entry for this chemistry
-    if let Some(reg_cc) =
-        get_single_custom_chem_from_file(&chem_registry_path, chem.registry_key())?
-    {
-        // check if the resource has a local url
-        match reg_cc.plist_name() {
-            // if we didn't have this key or the value was explicitly
-            // null, then we don't even have a place to put this file
-            // when we download it, so it's an error.
-            None => {
-                warn!("No permit list is registered for {}, so one cannot be used automatically. You should either provide a permit list directly on the command line, or re-add this chemistry to the registry with a permit list.", chem.registry_key());
-                bail!("No registered permit list available");
-            }
-            Some(lpath) => {
-                expected_file_name = PathBuf::from(lpath);
-                expected_file_path = pdir.join(&expected_file_name);
-                if expected_file_path.is_file() {
-                    return Ok(PermitListResult::AlreadyPresent(expected_file_path));
-                } else {
-                    info!("Expected {} but didn't find it, will try to download it using a remote url.", expected_file_path.display());
-                }
-            }
-        }
+    if let Some(reg_val) = chem_registry.get(chem.registry_key()) {
+        //get_single_custom_chem_from_file(&chem_registry_path, chem.registry_key())?
+        //{
 
-        // There was a plist_name, but the file was not present; try to get from the remote url
-        match reg_cc.remote_pl_url() {
-            // if we didn't have this key or the value was explicitly
-            // null then we are out of luck.
-            None => {
-                warn!("The chemistry {} is registered in {} with the local permit list file {}.
-                          However, no such file was present, and no remote url was provided from which 
-                          to obtain it. This should not happen! It could occur if, for example, a 
-                          permit list was added using a local-url and later (manually) removed. However, 
-                          the chemistry registry should only be modified using the `chemistry` command.
-                          Please consider removing and re-adding this chemistry with a valid permit list.",
-                        chem.as_str(), chem_registry_path.display(), expected_file_path.display());
-                bail!("Expected permit list was absent, and no remote source was provided.");
-            }
-            Some(rpath) => {
-                // download the file
-                let hash = prog_utils::download_to_file_compute_hash(rpath, &expected_file_path)?;
-                let expected_hash = expected_file_path
-                    .to_str()
-                    .ok_or(anyhow!("cannot convert expected filename to proper string"))?;
-                if hash.to_string() != expected_hash {
-                    warn!("The permit list file for {}, obtained from the provided remote url {}, does not match the expected hash {} (the observed hash was {})", chem.registry_key(), rpath, expected_hash, hash.to_string());
+        if let Some(chem_obj) = reg_val.as_object() {
+            // check if the resource has a local url
+            match chem_obj.get(LOCAL_PL_PATH_KEY) {
+                // if we didn't have this key or the value was explicitly
+                // null, then we don't even have a place to put this file
+                // when we download it, so it's an error.
+                None | Some(Value::Null) => {
+                    error!("No permit list is registered for {}, so one cannot be used automatically. You should either provide a permit list directly on the command line, or re-add this chemistry to the registry with a permit list.", chem.registry_key());
+                    bail!("No registered permit list available");
                 }
-                Ok(PermitListResult::DownloadSuccessful(expected_file_path))
+                Some(Value::String(lpath)) => {
+                    expected_file_name = PathBuf::from(lpath);
+                    expected_file_path = pdir.join(&expected_file_name);
+                    if expected_file_path.is_file() {
+                        return Ok(PermitListResult::AlreadyPresent(expected_file_path));
+                    } else {
+                        info!("Expected {} but didn't find it, will try to download it using a remote url.", expected_file_path.display());
+                    }
+                }
+                _ => {
+                    error!("Expected a JSON string associated with the {} key, but didn't find one; cannot proceed.", LOCAL_PL_PATH_KEY);
+                    bail!("Wrong JSON type");
+                }
             }
+
+            // There was a plist_name, but the file was not present; try to get from the remote url
+            match chem_obj.get(REMOTE_PL_URL_KEY) {
+                // if we didn't have this key or the value was explicitly
+                // null then we are out of luck.
+                None => {
+                    error!(
+                        "The chemistry {} is registered in {} with the local permit list file {}.
+However, no such file was present, and no remote url was provided from which 
+to obtain it. This should not happen! It could occur if, for example, a 
+permit list was added using a local-url and later (manually) removed. However, 
+the chemistry registry should only be modified using the `chemistry` command.
+Please consider removing and re-adding this chemistry with a valid permit list.",
+                        chem.as_str(),
+                        chem_registry_path.display(),
+                        expected_file_path.display()
+                    );
+                    bail!("Expected permit list was absent, and no remote source was provided.");
+                }
+                Some(Value::String(rpath)) => {
+                    // download the file
+                    let hash =
+                        prog_utils::download_to_file_compute_hash(rpath, &expected_file_path)?;
+                    let expected_hash = expected_file_path
+                        .to_str()
+                        .ok_or(anyhow!("cannot convert expected filename to proper string"))?;
+                    if hash.to_string() != expected_hash {
+                        warn!("The permit list file for {}, obtained from the provided remote url {}, does not match the expected hash {} (the observed hash was {})", chem.registry_key(), rpath, expected_hash, hash.to_string());
+                    }
+                    Ok(PermitListResult::DownloadSuccessful(expected_file_path))
+                }
+                _ => {
+                    error!("Expected a JSON string associated with the {} key, but didn't find one; cannot proceed.", REMOTE_PL_URL_KEY);
+                    bail!("Wrong JSON type");
+                }
+            }
+        } else {
+            error!("The chemistry entry should be an object.");
+            bail!("Found a non-object associated with this chemistry key");
         }
     } else {
         Ok(PermitListResult::UnregisteredChemistry)

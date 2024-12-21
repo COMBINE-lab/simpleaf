@@ -501,11 +501,19 @@ pub struct ChemistryAddOpts {
     pub version: Option<String>,
 }
 
+/// Add or refresh chemistry definitions from the upstream repository
+#[derive(Args, Clone, Debug)]
+#[command(disable_version_flag = true)]
+pub struct ChemistryRefreshOpts {
+    /// overwrite an existing matched chemistry even if the version isn't newer
+    #[arg(short, long)]
+    pub force: bool,
+}
+
 #[derive(Debug, Subcommand)]
 #[command(arg_required_else_help = true)]
 pub enum ChemistryCommand {
-    /// Add or refresh chemistry definitions from the upstream repository
-    Refresh,
+    Refresh(ChemistryRefreshOpts),
     Add(ChemistryAddOpts),
     Remove(ChemistryRemoveOpts),
     Clean(ChemistryCleanOpts),

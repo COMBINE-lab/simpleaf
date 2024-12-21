@@ -89,7 +89,9 @@ fn main() -> anyhow::Result<()> {
         Commands::Chemistry(ChemistryCommand::Lookup(lookup_opts)) => {
             lookup_chemistry(af_home_path, lookup_opts)
         }
-        Commands::Chemistry(ChemistryCommand::Refresh) => refresh_chemistries(af_home_path),
+        Commands::Chemistry(ChemistryCommand::Refresh(refresh_opts)) => {
+            refresh_chemistries(af_home_path, refresh_opts)
+        }
         Commands::Inspect {} => inspect_simpleaf(crate_version!(), af_home_path),
 
         Commands::RefreshProgInfo {} => refresh_prog_info(af_home_path),
