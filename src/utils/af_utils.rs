@@ -34,8 +34,11 @@ static KNOWN_CHEM_MAP_SALMON: phf::Map<&'static str, &'static str> = phf_map! {
         "dropseq" => "--dropseq",
         "indropv2" => "--indropV2",
         "citeseq" => "--citeseq",
-        "gemcode" => "--gemcode",
-        "celseq" => "--celseq",
+        
+        // commented out because they are UMI free
+        // "gemcode" => "--gemcode",
+        // "celseq" => "--celseq",
+
         "celseq2" => "--celseq2",
         "splitseqv1" => "--splitseqV1",
         "splitseqv2" => "--splitseqV2",
@@ -53,6 +56,7 @@ static KNOWN_CHEM_MAP_PISCEM: phf::Map<&'static str, &'static str> = phf_map! {
     "10xv4-3p" => "chromium_v4_3p"
 };
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum IndexType {
     Salmon(PathBuf),
     Piscem(PathBuf),
@@ -68,6 +72,28 @@ impl IndexType {
             IndexType::Salmon(_) => KNOWN_CHEM_MAP_SALMON.contains_key(chem),
             IndexType::Piscem(_) => KNOWN_CHEM_MAP_PISCEM.contains_key(chem),
             IndexType::NoIndex => false,
+        }
+    }
+    pub fn is_unsupported_known_chem(&self, chem: &str) -> bool {
+        match self {
+            IndexType::Salmon(_) => KNOWN_CHEM_MAP_PISCEM.contains_key(chem),
+            IndexType::Piscem(_) => KNOWN_CHEM_MAP_SALMON.contains_key(chem),
+            IndexType::NoIndex => true,
+        }
+    }
+    pub fn as_str(&self) -> &str {
+        match self {
+            IndexType::Salmon(_) => "salmon",
+            IndexType::Piscem(_) => "piscem",
+            IndexType::NoIndex => "no_index",
+        }
+    }
+
+    pub fn counterpart(&self) -> IndexType {
+        match self {
+            IndexType::Salmon(p) => IndexType::Piscem(p.clone()),
+            IndexType::Piscem(p) => IndexType::Salmon(p.clone()),
+            IndexType::NoIndex => IndexType::NoIndex,
         }
     }
 }
@@ -239,6 +265,10 @@ impl Chemistry {
                     );
                     Chemistry::Custom(chem)
                 } else {
+                    // we want to bail with an error if the chemistry is not supported
+                    if index_type.is_unsupported_known_chem(s) {
+                        bail!("The chemistry {} is not supported by the given mapper {}. Please switch to {}", s, index_type.as_str(), index_type.counterpart().as_str());
+                    }
                     Chemistry::Custom(CustomChemistry::simple_custom(s).with_context(|| {
                         format!(
                             "Could not parse the provided chemistry {}. Please ensure it is a valid chemistry string wrapped by quotes or that it is defined in the custom_chemistries.json file.",

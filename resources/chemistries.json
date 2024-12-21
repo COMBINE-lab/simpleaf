@@ -147,21 +147,14 @@
     "version": "0.1.0"
   },
   "indropv2": {
-    "geometry": "1{r:}2{b[8-11]f[GAGTGATTGCTTGTGACGCCTT]+b[8]u[6]x:}",
-    "expected_ori": "fw",
-    "plist_name": null,
-    "remote_url": null,
-    "version": "0.1.0"
-  },
-  "gemcode": {
-    "geometry": "__builtin",
+    "geometry": "1{r:}2{b[8-11]f[GAGTGATTGCTTGTGACGCCTT]b[8]u[6]x:}",
     "expected_ori": "fw",
     "plist_name": null,
     "remote_url": null,
     "version": "0.1.0"
   },
   "celseq2": {
-    "geometry": "1{b[8]x:}2{r:}",
+    "geometry": "1{u[6]b[6]x:}2{r:}",
     "expected_ori": "fw",
     "plist_name": null,
     "remote_url": null,
