@@ -15,6 +15,27 @@ use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 use tracing::{info, warn};
 
+/// Adds a chemsitry to the `chemistries.json` file. The user provides a name
+/// and geometry string, and optionally a local-url and / or remote-url.  
+///
+/// If a local-url is provided, the Blake3 hash of the corresponding file is
+/// computed and that file is copied to `ALEVIN_FRY_HOME/plist` under the name
+/// of the content hash.  
+///
+/// If a remote-url (but not a local one) is provided, the file is downloaded
+/// from the remote-url and placed into a file named by the Blake3 hash of
+/// the contents, and the remote-url is recorded.
+///
+/// Finally, if a local and remote-url are both provided, the file is copied
+/// from the local-url but the remote-url is recorded.
+///
+/// The add_chemitry function is also used to update (i.e. overwite) existing
+/// chemistry definitions with new ones having the same name. However, an existing
+/// chemistry definition will only be overwritten if the newly-provided chemistry
+/// is given a strictly greater version number.
+///
+/// *NOTE*: This function is *eager* --- any file will be copied or downloaded
+/// immediately, so it requires a network connection for remote-urls.
 pub fn add_chemistry(
     af_home_path: PathBuf,
     add_opts: crate::simpleaf_commands::ChemistryAddOpts,
@@ -173,6 +194,12 @@ pub fn add_chemistry(
     Ok(())
 }
 
+/// Obtains the latest `chemistries.json` from the simpleaf repository.  For each
+/// chemistry in that file, it looks the corresponding key up in the user's local
+/// `chemistries.json`.  If a corresponding entry is found, it replaces the entry
+/// if the remote entry's version is stricly greater than the local version.
+/// Otherwise, it retains the local version.  Any chemistries that are not present
+/// in the remote file remain unmodified.
 pub fn refresh_chemistries(af_home: PathBuf) -> Result<()> {
     // if the old custom chem file exists, then warn the user about it
     // but read it in and attempt to populate.
@@ -284,6 +311,10 @@ pub fn refresh_chemistries(af_home: PathBuf) -> Result<()> {
     Ok(())
 }
 
+/// Finds the set of files (A) listed in `ALEVIN_FRY_HOME/plist` (where permit list files live)
+/// and the set of files (B) listed in `chemistries.json` (all entries corresponding to a
+/// `plist_name` entry).  It then computes C = A - B, the set of currently unused permit list
+/// files, and removes them (or lists them if remove_opts has dry_run set).
 pub fn clean_chemistries(
     af_home_path: PathBuf,
     clean_opts: crate::simpleaf_commands::ChemistryCleanOpts,
@@ -333,6 +364,7 @@ pub fn clean_chemistries(
     Ok(())
 }
 
+/// Remove the entry for the provided chemistry in `chemistries.json` if it is present.
 pub fn remove_chemistry(
     af_home_path: PathBuf,
     remove_opts: crate::simpleaf_commands::ChemistryRemoveOpts,
