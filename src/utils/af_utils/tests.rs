@@ -74,7 +74,7 @@ fn test_salmon_known_chems() {
         c,
         Chemistry::Rna(RnaChemistry::Other(String::from("indropv2")))
     );
-    assert_eq!(c.expected_ori(), ExpectedOri::Both);
+    assert_eq!(c.expected_ori(), ExpectedOri::Forward);
 
     let chem = "citeseq";
     let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem)
@@ -83,7 +83,7 @@ fn test_salmon_known_chems() {
         c,
         Chemistry::Rna(RnaChemistry::Other(String::from("citeseq")))
     );
-    assert_eq!(c.expected_ori(), ExpectedOri::Both);
+    assert_eq!(c.expected_ori(), ExpectedOri::Forward);
 
     let chem = "celseq2";
     let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem)
@@ -94,9 +94,30 @@ fn test_salmon_known_chems() {
     );
     assert_eq!(c.expected_ori(), ExpectedOri::Both);
 
-    /*
-    "splitseqv1" => "--splitseqV1",
-    "splitseqv2" => "--splitseqV2",
-    "sciseq3" => "--sciseq3"
-    */
+    let chem = "splitseqv1";
+    let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem)
+        .expect("should be able to obtain chemistry");
+    assert_eq!(
+        c,
+        Chemistry::Rna(RnaChemistry::Other(String::from("splitseqv1")))
+    );
+    assert_eq!(c.expected_ori(), ExpectedOri::Forward);
+
+    let chem = "splitseqv2";
+    let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem)
+        .expect("should be able to obtain chemistry");
+    assert_eq!(
+        c,
+        Chemistry::Rna(RnaChemistry::Other(String::from("splitseqv2")))
+    );
+    assert_eq!(c.expected_ori(), ExpectedOri::Forward);
+
+    let chem = "sciseq3";
+    let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem)
+        .expect("should be able to obtain chemistry");
+    assert_eq!(
+        c,
+        Chemistry::Rna(RnaChemistry::Other(String::from("sciseq3")))
+    );
+    assert_eq!(c.expected_ori(), ExpectedOri::Forward);
 }

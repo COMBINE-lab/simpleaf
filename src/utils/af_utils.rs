@@ -227,7 +227,12 @@ impl Chemistry {
                 // and when we propagate more information about paired-end mappings.
                 ExpectedOri::Forward
             }
-            Chemistry::Rna(RnaChemistry::Other(_)) => ExpectedOri::default(),
+            Chemistry::Rna(RnaChemistry::Other(x)) => match x.as_str() {
+                "sciseq3" | "splitseqv1" | "splitseqv2" | "indropv2" | "citeseq" => {
+                    ExpectedOri::Forward
+                }
+                _ => ExpectedOri::default(),
+            },
             _ => ExpectedOri::default(),
         }
     }
