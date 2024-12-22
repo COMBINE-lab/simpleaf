@@ -1,11 +1,12 @@
-use crate::utils::af_utils::{parse_resource_json_file, validate_geometry, ExpectedOri};
+use crate::utils::af_utils::{
+    extract_geometry, parse_resource_json_file, validate_geometry, ExpectedOri,
+};
 use crate::utils::constants::*;
 use anyhow::{anyhow, bail, Context, Result};
 use semver::Version;
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::path::Path;
-use tracing::info;
 
 // TODO: Change to main repo when we are ready
 
@@ -26,8 +27,8 @@ pub trait QueryInRegistry {
 pub struct CustomChemistry {
     pub name: String,
     pub geometry: String,
-    pub expected_ori: Option<ExpectedOri>,
-    pub version: Option<String>,
+    pub expected_ori: ExpectedOri,
+    pub version: String,
     pub plist_name: Option<String>,
     pub remote_pl_url: Option<String>,
     pub meta: Option<Value>,
@@ -42,13 +43,12 @@ impl QueryInRegistry for CustomChemistry {
 #[allow(dead_code)]
 impl CustomChemistry {
     pub fn simple_custom(geometry: &str) -> Result<CustomChemistry> {
-        // TODO: once we ensure the geometry must be a valid geometry, we do validation here
-        // extract_geometry(geometry)?;
+        extract_geometry(geometry)?;
         Ok(CustomChemistry {
             name: geometry.to_string(),
             geometry: geometry.to_string(),
-            expected_ori: None,
-            version: None,
+            expected_ori: ExpectedOri::default(),
+            version: CustomChemistry::default_version(),
             plist_name: None,
             remote_pl_url: None,
             meta: None,
@@ -62,11 +62,11 @@ impl CustomChemistry {
         self.name.as_str()
     }
 
-    pub fn expected_ori(&self) -> &Option<ExpectedOri> {
+    pub fn expected_ori(&self) -> &ExpectedOri {
         &self.expected_ori
     }
 
-    pub fn version(&self) -> &Option<String> {
+    pub fn version(&self) -> &String {
         &self.version
     }
 
@@ -80,6 +80,123 @@ impl CustomChemistry {
 
     pub fn remote_pl_url(&self) -> &Option<String> {
         &self.remote_pl_url
+    }
+}
+// IO
+impl CustomChemistry {
+    pub fn into_value(self) -> Value {
+        let mut value = json!({
+            GEOMETRY_KEY: self.geometry
+        });
+        value[EXPECTED_ORI_KEY] = json!(self.expected_ori.to_string());
+        value[VERSION_KEY] = json!(self.version);
+        value[LOCAL_PL_PATH_KEY] = if let Some(lpp) = self.plist_name {
+            json!(lpp)
+        } else {
+            json!(null)
+        };
+        value[REMOTE_PL_URL_KEY] = if let Some(rpu) = self.remote_pl_url {
+            json!(rpu)
+        } else {
+            json!(null)
+        };
+        if let Some(meta) = self.meta {
+            value[META_KEY] = meta;
+        }
+        value
+    }
+
+    /// Parse the value that corresponds to a key in the top-level custom chemistry JSON object.
+    /// The key is ONLY used for error messages and assigning the name field of the CustomChemistry struct.
+    /// The value must be an json value object with a valid geometry field that can be parsed into a CustomChemistry struct.
+    pub fn from_value(key: &str, value: &Value) -> Result<CustomChemistry> {
+        match value {
+            // deprecated case. Need to warn and return an error
+            Value::String(record_v) => {
+                match validate_geometry(record_v) {
+                    Ok(_) => Err(anyhow!(
+                        "Found string version of custom chemistry {}: {}. This is deprecated. Please add the chemistry again using simpleaf chem add.",
+                        key,
+                        record_v
+                    )),
+                    Err(_) => Err(anyhow!(
+                        "Found invalid custom chemistry record for {}: {}",
+                        key,
+                        record_v
+                    )),
+                }
+            }
+
+            Value::Object(obj) => {
+                let geometry = try_get_str_from_json(
+                    GEOMETRY_KEY, obj,
+                    FieldType::Mandatory,
+                    None
+                )?;
+
+                let geometry = geometry.unwrap(); // we made this Some, safe to unwrap
+                // check if geometry is valid
+                validate_geometry(&geometry)?;
+
+                let expected_ori = try_get_str_from_json(
+                    EXPECTED_ORI_KEY,
+                    obj,
+                    FieldType::Optional,
+                    Some(ExpectedOri::default().to_string()),
+                )?
+                .unwrap(); // we made this Some, safe to unwrap
+
+                let expected_ori =
+                    ExpectedOri::from_str(&expected_ori)
+                    .with_context(|| {
+                        format!(
+                            "Found invalid {} string for the custom chemistry {}: {}. It should be one of {}",
+                            EXPECTED_ORI_KEY,
+                            key, &expected_ori,
+                            ExpectedOri::all_to_str().join(", ")
+                        )
+                    })?;
+
+                let version = try_get_str_from_json(
+                    VERSION_KEY,
+                    obj,
+                    FieldType::Optional,
+                    Some(CustomChemistry::default_version()),
+                )?.unwrap(); // we made this Some, safe to unwrap
+
+                Version::parse(&version).with_context(|| {
+                    format!(
+                        "Found invalid {} string for the custom chemistry {}: {}",
+                        VERSION_KEY,
+                        key,
+                        &version
+                    )
+                })?;
+
+                let plist_name =
+                    try_get_str_from_json(LOCAL_PL_PATH_KEY, obj, FieldType::Optional, None)?;
+
+                let remote_pl_url =
+                    try_get_str_from_json(REMOTE_PL_URL_KEY, obj, FieldType::Optional, None)?;
+
+                let meta = obj.get(META_KEY).cloned();
+
+                Ok(CustomChemistry {
+                    name: key.to_string(),
+                    geometry,
+                    expected_ori,
+                    version,
+                    plist_name,
+                    remote_pl_url,
+                    meta,
+                })
+            }
+            _ => Err(anyhow!(
+                "Found invalid custom chemistry record for {}: {}.",
+                key,
+                value
+            )),
+        }
     }
 }
 
@@ -115,7 +232,7 @@ pub fn get_custom_chem_hm_from_value(v: Value) -> Result<HashMap<String, CustomC
 
     // we build the hashmap
     for (key, value) in v_obj.iter() {
-        let cc: CustomChemistry = parse_single_custom_chem_from_value(key, value)?;
+        let cc: CustomChemistry = CustomChemistry::from_value(key, value)?;
         custom_chem_map.insert(key.clone(), cc);
     }
 
@@ -134,7 +251,7 @@ pub fn try_get_str_from_json(
     match obj.get(key) {
         // if we get a null, if mandatory, return an error, if optional, return the default
         Some(Value::Null) | None => {
-            if mandatory == FieldType::Mandatory {
+            if default.is_none() && mandatory.is_mandatory() {
                 Err(anyhow!(
                     "The mandatory field {} is null in the json object {:#?}",
                     key,
@@ -154,145 +271,28 @@ pub fn try_get_str_from_json(
     }
 }
 
-/// Takes a key and value from the top-level custom chemistry JSON object, and returns the
-/// CustomChemistry struct corresponding to this key.
-/// The value corresponding to this key can be either
-///     1. An object having the associated / expected keys
-///     2. A string representing the geometry
-/// The second case here is legacy from older versions of simpleaf and deprecated, so we should
-/// warn by default when we see it.
-pub fn parse_single_custom_chem_from_value(key: &str, value: &Value) -> Result<CustomChemistry> {
-    match value {
-        // deprecated case. Need to warn and return an error
-        Value::String(record_v) => {
-            match validate_geometry(record_v) {
-                Ok(_) => Err(anyhow!(
-                    "Found string version of custom chemistry {}: {}. This is deprecated. Please add the chemistry again using simpleaf chem add.",
-                    key,
-                    record_v
-                )),
-                Err(_) => Err(anyhow!(
-                    "Found invalid custom chemistry record for {}: {}",
-                    key,
-                    record_v
-                )),
-            }
-        }
-
-        Value::Object(obj) => {
-            let geometry = try_get_str_from_json(GEOMETRY_KEY, obj, FieldType::Mandatory, None)?;
-            let geometry = geometry.unwrap(); // we made this Some, safe to unwrap
-                                              // check if geometry is valid
-            validate_geometry(&geometry)?;
-
-            let expected_ori = try_get_str_from_json(
-                EXPECTED_ORI_KEY,
-                obj,
-                FieldType::Optional,
-                Some(ExpectedOri::default().to_string()),
-            )?
-            .unwrap(); // we made this Some, safe to unwrap
-
-            let expected_ori = Some(
-                ExpectedOri::from_str(&expected_ori)
-                .with_context(|| {
-                    format!(
-                        "Found invalid {} string for the custom chemistry {}: {}. It should be one of {}",
-                        EXPECTED_ORI_KEY,
-                        key, &expected_ori,
-                        ExpectedOri::all_to_str().join(", ")
-                    )
-                })?
-            );
-
-            let version = try_get_str_from_json(
-                VERSION_KEY,
-                obj,
-                FieldType::Optional,
-                Some(CustomChemistry::default_version()),
-            )?;
-            if let Some(version) = &version {
-                Version::parse(version).with_context(|| {
-                    format!(
-                        "Found invalid {} string for the custom chemistry {}: {}",
-                        VERSION_KEY,
-                        key,
-                        &version
-                    )
-                })?;
-            };
-
-            let plist_name =
-                try_get_str_from_json(LOCAL_PL_PATH_KEY, obj, FieldType::Optional, None)?;
-
-            let remote_pl_url =
-                try_get_str_from_json(REMOTE_PL_URL_KEY, obj, FieldType::Optional, None)?;
-
-            let meta = obj.get(META_KEY).cloned();
-
-            Ok(CustomChemistry {
-                name: key.to_string(),
-                geometry,
-                expected_ori,
-                version,
-                plist_name,
-                remote_pl_url,
-                meta,
-            })
-        }
-        _ => Err(anyhow!(
-            "Found invalid custom chemistry record for {}: {}.",
-            key,
-            value
-        )),
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum FieldType {
     Mandatory,
     Optional,
 }
 
-pub fn custom_chem_hm_to_json(custom_chem_hm: &HashMap<String, CustomChemistry>) -> Result<Value> {
+impl FieldType {
+    pub fn is_mandatory(&self) -> bool {
+        match self {
+            FieldType::Mandatory => true,
+            FieldType::Optional => false,
+        }
+    }
+}
+
+pub fn custom_chem_hm_into_json(custom_chem_hm: HashMap<String, CustomChemistry>) -> Result<Value> {
     // first create the name to geometry mapping
     let v: Value = custom_chem_hm
-        .iter()
+        .into_iter()
         .map(|(k, v)| {
-            let mut value = json!({
-                GEOMETRY_KEY: v.geometry.clone()
-            });
-            value[EXPECTED_ORI_KEY] = if let Some(eo) = &v.expected_ori {
-                json!(eo.as_str())
-            } else {
-                info!(
-                    "`expected_ori` is missing for custom chemistry {}; Set as {}",
-                    k,
-                    ExpectedOri::default().as_str()
-                );
-                json!(ExpectedOri::default().as_str())
-            };
-            value[VERSION_KEY] = if let Some(ver) = &v.version {
-                json!(ver)
-            } else {
-                info!(
-                    "`version` is missing for custom chemistry {}; Set as {}",
-                    k,
-                    CustomChemistry::default_version()
-                );
-                json!(CustomChemistry::default_version())
-            };
-            value[LOCAL_PL_PATH_KEY] = if let Some(lpp) = &v.plist_name {
-                json!(lpp)
-            } else {
-                json!(null)
-            };
-            value[REMOTE_PL_URL_KEY] = if let Some(rpu) = &v.remote_pl_url {
-                json!(rpu)
-            } else {
-                json!(null)
-            };
-            (k.clone(), value)
+            let value = v.into_value();
+            (k, value)
         })
         .collect();
 
@@ -302,11 +302,11 @@ pub fn custom_chem_hm_to_json(custom_chem_hm: &HashMap<String, CustomChemistry>)
 /// This function tries to extract the custom chemistry with the specified name from the custom_chemistries.json file in the `af_home_path` directory.
 pub fn get_single_custom_chem_from_file(
     custom_chem_p: &Path,
-    chem_name: &str,
+    key: &str,
 ) -> Result<Option<CustomChemistry>> {
     let v: Value = parse_resource_json_file(custom_chem_p, Some(CHEMISTRIES_URL))?;
-    if let Some(chem_v) = v.get(chem_name) {
-        let custom_chem = parse_single_custom_chem_from_value(chem_name, chem_v)?;
+    if let Some(chem_v) = v.get(key) {
+        let custom_chem = CustomChemistry::from_value(key, chem_v)?;
         Ok(Some(custom_chem))
     } else {
         Ok(None)

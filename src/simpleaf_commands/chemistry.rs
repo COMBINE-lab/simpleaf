@@ -1,6 +1,6 @@
 use crate::utils::af_utils::*;
 use crate::utils::chem_utils::{
-    custom_chem_hm_to_json, get_custom_chem_hm, get_single_custom_chem_from_file, CustomChemistry,
+    custom_chem_hm_into_json, get_custom_chem_hm, get_single_custom_chem_from_file, CustomChemistry,
 };
 use crate::utils::constants::*;
 use crate::utils::prog_utils::{self, download_to_file_compute_hash};
@@ -56,11 +56,8 @@ pub fn add_chemistry(
     let chem_p = af_home_path.join(CHEMISTRIES_PATH);
 
     if let Some(existing_entry) = get_single_custom_chem_from_file(&chem_p, &name)? {
-        let existing_ver_str = existing_entry
-            .version()
-            .clone()
-            .unwrap_or("0.0.0".to_string());
-        let existing_ver = Version::parse(existing_ver_str.as_ref()).with_context( || format!("could not parse version {} found in existing chemistries.json file. Please correct this entry", existing_ver_str))?;
+        let existing_ver_str = existing_entry.version();
+        let existing_ver = Version::parse(existing_ver_str).with_context( || format!("could not parse version {} found in existing chemistries.json file. Please correct this entry", existing_ver_str))?;
         if add_ver <= existing_ver {
             info!("Attempting to add chemistry with version {:#} which is <= than the existing version ({:#}) for this chemistry. Skipping addition", add_ver, existing_ver);
             return Ok(());
@@ -155,10 +152,10 @@ pub fn add_chemistry(
     let custom_chem = CustomChemistry {
         name,
         geometry,
-        expected_ori: Some(ExpectedOri::from_str(&add_opts.expected_ori)?),
+        expected_ori: ExpectedOri::from_str(&add_opts.expected_ori)?,
         plist_name: local_plist,
         remote_pl_url: add_opts.remote_url,
-        version: Some(version),
+        version,
         meta: None,
     };
 
@@ -180,7 +177,7 @@ pub fn add_chemistry(
     }
 
     // convert the custom chemistry hashmap to json
-    let v = custom_chem_hm_to_json(&chem_hm)?;
+    let v = custom_chem_hm_into_json(chem_hm)?;
 
     // write out the new custom chemistry file
     let mut custom_chem_file = std::fs::File::create(&chem_p)
@@ -385,7 +382,7 @@ pub fn remove_chemistry(
         chem_hm.remove(&name);
 
         // convert the custom chemistry hashmap to json
-        let v = custom_chem_hm_to_json(&chem_hm)?;
+        let v = custom_chem_hm_into_json(chem_hm)?;
 
         // write out the new custom chemistry file
         let mut custom_chem_file = std::fs::File::create(&chem_p)

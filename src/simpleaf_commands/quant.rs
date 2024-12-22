@@ -1,4 +1,4 @@
-use crate::utils::{af_utils::*, chem_utils::*};
+use crate::utils::af_utils::*;
 
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::{CommandVerbosityLevel, ReqProgs};
@@ -177,12 +177,6 @@ impl CBListInfo {
 
         Ok(())
     }
-}
-
-enum IndexType {
-    Salmon(PathBuf),
-    Piscem(PathBuf),
-    NoIndex,
 }
 
 fn push_advanced_piscem_options(
@@ -387,39 +381,13 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
     // the chemistries file
     let custom_chem_p = af_home_path.join(CHEMISTRIES_PATH);
 
-    let chem = match opts.chemistry.as_str() {
-        "10xv2" => Chemistry::Rna(RnaChemistry::TenxV2),
-        "10xv2-5p" => Chemistry::Rna(RnaChemistry::TenxV25P),
-        "10xv3" => Chemistry::Rna(RnaChemistry::TenxV3),
-        "10xv3-5p" => Chemistry::Rna(RnaChemistry::TenxV35P),
-        "10xv4-3p" => Chemistry::Rna(RnaChemistry::TenxV43P),
-        s => {
-            // we try to extract the single record for the chemistry and ignore the rest
-            if let Some(chem) =
-                get_single_custom_chem_from_file(&custom_chem_p, opts.chemistry.as_str())?
-            {
-                info!(
-                    "custom chemistry {} maps to geometry {}",
-                    s,
-                    chem.geometry()
-                );
-                Chemistry::Custom(chem)
-            } else {
-                Chemistry::Custom(CustomChemistry::simple_custom(s).with_context(|| {
-                    format!(
-                        "Could not parse the provided chemistry {}. Please ensure it is a valid chemistry string wrapped by quotes or that it is defined in the custom_chemistries.json file.",
-                        s
-                    )
-                })?)
-            }
-        }
-    };
+    let chem = Chemistry::from_str(&index_type, &custom_chem_p, &opts.chemistry)?;
 
     let ori: ExpectedOri;
     // if the user set the orientation, then
     // use that explicitly
-    if let Some(o) = opts.expected_ori.clone() {
-        ori = ExpectedOri::from_str(&o).with_context(|| {
+    if let Some(o) = &opts.expected_ori {
+        ori = ExpectedOri::from_str(o).with_context(|| {
             format!(
                 "Could not parse orientation {}. It must be one of the following: {:?}",
                 o,
@@ -427,39 +395,7 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
             )
         })?;
     } else {
-        // otherwise, this was not set explicitly. In that case
-        // if we have 10xv2, 10xv3, or 10xv4 (3') chemistry, set ori = "fw"
-        // if we have 10xv2-5p or 10xv3-5p chemistry, set ori = "fw"
-        // otherwise set ori = "both"
-        match &chem {
-            Chemistry::Rna(RnaChemistry::TenxV2)
-            | Chemistry::Rna(RnaChemistry::TenxV3)
-            | Chemistry::Rna(RnaChemistry::TenxV43P) => {
-                ori = ExpectedOri::Forward;
-            }
-            Chemistry::Rna(RnaChemistry::TenxV25P) | Chemistry::Rna(RnaChemistry::TenxV35P) => {
-                // NOTE: This is because we assume the piscem encoding
-                // that is, these are treated as potentially paired-end protocols and
-                // we infer the orientation of the fragment = orientation of read 1.
-                // So, while the direction we want is the same as the 3' protocols
-                // above, we separate out the case statement here for clarity.
-                // Further, we may consider changing this or making it more robust if
-                // and when we propagate more information about paired-end mappings.
-                ori = ExpectedOri::Forward;
-            }
-            Chemistry::Rna(RnaChemistry::Other(_)) => ori = ExpectedOri::default(),
-            Chemistry::Custom(cc) => {
-                // if the custom chemistry has an orientation, use that
-                if let Some(o) = cc.expected_ori() {
-                    ori = o.clone();
-                } else {
-                    ori = ExpectedOri::default();
-                }
-            }
-            _ => {
-                bail!("Encountered non-RNA chemistry in simpleaf quant. This should not happen. Please report this to simpleaf GitHub issues.");
-            }
-        }
+        ori = chem.expected_ori();
     }
 
     let mut filter_meth_opt = None;

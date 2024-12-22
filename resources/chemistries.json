@@ -60,7 +60,7 @@
     }
   },
   "10xv2": {
-    "geometry": "__builtin",
+    "geometry": "1{b[16]u[10]x:}2{r:}",
     "expected_ori": "fw",
     "plist_name": "dda0309f511ded5d801081a55c66b9a44cab4edbf0e07a9223f539e248d8e090",
     "version": "0.1.0",
@@ -80,7 +80,7 @@
     "remote_url": "https://umd.box.com/shared/static/jbs2wszgbj7k4ic2hass9ts6nhqkwq1p"
   },
   "10xv3": {
-    "geometry": "__builtin",
+    "geometry": "1{b[16]u[12]x:}2{r:}",
     "expected_ori": "fw",
     "plist_name": "2c9dfb98babe5a57ae763778adb9ebb7bfa531e105823bc26163892089333f8c",
     "version": "0.1.0",
@@ -100,7 +100,7 @@
     "remote_url": "https://umd.box.com/shared/static/cbpv1c4zi6ty81nvcgy3pyta2oj7vea1.txt"
   },
   "10xv4-3p": {
-    "geometry": "__builtin",
+    "geometry": "1{b[16]u[12]x:}2{r:}",
     "expected_ori": "fw",
     "plist_name": "0bfa4a0bea1d636e7ec1908aabb94307c53778185c12fc164da32dd085848131",
     "version": "0.1.0",
@@ -138,5 +138,47 @@
     "meta": {
       "cr_filename": "737K-arc-v1.txt"
     }
+  },
+  "dropseq": {
+    "geometry": "1{b[12]u[8]x:}2{r:}",
+    "expected_ori": "fw",
+    "plist_name": null,
+    "remote_url": null,
+    "version": "0.1.0"
+  },
+  "indropv2": {
+    "geometry": "1{r:}2{b[8-11]f[GAGTGATTGCTTGTGACGCCTT]b[8]u[6]x:}",
+    "expected_ori": "fw",
+    "plist_name": null,
+    "remote_url": null,
+    "version": "0.1.0"
+  },
+  "celseq2": {
+    "geometry": "1{u[6]b[6]x:}2{r:}",
+    "expected_ori": "fw",
+    "plist_name": null,
+    "remote_url": null,
+    "version": "0.1.0"
+  },
+  "splitseqv1": {
+    "geometry": "1{r[66]}2{u[10]b[8]f[CACCGGCTACAAAGCGTAGCCGCATGCTGA]b[8]f[TAGGTGCACGAACTCTCCGGTCTCGTAAGC]b[8]}",
+    "expected_ori": "fw",
+    "plist_name": null,
+    "remote_url": null,
+    "version": "0.1.0"
+  },
+  "splitseqv2": {
+    "geometry": "1{r[66]}2{u[10]b[8]f[CACCGGCTACAAAGCGTAGCCGCATGCTGA]b[8]f[TAGGTGCACGAACTCTGACACC]b[8]}",
+    "expected_ori": "fw",
+    "plist_name": null,
+    "remote_url": null,
+    "version": "0.1.0"
+  },
+  "sciseq3": {
+    "geometry": "1{b[9-10]f[GTCTCG]u[8][10]x:}2{r:}",
+    "expected_ori": "fw",
+    "plist_name": null,
+    "remote_url": null,
+    "version": "0.1.0"
   }
 }

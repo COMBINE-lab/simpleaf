@@ -2,7 +2,7 @@ use crate::atac::commands::AtacChemistry;
 use crate::utils::constants::CHEMISTRIES_PATH;
 use crate::utils::{
     af_utils::RnaChemistry,
-    chem_utils::{custom_chem_hm_to_json, get_custom_chem_hm},
+    chem_utils::{custom_chem_hm_into_json, get_custom_chem_hm},
     prog_utils::*,
 };
 use anyhow::Result;
@@ -19,7 +19,7 @@ pub fn inspect_simpleaf(version: &str, af_home_path: PathBuf) -> Result<()> {
     let chem_info_value = if custom_chem_p.is_file() {
         // parse the chemistry json file
         let custom_chem_hm = get_custom_chem_hm(&custom_chem_p)?;
-        let v = custom_chem_hm_to_json(&custom_chem_hm)?;
+        let v = custom_chem_hm_into_json(custom_chem_hm)?;
         json!({
             "custom_chem_path" : custom_chem_p.display().to_string(),
             "custom_geometries" : v

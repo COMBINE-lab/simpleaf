@@ -14,7 +14,7 @@ use strum_macros::EnumIter;
 use tracing::{error, info, warn};
 
 use crate::atac::commands::AtacChemistry;
-use crate::utils::chem_utils::CustomChemistry;
+use crate::utils::chem_utils::{get_single_custom_chem_from_file, CustomChemistry};
 use crate::utils::{self, prog_utils};
 
 use super::chem_utils::{QueryInRegistry, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY};
@@ -34,8 +34,11 @@ static KNOWN_CHEM_MAP_SALMON: phf::Map<&'static str, &'static str> = phf_map! {
         "dropseq" => "--dropseq",
         "indropv2" => "--indropV2",
         "citeseq" => "--citeseq",
-        "gemcode" => "--gemcode",
-        "celseq" => "--celseq",
+        
+        // commented out because they are UMI free
+        // "gemcode" => "--gemcode",
+        // "celseq" => "--celseq",
+
         "celseq2" => "--celseq2",
         "splitseqv1" => "--splitseqV1",
         "splitseqv2" => "--splitseqV2",
@@ -52,6 +55,48 @@ static KNOWN_CHEM_MAP_PISCEM: phf::Map<&'static str, &'static str> = phf_map! {
     "10xv3-5p" => "chromium_v3_5p",
     "10xv4-3p" => "chromium_v4_3p"
 };
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum IndexType {
+    Salmon(PathBuf),
+    Piscem(PathBuf),
+    NoIndex,
+}
+
+// Note that It is totally valid, even though
+// "MapperType" instead of "IndexType" would be
+// a better place to implement this method.
+impl IndexType {
+    pub fn is_known_chem(&self, chem: &str) -> bool {
+        match self {
+            IndexType::Salmon(_) => KNOWN_CHEM_MAP_SALMON.contains_key(chem),
+            IndexType::Piscem(_) => KNOWN_CHEM_MAP_PISCEM.contains_key(chem),
+            IndexType::NoIndex => false,
+        }
+    }
+    pub fn is_unsupported_known_chem(&self, chem: &str) -> bool {
+        match self {
+            IndexType::Salmon(_) => KNOWN_CHEM_MAP_PISCEM.contains_key(chem),
+            IndexType::Piscem(_) => KNOWN_CHEM_MAP_SALMON.contains_key(chem),
+            IndexType::NoIndex => true,
+        }
+    }
+    pub fn as_str(&self) -> &str {
+        match self {
+            IndexType::Salmon(_) => "salmon",
+            IndexType::Piscem(_) => "piscem",
+            IndexType::NoIndex => "no_index",
+        }
+    }
+
+    pub fn counterpart(&self) -> IndexType {
+        match self {
+            IndexType::Salmon(p) => IndexType::Piscem(p.clone()),
+            IndexType::Piscem(p) => IndexType::Salmon(p.clone()),
+            IndexType::NoIndex => IndexType::NoIndex,
+        }
+    }
+}
 
 /// The types of "mappers" we know about
 #[derive(Debug, Clone)]
@@ -142,19 +187,6 @@ impl QueryInRegistry for Chemistry {
     }
 }
 
-/// The builtin geometry types that have special handling to
-/// reduce necessary options in the common case, as well as the
-/// `Other` variant that covers custom geometries.
-#[derive(EnumIter, Clone, PartialEq)]
-pub enum RnaChemistry {
-    TenxV2,
-    TenxV25P,
-    TenxV3,
-    TenxV35P,
-    TenxV43P,
-    Other(String), // this will never be used because we have Chemistry::Custom
-}
-
 impl QueryInRegistry for RnaChemistry {
     fn registry_key(&self) -> &str {
         self.as_str()
@@ -178,6 +210,90 @@ impl Chemistry {
             Chemistry::Custom(custom_chem) => custom_chem.geometry(),
         }
     }
+
+    pub fn expected_ori(&self) -> ExpectedOri {
+        match self {
+            Chemistry::Custom(custom_chem) => custom_chem.expected_ori().clone(),
+            Chemistry::Rna(RnaChemistry::TenxV2)
+            | Chemistry::Rna(RnaChemistry::TenxV3)
+            | Chemistry::Rna(RnaChemistry::TenxV43P) => ExpectedOri::Forward,
+            Chemistry::Rna(RnaChemistry::TenxV25P) | Chemistry::Rna(RnaChemistry::TenxV35P) => {
+                // NOTE: This is because we assume the piscem encoding
+                // that is, these are treated as potentially paired-end protocols and
+                // we infer the orientation of the fragment = orientation of read 1.
+                // So, while the direction we want is the same as the 3' protocols
+                // above, we separate out the case statement here for clarity.
+                // Further, we may consider changing this or making it more robust if
+                // and when we propagate more information about paired-end mappings.
+                ExpectedOri::Forward
+            }
+            Chemistry::Rna(RnaChemistry::Other(_)) => ExpectedOri::default(),
+            _ => ExpectedOri::default(),
+        }
+    }
+
+    pub fn from_str(
+        index_type: &IndexType,
+        custom_chem_p: &Path,
+        chem_str: &str,
+    ) -> Result<Chemistry> {
+        // First, we check if the chemistry is a 10x chem
+        let chem = match chem_str {
+            // 10xv2, 10xv3 and 10xv4-3p are valid in both mappers
+            "10xv2" => Chemistry::Rna(RnaChemistry::TenxV2),
+            "10xv3" => Chemistry::Rna(RnaChemistry::TenxV3),
+            "10xv4-3p" => Chemistry::Rna(RnaChemistry::TenxV43P),
+            // TODO: we want to keep the 10xv2-5p and 10xv3-5p
+            // only because we want to directly assign their orientation as fw.
+            // If we think we can retrieve its ori from chemistries.json, delete it
+            // otherwise, delete the comment.
+            "10xv3-5p" => Chemistry::Rna(RnaChemistry::TenxV35P),
+            "10xv2-5p" => Chemistry::Rna(RnaChemistry::TenxV25P),
+            s => {
+                // first, we check if the chemistry is a known chemistry for the given mapper
+                // Second, we check if its a registered custom chemistry
+                // Third, we check if its a custom geometry string
+                if index_type.is_known_chem(s) {
+                    Chemistry::Rna(RnaChemistry::Other(s.to_string()))
+                } else if let Some(chem) =
+                    get_single_custom_chem_from_file(custom_chem_p, chem_str)?
+                {
+                    info!(
+                        "custom chemistry {} maps to geometry {}",
+                        s,
+                        chem.geometry()
+                    );
+                    Chemistry::Custom(chem)
+                } else {
+                    // we want to bail with an error if the chemistry is not supported
+                    if index_type.is_unsupported_known_chem(s) {
+                        bail!("The chemistry {} is not supported by the given mapper {}. Please switch to {}", s, index_type.as_str(), index_type.counterpart().as_str());
+                    }
+                    Chemistry::Custom(CustomChemistry::simple_custom(s).with_context(|| {
+                        format!(
+                            "Could not parse the provided chemistry {}. Please ensure it is a valid chemistry string wrapped by quotes or that it is defined in the custom_chemistries.json file.",
+                            s
+                        )
+                    })?)
+                }
+            }
+        };
+
+        Ok(chem)
+    }
+}
+
+/// The builtin geometry types that have special handling to
+/// reduce necessary options in the common case, as well as the
+/// `Other` variant that covers custom geometries.
+#[derive(EnumIter, Clone, PartialEq)]
+pub enum RnaChemistry {
+    TenxV2,
+    TenxV25P,
+    TenxV3,
+    TenxV35P,
+    TenxV43P,
+    Other(String), // this will never be used because we have Chemistry::Custom
 }
 
 impl RnaChemistry {
