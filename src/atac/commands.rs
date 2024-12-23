@@ -245,8 +245,13 @@ pub struct ProcessOpts {
     pub threads: u32,
 
     /// use unfiltered permit list
-    #[arg(short, long, help_heading = "Permit List Generation Options")]
-    pub unfiltered_pl: Option<Option<PathBuf>>,
+    #[arg(
+        short,
+        long,
+        default_value = None,
+        help_heading = "Permit List Generation Options"
+    )]
+    pub unfiltered_pl: Option<PathBuf>,
 
     /// minimum read count threshold for a cell to be retained/processed; only used with --unfiltered-pl
     #[arg(

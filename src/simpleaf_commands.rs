@@ -450,6 +450,18 @@ pub struct ChemistryRemoveOpts {
     pub name: String,
 }
 
+/// Download the corresponding permit lists for the chemistry/ies
+#[derive(Args, Clone, Debug)]
+#[command(arg_required_else_help = true)]
+pub struct ChemistryFetchOpts {
+    /// a list of chemistries to fetch (use "*" to download all)
+    #[arg(short, long, value_delimiter = ',')]
+    pub chemistries: Vec<String>,
+    /// show what will be downloaded without downloading anything
+    #[arg(short, long)]
+    pub dry_run: bool,
+}
+
 /// Search for unused permit lists and remove them
 /// from the ALEVIN_FRY_HOME cache
 #[derive(Args, Clone, Debug)]
@@ -518,6 +530,7 @@ pub enum ChemistryCommand {
     Remove(ChemistryRemoveOpts),
     Clean(ChemistryCleanOpts),
     Lookup(ChemistryLookupOpts),
+    Fetch(ChemistryFetchOpts),
 }
 
 #[derive(Debug, Subcommand)]

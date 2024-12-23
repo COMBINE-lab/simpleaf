@@ -445,7 +445,8 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
 
     use crate::utils::af_utils;
     // based on the filtering method
-    if let Some(ref pl_file) = opts.unfiltered_pl {
+    let pl_file = &opts.unfiltered_pl;
+    {
         // NOTE: unfiltered_pl is of type Option<Option<PathBuf>> so being in here
         // tells us nothing about the inner option.  We handle that now.
 
@@ -492,11 +493,12 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
                 }
             }
         }
-    } else {
+    }
+    /*else {
         bail!(
             "Only the unfiltered permit list option is currently supported in atac-seq processing."
         );
-    }
+    }*/
 
     let map_file = opts.output.join("af_map");
     let mut af_gpl = std::process::Command::new(format!("{}", &af_prog_info.exe_path.display()));

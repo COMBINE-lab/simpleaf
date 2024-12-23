@@ -1,5 +1,6 @@
 use chemistry::{
-    add_chemistry, clean_chemistries, lookup_chemistry, refresh_chemistries, remove_chemistry,
+    add_chemistry, clean_chemistries, fetch_chemistries, lookup_chemistry, refresh_chemistries,
+    remove_chemistry,
 };
 use tracing_subscriber::{filter::LevelFilter, fmt, prelude::*, EnvFilter};
 
@@ -92,6 +93,10 @@ fn main() -> anyhow::Result<()> {
         Commands::Chemistry(ChemistryCommand::Refresh(refresh_opts)) => {
             refresh_chemistries(af_home_path, refresh_opts)
         }
+        Commands::Chemistry(ChemistryCommand::Fetch(fetch_opts)) => {
+            fetch_chemistries(af_home_path, fetch_opts)
+        }
+
         Commands::Inspect {} => inspect_simpleaf(crate_version!(), af_home_path),
 
         Commands::RefreshProgInfo {} => refresh_prog_info(af_home_path),

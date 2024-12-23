@@ -1,6 +1,7 @@
 use crate::utils::af_utils::*;
 use crate::utils::chem_utils::{
-    custom_chem_hm_into_json, get_custom_chem_hm, get_single_custom_chem_from_file, CustomChemistry,
+    custom_chem_hm_into_json, get_custom_chem_hm, get_single_custom_chem_from_file,
+    CustomChemistry, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY,
 };
 use crate::utils::constants::*;
 use crate::utils::prog_utils::{self, download_to_file_compute_hash};
@@ -419,6 +420,101 @@ pub fn lookup_chemistry(
         println!("{:#?}", cc);
     } else {
         info!("no chemistry with name {} was found in the registry!", name);
+    }
+
+    Ok(())
+}
+
+struct FetchSet<'a> {
+    pub m: HashSet<&'a String>,
+    pub fetch_all: bool,
+}
+
+impl<'a> FetchSet<'a> {
+    pub fn contains(&self, k: &String) -> bool {
+        if self.fetch_all {
+            true
+        } else {
+            self.m.contains(k)
+        }
+    }
+}
+
+pub fn fetch_chemistries(
+    af_home: PathBuf,
+    refresh_opts: crate::simpleaf_commands::ChemistryFetchOpts,
+) -> Result<()> {
+    if refresh_opts.chemistries.is_empty() {
+        bail!("The list of chemistries to fetch was empty; nothing to do!");
+    }
+
+    // check if the chemistry file is absent altogether
+    // if so, then download it
+    let chem_path = af_home.join(CHEMISTRIES_PATH);
+    if !chem_path.is_file() {
+        bail!(
+            "The chemistry file was missing from {}; nothing to download.",
+            chem_path.display()
+        );
+    }
+
+    let plist_path = af_home.join("plist");
+    create_dir_if_absent(&plist_path)?;
+
+    if let Some(chem_obj) = parse_resource_json_file(&chem_path, None)?.as_object() {
+        let fetch_chems: FetchSet = if refresh_opts.chemistries.len() == 1
+            && matches!(refresh_opts.chemistries.first(), Some(x) if x == "*")
+        {
+            FetchSet {
+                m: HashSet::new(),
+                fetch_all: true,
+            }
+        } else {
+            let hs = HashSet::from_iter(refresh_opts.chemistries.iter());
+            FetchSet {
+                m: hs,
+                fetch_all: false,
+            }
+        };
+
+        for (k, v) in chem_obj.iter() {
+            // if we want to fetch this chem
+            if fetch_chems.contains(k) {
+                if let Some(pfile) = v.get(LOCAL_PL_PATH_KEY) {
+                    let pfile = pfile.as_str().expect("should be string");
+                    let fpath = plist_path.join(pfile);
+
+                    // if it doesn't exist
+                    if !fpath.is_file() {
+                        //check for a remote path
+                        if let Some(rpath) = v.get(REMOTE_PL_URL_KEY) {
+                            let rpath = rpath.as_str().expect("should be string");
+                            if refresh_opts.dry_run {
+                                info!(
+                                    "fetch would fetch missing file {} for {} from {}",
+                                    pfile, k, rpath
+                                );
+                            } else {
+                                let hash = download_to_file_compute_hash(rpath, &fpath)?;
+                                let expected_hash = pfile.to_string();
+                                let observed_hash = hash.to_string();
+                                if expected_hash != observed_hash {
+                                    warn!("Downloaded the file for chemistry {} from {}, but the observed hash {} was not equal to the expcted hash {}",
+                                    k, rpath, observed_hash, expected_hash);
+                                }
+                            }
+                        } else {
+                            warn!(
+                                "requested to obtain chemistry {}, but it has no remote URL!",
+                                k
+                            );
+                        }
+                    } else {
+                        info!("file for requested chemistry {} already exists.", k);
+                    }
+                }
+            }
+        }
     }
 
     Ok(())
