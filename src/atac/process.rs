@@ -470,7 +470,7 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
             // here, the -u flag is provided
             // but no file is provided, then the
             // inner option is None and we will try to get the permit list automatically if
-            // using 10xv2, 10xv3, or 10xv4
+            // using 10xv2, 10xv3, or 10x-multi
 
             // check the chemistry
             let rc = af_utils::Chemistry::Atac(opts.chemistry);

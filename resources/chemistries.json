@@ -138,47 +138,5 @@
     "meta": {
       "cr_filename": "737K-arc-v1.txt"
     }
-  },
-  "dropseq": {
-    "geometry": "1{b[12]u[8]x:}2{r:}",
-    "expected_ori": "fw",
-    "plist_name": null,
-    "remote_url": null,
-    "version": "0.1.0"
-  },
-  "indropv2": {
-    "geometry": "1{r:}2{b[8-11]f[GAGTGATTGCTTGTGACGCCTT]b[8]u[6]x:}",
-    "expected_ori": "fw",
-    "plist_name": null,
-    "remote_url": null,
-    "version": "0.1.0"
-  },
-  "celseq2": {
-    "geometry": "1{u[6]b[6]x:}2{r:}",
-    "expected_ori": "fw",
-    "plist_name": null,
-    "remote_url": null,
-    "version": "0.1.0"
-  },
-  "splitseqv1": {
-    "geometry": "1{r[66]}2{u[10]b[8]f[CACCGGCTACAAAGCGTAGCCGCATGCTGA]b[8]f[TAGGTGCACGAACTCTCCGGTCTCGTAAGC]b[8]}",
-    "expected_ori": "fw",
-    "plist_name": null,
-    "remote_url": null,
-    "version": "0.1.0"
-  },
-  "splitseqv2": {
-    "geometry": "1{r[66]}2{u[10]b[8]f[CACCGGCTACAAAGCGTAGCCGCATGCTGA]b[8]f[TAGGTGCACGAACTCTGACACC]b[8]}",
-    "expected_ori": "fw",
-    "plist_name": null,
-    "remote_url": null,
-    "version": "0.1.0"
-  },
-  "sciseq3": {
-    "geometry": "1{b[9-10]f[GTCTCG]u[8][10]x:}2{r:}",
-    "expected_ori": "fw",
-    "plist_name": null,
-    "remote_url": null,
-    "version": "0.1.0"
   }
 }

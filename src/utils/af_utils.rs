@@ -71,14 +71,20 @@ impl IndexType {
         match self {
             IndexType::Salmon(_) => KNOWN_CHEM_MAP_SALMON.contains_key(chem),
             IndexType::Piscem(_) => KNOWN_CHEM_MAP_PISCEM.contains_key(chem),
-            IndexType::NoIndex => false,
+            IndexType::NoIndex => {
+                info!("Since we are dealing with an already-mapped RAD file, the user is responsible for ensuring that a valid chemistry definition was provided during mapping");
+                KNOWN_CHEM_MAP_SALMON.contains_key(chem) || KNOWN_CHEM_MAP_PISCEM.contains_key(chem)
+            }
         }
     }
     pub fn is_unsupported_known_chem(&self, chem: &str) -> bool {
         match self {
             IndexType::Salmon(_) => KNOWN_CHEM_MAP_PISCEM.contains_key(chem),
             IndexType::Piscem(_) => KNOWN_CHEM_MAP_SALMON.contains_key(chem),
-            IndexType::NoIndex => true,
+            IndexType::NoIndex => {
+                info!("Since we are dealing with an already-mapped RAD file, the user is responsible for ensuring that a valid chemistry definition was provided during mapping");
+                !self.is_known_chem(chem)
+            }
         }
     }
     pub fn as_str(&self) -> &str {
@@ -193,6 +199,33 @@ impl QueryInRegistry for RnaChemistry {
     }
 }
 
+impl RnaChemistry {
+    pub fn expected_ori(&self) -> ExpectedOri {
+        match self {
+            RnaChemistry::TenxV2 | RnaChemistry::TenxV3 | RnaChemistry::TenxV43P => {
+                ExpectedOri::Forward
+            }
+            RnaChemistry::TenxV25P | RnaChemistry::TenxV35P => {
+                // NOTE: This is because we assume the piscem encoding
+                // that is, these are treated as potentially paired-end protocols and
+                // we infer the orientation of the fragment = orientation of read 1.
+                // So, while the direction we want is the same as the 3' protocols
+                // above, we separate out the case statement here for clarity.
+                // Further, we may consider changing this or making it more robust if
+                // and when we propagate more information about paired-end mappings.
+                ExpectedOri::Forward
+            }
+            RnaChemistry::Other(x) => match x.as_str() {
+                "sciseq3" | "splitseqv1" | "splitseqv2" | "indropv2" | "citeseq" => {
+                    ExpectedOri::Forward
+                }
+                "celseq2" => ExpectedOri::Reverse,
+                _ => ExpectedOri::default(),
+            },
+        }
+    }
+}
+
 /// `&str` representations of the different geometries.
 impl Chemistry {
     pub fn as_str(&self) -> &str {
@@ -213,26 +246,8 @@ impl Chemistry {
 
     pub fn expected_ori(&self) -> ExpectedOri {
         match self {
+            Chemistry::Rna(x) => x.expected_ori(),
             Chemistry::Custom(custom_chem) => custom_chem.expected_ori().clone(),
-            Chemistry::Rna(RnaChemistry::TenxV2)
-            | Chemistry::Rna(RnaChemistry::TenxV3)
-            | Chemistry::Rna(RnaChemistry::TenxV43P) => ExpectedOri::Forward,
-            Chemistry::Rna(RnaChemistry::TenxV25P) | Chemistry::Rna(RnaChemistry::TenxV35P) => {
-                // NOTE: This is because we assume the piscem encoding
-                // that is, these are treated as potentially paired-end protocols and
-                // we infer the orientation of the fragment = orientation of read 1.
-                // So, while the direction we want is the same as the 3' protocols
-                // above, we separate out the case statement here for clarity.
-                // Further, we may consider changing this or making it more robust if
-                // and when we propagate more information about paired-end mappings.
-                ExpectedOri::Forward
-            }
-            Chemistry::Rna(RnaChemistry::Other(x)) => match x.as_str() {
-                "sciseq3" | "splitseqv1" | "splitseqv2" | "indropv2" | "citeseq" => {
-                    ExpectedOri::Forward
-                }
-                _ => ExpectedOri::default(),
-            },
             _ => ExpectedOri::default(),
         }
     }
@@ -252,8 +267,26 @@ impl Chemistry {
             // only because we want to directly assign their orientation as fw.
             // If we think we can retrieve its ori from chemistries.json, delete it
             // otherwise, delete the comment.
-            "10xv3-5p" => Chemistry::Rna(RnaChemistry::TenxV35P),
-            "10xv2-5p" => Chemistry::Rna(RnaChemistry::TenxV25P),
+            "10xv3-5p" => match index_type {
+                IndexType::Piscem(_) => Chemistry::Rna(RnaChemistry::TenxV35P),
+                IndexType::NoIndex => {
+                    info!("The 10xv3-5p chemistry flag is designed only for the piscem index. Please make sure the RAD file you are provided was mapped using piscem; otherwise the fragment orientations may not be treated correctly");
+                    Chemistry::Rna(RnaChemistry::TenxV35P)
+                }
+                IndexType::Salmon(_) => {
+                    bail!("The 10xv3-5p chemistry flag is not suppored under the salmon mapper. Instead please use the 10xv3 chemistry (which will treat samples as single-end).");
+                }
+            },
+            "10xv2-5p" => match index_type {
+                IndexType::Piscem(_) => Chemistry::Rna(RnaChemistry::TenxV25P),
+                IndexType::NoIndex => {
+                    info!("The 10xv2-5p chemistry flag is designed only for the piscem index. Please make sure the RAD file you are provided was mapped using piscem; otherwise the fragment orientations may not be treated correctly");
+                    Chemistry::Rna(RnaChemistry::TenxV25P)
+                }
+                IndexType::Salmon(_) => {
+                    bail!("The 10xv2-5p chemistry flag is not suppored under the salmon mapper. Instead please use the 10xv2 chemistry (which will treat samples as single-end).");
+                }
+            },
             s => {
                 // first, we check if the chemistry is a known chemistry for the given mapper
                 // Second, we check if its a registered custom chemistry
@@ -270,9 +303,11 @@ impl Chemistry {
                     );
                     Chemistry::Custom(chem)
                 } else {
-                    // we want to bail with an error if the chemistry is not supported
+                    // we want to bail with an error if the chemistry is *known* but
+                    // not supported using this mapper (i.e. if it is a piscem-specific chem
+                    // and the mapper is salmon or vice versa).
                     if index_type.is_unsupported_known_chem(s) {
-                        bail!("The chemistry {} is not supported by the given mapper {}. Please switch to {}", s, index_type.as_str(), index_type.counterpart().as_str());
+                        bail!("The chemistry {} is not supported by the given mapper {}. Please switch to {}, provide the explicit geometry, or add this chemistry to the registry with the \"chemistry add\" command.", s, index_type.as_str(), index_type.counterpart().as_str());
                     }
                     Chemistry::Custom(CustomChemistry::simple_custom(s).with_context(|| {
                         format!(
@@ -445,9 +480,6 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
     let expected_file_name;
     // we try to get the registry entry for this chemistry
     if let Some(reg_val) = chem_registry.get(chem.registry_key()) {
-        //get_single_custom_chem_from_file(&chem_registry_path, chem.registry_key())?
-        //{
-
         if let Some(chem_obj) = reg_val.as_object() {
             // check if the resource has a local url
             match chem_obj.get(LOCAL_PL_PATH_KEY) {
@@ -495,7 +527,7 @@ Please consider removing and re-adding this chemistry with a valid permit list."
                     // download the file
                     let hash =
                         prog_utils::download_to_file_compute_hash(rpath, &expected_file_path)?;
-                    let expected_hash = expected_file_path
+                    let expected_hash = expected_file_name
                         .to_str()
                         .ok_or(anyhow!("cannot convert expected filename to proper string"))?;
                     if hash.to_string() != expected_hash {
