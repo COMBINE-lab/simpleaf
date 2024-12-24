@@ -114,6 +114,8 @@ fn main() -> anyhow::Result<()> {
 
         // processing for ATAC-seq data
         Commands::Atac(AtacCommand::Process(process_opts)) => {
+            // validate versions
+            atac::process::check_progs(&af_home_path)?;
             // first we map the reads
             atac::process::map_reads(af_home_path.as_path(), &process_opts)?;
             // then we generate the permit list and sort the file

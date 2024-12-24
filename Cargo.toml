@@ -16,6 +16,7 @@ homepage = "https://github.com/COMBINE-lab/simpleaf"
 include = [
   "/src/*.rs",
   "/src/utils/*.rs",
+  "/src/utils/af_utils/*.rs",
   "/src/atac/*.rs",
   "/src/simpleaf_commands/*.rs",
   "/Cargo.toml",
@@ -54,7 +55,7 @@ tracing-subscriber = { version = "0.3.19", default-features = true, features = [
 ] }
 semver = "^1.0.24"
 serde = { version = "1.0.216", features = ["derive"] }
-serde_json = "1.0.133"
+serde_json = "1.0.134"
 time = { version = "^0.3.37", features = [
   "macros",
   "formatting",
@@ -79,7 +80,10 @@ minreq = { version = "2.13.0", features = [
 ] }
 strum = { version = "0.26.3", features = ["derive", "phf"] }
 strum_macros = "0.26.4"
-niffler = { version = "2.6.0", default-features = false, features = ["gz", "gz_cloudflare_zlib"] }
+niffler = { version = "2.6.0", default-features = false, features = [
+  "gz",
+  "gz_cloudflare_zlib",
+] }
 blake3 = { version = "1.5.5", features = ["mmap", "serde"] }
 
 [profile.release]

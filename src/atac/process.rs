@@ -127,10 +127,25 @@ fn add_read_args(map_cmd: &mut std::process::Command, opts: &ProcessOpts) -> any
     Ok(())
 }
 
-pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
+pub(crate) fn check_progs<P: AsRef<Path>>(af_home_path: P) -> anyhow::Result<()> {
+    let af_home_path = af_home_path.as_ref();
     // Read the JSON contents of the file as an instance of `User`.
     let v: Value = prog_utils::inspect_af_home(af_home_path)?;
     let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+
+    let af_prog_info = rp
+        .alevin_fry
+        .as_ref()
+        .expect("alevin-fry program info should be properly set.");
+
+    match prog_utils::check_version_constraints(
+        "alevin-fry",
+        ">=0.11.0, <1.0.0",
+        &af_prog_info.version,
+    ) {
+        Ok(af_ver) => info!("found alevin-fry version {:#}, proceeding", af_ver),
+        Err(e) => return Err(e),
+    }
 
     let piscem_prog_info = rp
         .piscem
@@ -145,6 +160,22 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
         Ok(piscem_ver) => info!("found piscem version {:#}, proceeding", piscem_ver),
         Err(e) => return Err(e),
     }
+
+    Ok(())
+}
+
+// NOTE: we assume that check_progs has already been called and so version constraints have
+// already been checked.
+pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
+    // Read the JSON contents of the file as an instance of `User`.
+    let v: Value = prog_utils::inspect_af_home(af_home_path)?;
+    let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+
+    let piscem_prog_info = rp
+        .piscem
+        .as_ref()
+        .expect("piscem program info should be properly set.");
+
     // figure out what type of index we expect
     let index_base;
 
@@ -333,6 +364,8 @@ pub(crate) fn gen_bed(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result
     Ok(())
 }
 
+// NOTE: we assume that check_progs has already been called and so version constraints have
+// already been checked.
 fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
     // Read the JSON contents of the file as an instance of `User`.
     let v: Value = prog_utils::inspect_af_home(af_home_path)?;
@@ -342,15 +375,6 @@ fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
         .alevin_fry
         .as_ref()
         .expect("alevin-fry program info should be properly set.");
-
-    match prog_utils::check_version_constraints(
-        "alevin-fry",
-        ">=0.11.0, <1.0.0",
-        &af_prog_info.version,
-    ) {
-        Ok(af_ver) => info!("found alevin-fry version {:#}, proceeding", af_ver),
-        Err(e) => return Err(e),
-    }
 
     let gpl_dir = opts.output.join("af_process");
     let rad_dir = opts.output.join("af_map");
@@ -422,6 +446,8 @@ fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
     Ok(())
 }
 
+// NOTE: we assume that check_progs has already been called and so version constraints have
+// already been checked.
 fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
     // Read the JSON contents of the file as an instance of `User`.
     let v: Value = prog_utils::inspect_af_home(af_home_path)?;
@@ -431,15 +457,6 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
         .alevin_fry
         .as_ref()
         .expect("alevin-fry program info should be properly set.");
-
-    match prog_utils::check_version_constraints(
-        "alevin-fry",
-        ">=0.11.0, <1.0.0",
-        &af_prog_info.version,
-    ) {
-        Ok(af_ver) => info!("found alevin-fry version {:#}, proceeding", af_ver),
-        Err(e) => return Err(e),
-    }
 
     let filter_meth_opt;
 
