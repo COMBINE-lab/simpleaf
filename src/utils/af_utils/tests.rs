@@ -36,6 +36,45 @@ fn test_piscem_known_chems() {
 }
 
 #[test]
+fn test_no_index_known_chems() {
+    let idx_type = IndexType::NoIndex;
+    let custom_chem_p = PathBuf::from("resources").join("chemistries.json");
+    let cs = [
+        // forward
+        "10xv2",
+        "10xv3",
+        "10xv4-3p",
+        "10xv2-5p",
+        "10xv3-5p",
+        "splitseqv1",
+        "splitseqv2",
+        "indropv2",
+        "sciseq3",
+        "dropseq",
+        "citeseq",
+        // reverse
+        "celseq2",
+    ];
+
+    let mut dirs = vec![ExpectedOri::Forward; cs.len() - 1];
+    dirs.push(ExpectedOri::Reverse);
+
+    for (chem, dir) in cs.iter().zip(dirs.iter()) {
+        let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem);
+        match c {
+            Err(e) => panic!(
+                "Couldn't lookup {} for the no-index mapper, but it should succeed :: {:#}",
+                chem, e
+            ),
+            Ok(c) => {
+                println!("testing ori for {}", chem);
+                assert_eq!(&c.expected_ori(), dir);
+            }
+        }
+    }
+}
+
+#[test]
 fn test_invalid_chemistry_name() {
     let piscem_idx = IndexType::Piscem(PathBuf::new());
     let salmon_idx = IndexType::Salmon(PathBuf::new());
@@ -133,7 +172,7 @@ fn test_salmon_known_chems() {
         c,
         Chemistry::Rna(RnaChemistry::Other(String::from("dropseq")))
     );
-    assert_eq!(c.expected_ori(), ExpectedOri::Both);
+    assert_eq!(c.expected_ori(), ExpectedOri::Forward);
 
     let chem = "indropv2";
     let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem)

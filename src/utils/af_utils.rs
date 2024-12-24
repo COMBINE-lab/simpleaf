@@ -216,7 +216,7 @@ impl RnaChemistry {
                 ExpectedOri::Forward
             }
             RnaChemistry::Other(x) => match x.as_str() {
-                "sciseq3" | "splitseqv1" | "splitseqv2" | "indropv2" | "citeseq" => {
+                "sciseq3" | "splitseqv1" | "splitseqv2" | "dropseq" | "indropv2" | "citeseq" => {
                     ExpectedOri::Forward
                 }
                 "celseq2" => ExpectedOri::Reverse,

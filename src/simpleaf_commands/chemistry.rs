@@ -462,6 +462,7 @@ pub fn fetch_chemistries(
     create_dir_if_absent(&plist_path)?;
 
     if let Some(chem_obj) = parse_resource_json_file(&chem_path, None)?.as_object() {
+        // if the user used the special `*`, then we lookup all chemistries
         let fetch_chems: FetchSet = if refresh_opts.chemistries.len() == 1
             && matches!(refresh_opts.chemistries.first(), Some(x) if x == "*")
         {
@@ -470,6 +471,7 @@ pub fn fetch_chemistries(
                 fetch_all: true,
             }
         } else {
+            // otherwise, collect just the set they requested
             let hs = HashSet::from_iter(refresh_opts.chemistries.iter());
             FetchSet {
                 m: hs,
@@ -480,15 +482,13 @@ pub fn fetch_chemistries(
         for (k, v) in chem_obj.iter() {
             // if we want to fetch this chem
             if fetch_chems.contains(k) {
-                if let Some(pfile) = v.get(LOCAL_PL_PATH_KEY) {
-                    let pfile = pfile.as_str().expect("should be string");
+                if let Some(serde_json::Value::String(pfile)) = v.get(LOCAL_PL_PATH_KEY) {
                     let fpath = plist_path.join(pfile);
 
                     // if it doesn't exist
                     if !fpath.is_file() {
                         //check for a remote path
-                        if let Some(rpath) = v.get(REMOTE_PL_URL_KEY) {
-                            let rpath = rpath.as_str().expect("should be string");
+                        if let Some(serde_json::Value::String(rpath)) = v.get(REMOTE_PL_URL_KEY) {
                             if refresh_opts.dry_run {
                                 info!(
                                     "fetch would fetch missing file {} for {} from {}",
@@ -510,7 +510,11 @@ pub fn fetch_chemistries(
                             );
                         }
                     } else {
-                        info!("file for requested chemistry {} already exists.", k);
+                        info!(
+                            "file for requested chemistry {} already exists ({}).",
+                            k,
+                            fpath.display()
+                        );
                     }
                 }
             }
