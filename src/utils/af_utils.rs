@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::atac::commands::AtacChemistry;
 use crate::utils::chem_utils::{get_single_custom_chem_from_file, CustomChemistry};
@@ -383,26 +383,48 @@ pub fn create_dir_if_absent<T: AsRef<Path>>(odir: T) -> Result<()> {
     Ok(())
 }
 
+fn is_builtin(s: &str) -> Option<&str> {
+    // anything starting with `__` is a built-in or reserved keyword, so
+    // don't attempt to parse it as a geometry.
+    if s.starts_with("__") {
+        // calling `unwrap` here is OK because we
+        // called `starts_with` above to determine we have a leading `__`
+        let keyword = s.strip_prefix("__").unwrap();
+        Some(keyword)
+    } else {
+        None
+    }
+}
+
 pub fn validate_geometry(geo: &str) -> Result<()> {
-    if geo != "__builtin" {
+    if let Some(builtin_kwd) = is_builtin(geo) {
+        debug!(
+            "geometry string started with \"__\" and so is reserved. Keyword :: [{}]",
+            builtin_kwd
+        );
+        bail!("The provided geometry is a builtin keyword [{}] (preceeded by \"__\") and so no attempt was made to parse it", builtin_kwd);
+    } else {
         let fg = FragmentGeomDesc::try_from(geo);
-        return match fg {
+        match fg {
             Ok(_fg) => Ok(()),
             Err(e) => {
                 bail!("Could not parse geometry {}. Please ensure that it is a valid geometry definition wrapped by quotes. The error message was: {:?}", geo, e);
             }
-        };
+        }
     }
-    Ok(())
 }
 
 pub fn extract_geometry(geo: &str) -> Result<FragmentGeomDesc> {
-    let fg = FragmentGeomDesc::try_from(geo);
-    match fg {
-        Ok(fg) => Ok(fg),
-        Err(e) => {
-            error!("Could not parse geometry {}. Please ensure that it is a valid geometry definition wrapped by quotes. The error message was: {:?}", geo, e);
-            Err(e)
+    if let Some(builtin_kwd) = is_builtin(geo) {
+        bail!("The provided geometry is a builtin keyword [{}] (preceeded by \"__\") and so no attempt was made to parse it", builtin_kwd);
+    } else {
+        let fg = FragmentGeomDesc::try_from(geo);
+        match fg {
+            Ok(fg) => Ok(fg),
+            Err(e) => {
+                error!("Could not parse geometry {}. Please ensure that it is a valid geometry definition wrapped by quotes. The error message was: {:?}", geo, e);
+                Err(e)
+            }
         }
     }
 }
