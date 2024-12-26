@@ -2494,6 +2494,7 @@ dependencies = [
  "minreq",
  "niffler",
  "phf 0.11.2",
+ "regex",
  "roers",
  "semver",
  "seq_geom_parser",

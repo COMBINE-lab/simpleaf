@@ -5,6 +5,7 @@ use crate::utils::chem_utils::{
 };
 use crate::utils::constants::*;
 use crate::utils::prog_utils::{self, download_to_file_compute_hash};
+use regex::Regex;
 
 use anyhow::{bail, Context, Result};
 use semver::Version;
@@ -420,6 +421,19 @@ pub fn lookup_chemistry(
         println!("{:#?}", cc);
     } else {
         info!("no chemistry with name {} was found in the registry!", name);
+        info!(
+            "treating {} as a regex and searching for matching chemistries",
+            name
+        );
+        if let Ok(re) = Regex::new(&name) {
+            for (cname, cval) in chem_hm.iter() {
+                if re.is_match(cname) {
+                    println!("chemistry name : {}", cname);
+                    println!("==============");
+                    println!("{:#?}", cval);
+                }
+            }
+        }
     }
 
     Ok(())

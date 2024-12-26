@@ -402,7 +402,7 @@ pub fn validate_geometry(geo: &str) -> Result<()> {
             "geometry string started with \"__\" and so is reserved. Keyword :: [{}]",
             builtin_kwd
         );
-        bail!("The provided geometry is a builtin keyword [{}] (preceeded by \"__\") and so no attempt was made to parse it", builtin_kwd);
+        Ok(()) //bail!("The provided geometry is a builtin keyword [{}] (preceeded by \"__\") and so no attempt was made to parse it", builtin_kwd);
     } else {
         let fg = FragmentGeomDesc::try_from(geo);
         match fg {
