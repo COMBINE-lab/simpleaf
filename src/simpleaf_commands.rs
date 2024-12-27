@@ -445,9 +445,12 @@ pub struct IndexOpts {
 #[derive(Args, Clone, Debug)]
 #[command(arg_required_else_help = true)]
 pub struct ChemistryRemoveOpts {
-    /// the name of the chemistry you wish to remove
+    /// the name of the chemistry you wish to remove (can be a regex)
     #[arg(short, long)]
     pub name: String,
+    /// print out the action that would be taken rather than taking it
+    #[arg(short, long)]
+    pub dry_run: bool,
 }
 
 /// Download the corresponding permit lists for the chemistry/ies

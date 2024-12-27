@@ -736,9 +736,9 @@ impl ExpectedOri {
     // construct the expected_ori from a str
     pub fn from_str(s: &str) -> Result<ExpectedOri> {
         match s {
-            "fw" => Ok(ExpectedOri::Forward),
-            "rc" => Ok(ExpectedOri::Reverse),
-            "both" => Ok(ExpectedOri::Both),
+            "fw" | "\"fw\"" => Ok(ExpectedOri::Forward),
+            "rc" | "\"rc\"" => Ok(ExpectedOri::Reverse),
+            "both" | "\"both\"" => Ok(ExpectedOri::Both),
             _ => Err(anyhow!("Invalid expected_ori value: {}", s)),
         }
     }

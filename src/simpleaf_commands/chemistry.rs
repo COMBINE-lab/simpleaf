@@ -377,12 +377,37 @@ pub fn remove_chemistry(
     let chem_p = af_home_path.join(CHEMISTRIES_PATH);
 
     let mut chem_hm = get_custom_chem_hm(&chem_p)?;
+    let mut num_matched = 0;
+    let keys = chem_hm.keys().cloned().collect::<Vec<String>>();
 
-    // check if the chemistry already exists and log
-    if chem_hm.contains_key(&name) {
-        info!("chemistry {} found in the registry; removing it!", name);
-        chem_hm.remove(&name);
+    if let Ok(name_re) = regex::Regex::new(&name) {
+        for k in keys {
+            if name_re.is_match(&k) {
+                num_matched += 1;
+                if remove_opts.dry_run {
+                    info!(
+                        "[dry_run] : would remove chemistry {} from the registry.",
+                        k
+                    );
+                } else {
+                    info!("chemistry {} found in the registry; removing it!", k);
+                    chem_hm.remove(&k);
+                }
+            }
+        }
+    } else {
+        bail!(
+            "The provided chemistry name {} was neither a valid chemistry name nor a valid regex",
+            name
+        );
+    }
 
+    if num_matched == 0 {
+        info!(
+            "no chemistry with name {} (or matching this as a regex) was found in the registry; nothing to remove",
+            name
+        );
+    } else if !remove_opts.dry_run {
         // convert the custom chemistry hashmap to json
         let v = custom_chem_hm_into_json(chem_hm)?;
 
@@ -394,11 +419,6 @@ pub fn remove_chemistry(
         custom_chem_file
             .write_all(serde_json::to_string_pretty(&v).unwrap().as_bytes())
             .with_context(|| format!("could not write {}", chem_p.display()))?;
-    } else {
-        info!(
-            "no chemistry with name {} was found in the registry; nothing to remove",
-            name
-        );
     }
 
     Ok(())
