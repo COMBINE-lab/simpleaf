@@ -85,7 +85,7 @@ niffler = { version = "2.6.0", default-features = false, features = [
   "gz_cloudflare_zlib",
 ] }
 blake3 = { version = "1.5.5", features = ["mmap", "serde"] }
-regex = "1.11.1"
+regex = { version = "1.11.1", default-features = false, features = ["perf", "std"] }
 
 [profile.release]
 lto = "thin"
