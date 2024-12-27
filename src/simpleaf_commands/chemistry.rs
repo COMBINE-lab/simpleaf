@@ -441,13 +441,28 @@ pub fn lookup_chemistry(
 
 struct FetchSet<'a> {
     pub m: HashSet<&'a String>,
-    pub fetch_all: bool,
+    pub re: Option<Regex>,
 }
 
 impl<'a> FetchSet<'a> {
+    pub fn from_re(s: &str) -> Result<Self> {
+        if let Ok(re) = regex::Regex::new(s) {
+            Ok(Self {
+                m: HashSet::new(),
+                re: Some(re),
+            })
+        } else {
+            bail!("could not compile regex : [{}]", s)
+        }
+    }
+
+    pub fn from_hash_set(m: HashSet<&'a String>) -> Self {
+        Self { m, re: None }
+    }
+
     pub fn contains(&self, k: &String) -> bool {
-        if self.fetch_all {
-            true
+        if let Some(ref re) = self.re {
+            re.is_match(k)
         } else {
             self.m.contains(k)
         }
@@ -477,20 +492,17 @@ pub fn fetch_chemistries(
 
     if let Some(chem_obj) = parse_resource_json_file(&chem_path, None)?.as_object() {
         // if the user used the special `*`, then we lookup all chemistries
-        let fetch_chems: FetchSet = if refresh_opts.chemistries.len() == 1
-            && matches!(refresh_opts.chemistries.first(), Some(x) if x == "*")
-        {
-            FetchSet {
-                m: HashSet::new(),
-                fetch_all: true,
-            }
+        let fetch_chems: FetchSet = if refresh_opts.chemistries.len() == 1 {
+            FetchSet::from_re(
+                refresh_opts
+                    .chemistries
+                    .first()
+                    .expect("first entry is valid"),
+            )?
         } else {
             // otherwise, collect just the set they requested
             let hs = HashSet::from_iter(refresh_opts.chemistries.iter());
-            FetchSet {
-                m: hs,
-                fetch_all: false,
-            }
+            FetchSet::from_hash_set(hs)
         };
 
         for (k, v) in chem_obj.iter() {
