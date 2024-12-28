@@ -1,7 +1,7 @@
 use crate::utils::af_utils::*;
 use crate::utils::chem_utils::{
     custom_chem_hm_into_json, get_custom_chem_hm, get_single_custom_chem_from_file,
-    CustomChemistry, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY,
+    CustomChemistry, ExpectedOri, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY,
 };
 use crate::utils::constants::*;
 use crate::utils::prog_utils::{self, download_to_file_compute_hash};
@@ -410,7 +410,7 @@ pub fn clean_chemistries(
     Ok(())
 }
 
-/// Remove the entry for the provided chemistry in `chemistries.json` if it is present.
+/// Remove the entry (or entries matching the provided regex) for the provided chemistry in `chemistries.json` if it is present.
 pub fn remove_chemistry(
     af_home_path: PathBuf,
     remove_opts: crate::simpleaf_commands::ChemistryRemoveOpts,
@@ -467,6 +467,8 @@ pub fn remove_chemistry(
     Ok(())
 }
 
+/// Lookup the chemistry, or the chemistries matching the provided regex in the
+/// chemistry registry.
 pub fn lookup_chemistry(
     af_home_path: PathBuf,
     lookup_opts: crate::simpleaf_commands::ChemistryLookupOpts,
@@ -532,6 +534,8 @@ impl<'a> FetchSet<'a> {
     }
 }
 
+/// Fetch the permit lists for the provided chemistry (or the chemistries matching the provided
+/// regex) in the registry.
 pub fn fetch_chemistries(
     af_home: PathBuf,
     refresh_opts: crate::simpleaf_commands::ChemistryFetchOpts,

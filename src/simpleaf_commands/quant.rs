@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
 use super::MapQuantOpts;
+use crate::utils::chem_utils::ExpectedOri;
 use crate::utils::constants::{CHEMISTRIES_PATH, NUM_SAMPLE_LINES};
 
 fn get_generic_buf_reader(ipath: &PathBuf) -> anyhow::Result<impl BufRead> {

@@ -9,12 +9,11 @@ use std::fmt;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
-use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use tracing::{debug, error, info, warn};
 
 use crate::atac::commands::AtacChemistry;
-use crate::utils::chem_utils::{get_single_custom_chem_from_file, CustomChemistry};
+use crate::utils::chem_utils::{get_single_custom_chem_from_file, CustomChemistry, ExpectedOri};
 use crate::utils::{self, prog_utils};
 
 use super::chem_utils::{QueryInRegistry, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY};
@@ -704,49 +703,6 @@ pub fn add_or_transform_fragment_library(
             }
             Ok(FragmentTransformationType::Identity)
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, EnumIter)]
-pub enum ExpectedOri {
-    Forward,
-    Reverse,
-    Both,
-}
-
-impl std::fmt::Display for ExpectedOri {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-impl ExpectedOri {
-    pub fn default() -> ExpectedOri {
-        ExpectedOri::Both
-    }
-
-    pub fn as_str(&self) -> &str {
-        match self {
-            ExpectedOri::Forward => "fw",
-            ExpectedOri::Reverse => "rc",
-            ExpectedOri::Both => "both",
-        }
-    }
-
-    // construct the expected_ori from a str
-    pub fn from_str(s: &str) -> Result<ExpectedOri> {
-        match s {
-            "fw" => Ok(ExpectedOri::Forward),
-            "rc" => Ok(ExpectedOri::Reverse),
-            "both" => Ok(ExpectedOri::Both),
-            _ => Err(anyhow!("Invalid expected_ori value: {}", s)),
-        }
-    }
-
-    pub fn all_to_str() -> Vec<String> {
-        ExpectedOri::iter()
-            .map(|v| v.to_string())
-            .collect::<Vec<String>>()
     }
 }
 

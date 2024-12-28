@@ -1,12 +1,12 @@
-use crate::utils::af_utils::{
-    extract_geometry, parse_resource_json_file, validate_geometry, ExpectedOri,
-};
+use crate::utils::af_utils::{extract_geometry, parse_resource_json_file, validate_geometry};
 use crate::utils::constants::*;
 use anyhow::{anyhow, bail, Context, Result};
 use semver::Version;
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::path::Path;
+use strum::EnumIter;
+use strum::IntoEnumIterator;
 
 // TODO: Change to main repo when we are ready
 
@@ -20,6 +20,49 @@ pub(crate) static REMOTE_PL_URL_KEY: &str = "remote_url";
 
 pub trait QueryInRegistry {
     fn registry_key(&self) -> &str;
+}
+
+#[derive(Debug, Clone, PartialEq, EnumIter)]
+pub enum ExpectedOri {
+    Forward,
+    Reverse,
+    Both,
+}
+
+impl std::fmt::Display for ExpectedOri {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl ExpectedOri {
+    pub fn default() -> ExpectedOri {
+        ExpectedOri::Both
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            ExpectedOri::Forward => "fw",
+            ExpectedOri::Reverse => "rc",
+            ExpectedOri::Both => "both",
+        }
+    }
+
+    // construct the expected_ori from a str
+    pub fn from_str(s: &str) -> Result<ExpectedOri> {
+        match s {
+            "fw" => Ok(ExpectedOri::Forward),
+            "rc" => Ok(ExpectedOri::Reverse),
+            "both" => Ok(ExpectedOri::Both),
+            _ => Err(anyhow!("Invalid expected_ori value: {}", s)),
+        }
+    }
+
+    pub fn all_to_str() -> Vec<String> {
+        ExpectedOri::iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<String>>()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -82,6 +125,7 @@ impl CustomChemistry {
         &self.remote_pl_url
     }
 }
+
 // IO
 impl CustomChemistry {
     pub fn into_value(self) -> Value {
