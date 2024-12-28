@@ -203,13 +203,25 @@ pub fn refresh_chemistries(
     af_home: PathBuf,
     refresh_opts: crate::simpleaf_commands::ChemistryRefreshOpts,
 ) -> Result<()> {
+    let dry_run = refresh_opts.dry_run;
+    let dry_run_pref = if dry_run { "[dry_run] : " } else { "" };
+    let dry_run_dir = af_home.join("plist_dryrun");
+
     // if the old custom chem file exists, then warn the user about it
     // but read it in and attempt to populate.
     let custom_chem_file = af_home.join(CUSTOM_CHEMISTRIES_PATH);
     let merge_custom_chem = if custom_chem_file.exists() {
-        warn!("The \"custom_chemistries.json\" file is deprecated, and in the future, these chemistries should be 
+        warn!("{}The \"custom_chemistries.json\" file is deprecated, and in the future, these chemistries should be 
         regustered in the \"chemistries.json\" file instead. We will attempt to automatically migrate over the old 
-        chemistries into the new file");
+        chemistries into the new file", dry_run_pref);
+        true
+    } else {
+        false
+    };
+
+    let chem_path = af_home.join(CHEMISTRIES_PATH);
+    let fresh_download = if !chem_path.is_file() {
+        prog_utils::download_to_file(CHEMISTRIES_URL, &chem_path)?;
         true
     } else {
         false
@@ -217,11 +229,31 @@ pub fn refresh_chemistries(
 
     // check if the chemistry file is absent altogether
     // if so, then download it
-    let chem_path = af_home.join(CHEMISTRIES_PATH);
-    if !chem_path.is_file() {
-        prog_utils::download_to_file(CHEMISTRIES_URL, &chem_path)?;
+    let chem_path = if dry_run {
+        std::fs::create_dir_all(&dry_run_dir).with_context(|| {
+            format!(
+                "could not create dry run directory {}",
+                dry_run_dir.display()
+            )
+        })?;
+        let dry_run_chem_path = dry_run_dir.join(CHEMISTRIES_PATH);
+        std::fs::copy(chem_path, &dry_run_chem_path)?;
+        dry_run_chem_path
     } else {
-        let tmp_chem_path = af_home.join(CHEMISTRIES_PATH).with_extension("tmp.json");
+        af_home.join(CHEMISTRIES_PATH)
+    };
+
+    // if it's a dry-run, copy over the custom chems if we have one
+    let custom_chem_file = if merge_custom_chem && dry_run {
+        let p = dry_run_dir.join(CUSTOM_CHEMISTRIES_PATH);
+        std::fs::copy(custom_chem_file, &p)?;
+        p
+    } else {
+        custom_chem_file
+    };
+
+    if !fresh_download {
+        let tmp_chem_path = chem_path.with_extension("tmp.json");
         prog_utils::download_to_file(CHEMISTRIES_URL, &tmp_chem_path)?;
         if let Some(existing_chem) = parse_resource_json_file(&chem_path, None)?.as_object_mut() {
             if let Some(new_chem) = parse_resource_json_file(&tmp_chem_path, None)?.as_object() {
@@ -244,7 +276,7 @@ pub fn refresh_chemistries(
                                     .expect("version should be a string"),
                             )?;
                             if refresh_opts.force || new_ver > curr_ver {
-                                info!("updating {}", k);
+                                info!("{}updating {}", dry_run_pref, k);
                                 existing_chem.insert(k.clone(), v.clone());
                             }
                         }
@@ -281,7 +313,7 @@ pub fn refresh_chemistries(
             {
                 for (k, v) in old_custom_chem.iter() {
                     if new_chem.contains_key(k) {
-                        warn!("The newly downloaded \"chemistries.json\" file already contained the key {}, skipping entry from the existing \"custom_chemistries.json\" file.", k);
+                        warn!("{}The newly downloaded \"chemistries.json\" file already contained the key {}, skipping entry from the existing \"custom_chemistries.json\" file.", dry_run_pref, k);
                     } else {
                         let new_ent = json!({
                             "geometry": v,
@@ -289,7 +321,7 @@ pub fn refresh_chemistries(
                             "version" : "0.1.0"
                         });
                         new_chem.insert(k.to_owned(), new_ent);
-                        info!("successfully inserted {} from old custom chemistries file into the new chemistries registry", k);
+                        info!("{}successfully inserted {} from old custom chemistries file into the new chemistries registry", dry_run_pref, k);
                     }
                 }
 
@@ -311,6 +343,17 @@ pub fn refresh_chemistries(
             bail!("Could not parse newly downloaded \"chemistries.json\" file as a JSON object, something is wrong. Please report this on GitHub.");
         }
     }
+
+    // if it's a dry run, remove the whole directory we created
+    if dry_run {
+        std::fs::remove_dir_all(&dry_run_dir).with_context(|| {
+            format!(
+                "couldn't remove the dry run directory {}",
+                dry_run_dir.display()
+            )
+        })?;
+    }
+
     Ok(())
 }
 
@@ -356,7 +399,7 @@ pub fn clean_chemistries(
     let rem_pls = &present_pls - &used_pls;
     // check if the chemistry already exists and log
     if dry_run {
-        info!("The following files in the permit list directory are unused and would be removed: {:#?}", rem_pls);
+        info!("[dry_run] : The following files in the permit list directory are unused and would be removed: {:#?}", rem_pls);
     } else {
         for pl in rem_pls {
             info!("removing {}", pl.display());
@@ -537,7 +580,7 @@ pub fn fetch_chemistries(
                         if let Some(serde_json::Value::String(rpath)) = v.get(REMOTE_PL_URL_KEY) {
                             if refresh_opts.dry_run {
                                 info!(
-                                    "fetch would fetch missing file {} for {} from {}",
+                                    "[dry_run] : fetch would fetch missing file {} for {} from {}",
                                     pfile, k, rpath
                                 );
                             } else {
