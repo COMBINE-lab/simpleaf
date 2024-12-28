@@ -22,6 +22,8 @@ pub trait QueryInRegistry {
     fn registry_key(&self) -> &str;
 }
 
+/// Represents the expected orientation for a chemistry; the
+/// orientation in which the fragment is expected to map.
 #[derive(Debug, Clone, PartialEq, EnumIter)]
 pub enum ExpectedOri {
     Forward,
@@ -40,6 +42,7 @@ impl ExpectedOri {
         ExpectedOri::Both
     }
 
+    /// convert an `ExpectedOri` to a string
     pub fn as_str(&self) -> &str {
         match self {
             ExpectedOri::Forward => "fw",
@@ -48,7 +51,7 @@ impl ExpectedOri {
         }
     }
 
-    // construct the expected_ori from a str
+    // construct the `ExpectedOri` from a str
     pub fn from_str(s: &str) -> Result<ExpectedOri> {
         match s {
             "fw" => Ok(ExpectedOri::Forward),
@@ -58,6 +61,8 @@ impl ExpectedOri {
         }
     }
 
+    /// Return a vector of all of the string representations of
+    /// ExpectedOris
     pub fn all_to_str() -> Vec<String> {
         ExpectedOri::iter()
             .map(|v| v.to_string())
@@ -65,6 +70,10 @@ impl ExpectedOri {
     }
 }
 
+/// A CustomChemistry is a description of a chemistry that is not
+/// covered under the different built-in chemistries.  It defines the
+/// relevant information about how a chemistry should be defined including
+/// the name, geometry string, potential permit list etc.
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub struct CustomChemistry {
@@ -77,13 +86,14 @@ pub struct CustomChemistry {
     pub meta: Option<Value>,
 }
 
+/// The key to use to query a custom chemistry
+/// in the registry.
 impl QueryInRegistry for CustomChemistry {
     fn registry_key(&self) -> &str {
         self.name()
     }
 }
 
-#[allow(dead_code)]
 impl CustomChemistry {
     pub fn simple_custom(geometry: &str) -> Result<CustomChemistry> {
         extract_geometry(geometry)?;
@@ -121,6 +131,7 @@ impl CustomChemistry {
         &self.plist_name
     }
 
+    #[allow(dead_code)]
     pub fn remote_pl_url(&self) -> &Option<String> {
         &self.remote_pl_url
     }

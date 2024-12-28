@@ -369,6 +369,8 @@ pub enum PermitListResult {
     UnregisteredChemistry,
 }
 
+/// Check if the provided directory `odir` exists, and create it if it doesn't.
+/// Returns Ok(()) on success or an `anyhow::Error` otherwise.
 pub fn create_dir_if_absent<T: AsRef<Path>>(odir: T) -> Result<()> {
     let pdir = odir.as_ref();
     if !pdir.exists() {
@@ -382,6 +384,9 @@ pub fn create_dir_if_absent<T: AsRef<Path>>(odir: T) -> Result<()> {
     Ok(())
 }
 
+/// Checks if the provided str `s` is a builtin (designated by starting with a double-underscore
+/// "__").  If the provided string is a builtin, then return the part after the leading "__",
+/// otherwise return `None`.
 fn is_builtin(s: &str) -> Option<&str> {
     // anything starting with `__` is a built-in or reserved keyword, so
     // don't attempt to parse it as a geometry.
