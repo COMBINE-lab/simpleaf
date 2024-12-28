@@ -88,7 +88,7 @@ impl CustomChemistry {
         let mut value = json!({
             GEOMETRY_KEY: self.geometry
         });
-        value[EXPECTED_ORI_KEY] = json!(self.expected_ori.to_string());
+        value[EXPECTED_ORI_KEY] = json!(self.expected_ori.as_str());
         value[VERSION_KEY] = json!(self.version);
         value[LOCAL_PL_PATH_KEY] = if let Some(lpp) = self.plist_name {
             json!(lpp)

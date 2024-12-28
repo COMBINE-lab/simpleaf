@@ -716,7 +716,7 @@ pub enum ExpectedOri {
 
 impl std::fmt::Display for ExpectedOri {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self.as_str())
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -736,9 +736,9 @@ impl ExpectedOri {
     // construct the expected_ori from a str
     pub fn from_str(s: &str) -> Result<ExpectedOri> {
         match s {
-            "fw" | "\"fw\"" => Ok(ExpectedOri::Forward),
-            "rc" | "\"rc\"" => Ok(ExpectedOri::Reverse),
-            "both" | "\"both\"" => Ok(ExpectedOri::Both),
+            "fw" => Ok(ExpectedOri::Forward),
+            "rc" => Ok(ExpectedOri::Reverse),
+            "both" => Ok(ExpectedOri::Both),
             _ => Err(anyhow!("Invalid expected_ori value: {}", s)),
         }
     }
