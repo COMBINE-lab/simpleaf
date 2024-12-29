@@ -1,10 +1,11 @@
 use crate::utils::af_utils::*;
 use crate::utils::chem_utils::{
     custom_chem_hm_into_json, get_custom_chem_hm, get_single_custom_chem_from_file,
-    CustomChemistry, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY,
+    CustomChemistry, ExpectedOri, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY,
 };
 use crate::utils::constants::*;
 use crate::utils::prog_utils::{self, download_to_file_compute_hash};
+use regex::Regex;
 
 use anyhow::{bail, Context, Result};
 use semver::Version;
@@ -202,13 +203,25 @@ pub fn refresh_chemistries(
     af_home: PathBuf,
     refresh_opts: crate::simpleaf_commands::ChemistryRefreshOpts,
 ) -> Result<()> {
+    let dry_run = refresh_opts.dry_run;
+    let dry_run_pref = if dry_run { "[dry_run] : " } else { "" };
+    let dry_run_dir = af_home.join("plist_dryrun");
+
     // if the old custom chem file exists, then warn the user about it
     // but read it in and attempt to populate.
     let custom_chem_file = af_home.join(CUSTOM_CHEMISTRIES_PATH);
     let merge_custom_chem = if custom_chem_file.exists() {
-        warn!("The \"custom_chemistries.json\" file is deprecated, and in the future, these chemistries should be 
+        warn!("{}The \"custom_chemistries.json\" file is deprecated, and in the future, these chemistries should be 
         regustered in the \"chemistries.json\" file instead. We will attempt to automatically migrate over the old 
-        chemistries into the new file");
+        chemistries into the new file", dry_run_pref);
+        true
+    } else {
+        false
+    };
+
+    let chem_path = af_home.join(CHEMISTRIES_PATH);
+    let fresh_download = if !chem_path.is_file() {
+        prog_utils::download_to_file(CHEMISTRIES_URL, &chem_path)?;
         true
     } else {
         false
@@ -216,11 +229,31 @@ pub fn refresh_chemistries(
 
     // check if the chemistry file is absent altogether
     // if so, then download it
-    let chem_path = af_home.join(CHEMISTRIES_PATH);
-    if !chem_path.is_file() {
-        prog_utils::download_to_file(CHEMISTRIES_URL, &chem_path)?;
+    let chem_path = if dry_run {
+        std::fs::create_dir_all(&dry_run_dir).with_context(|| {
+            format!(
+                "could not create dry run directory {}",
+                dry_run_dir.display()
+            )
+        })?;
+        let dry_run_chem_path = dry_run_dir.join(CHEMISTRIES_PATH);
+        std::fs::copy(chem_path, &dry_run_chem_path)?;
+        dry_run_chem_path
     } else {
-        let tmp_chem_path = af_home.join(CHEMISTRIES_PATH).with_extension("tmp.json");
+        af_home.join(CHEMISTRIES_PATH)
+    };
+
+    // if it's a dry-run, copy over the custom chems if we have one
+    let custom_chem_file = if merge_custom_chem && dry_run {
+        let p = dry_run_dir.join(CUSTOM_CHEMISTRIES_PATH);
+        std::fs::copy(custom_chem_file, &p)?;
+        p
+    } else {
+        custom_chem_file
+    };
+
+    if !fresh_download {
+        let tmp_chem_path = chem_path.with_extension("tmp.json");
         prog_utils::download_to_file(CHEMISTRIES_URL, &tmp_chem_path)?;
         if let Some(existing_chem) = parse_resource_json_file(&chem_path, None)?.as_object_mut() {
             if let Some(new_chem) = parse_resource_json_file(&tmp_chem_path, None)?.as_object() {
@@ -243,7 +276,7 @@ pub fn refresh_chemistries(
                                     .expect("version should be a string"),
                             )?;
                             if refresh_opts.force || new_ver > curr_ver {
-                                info!("updating {}", k);
+                                info!("{}updating {}", dry_run_pref, k);
                                 existing_chem.insert(k.clone(), v.clone());
                             }
                         }
@@ -280,7 +313,7 @@ pub fn refresh_chemistries(
             {
                 for (k, v) in old_custom_chem.iter() {
                     if new_chem.contains_key(k) {
-                        warn!("The newly downloaded \"chemistries.json\" file already contained the key {}, skipping entry from the existing \"custom_chemistries.json\" file.", k);
+                        warn!("{}The newly downloaded \"chemistries.json\" file already contained the key {}, skipping entry from the existing \"custom_chemistries.json\" file.", dry_run_pref, k);
                     } else {
                         let new_ent = json!({
                             "geometry": v,
@@ -288,7 +321,7 @@ pub fn refresh_chemistries(
                             "version" : "0.1.0"
                         });
                         new_chem.insert(k.to_owned(), new_ent);
-                        info!("successfully inserted {} from old custom chemistries file into the new chemistries registry", k);
+                        info!("{}successfully inserted {} from old custom chemistries file into the new chemistries registry", dry_run_pref, k);
                     }
                 }
 
@@ -310,6 +343,17 @@ pub fn refresh_chemistries(
             bail!("Could not parse newly downloaded \"chemistries.json\" file as a JSON object, something is wrong. Please report this on GitHub.");
         }
     }
+
+    // if it's a dry run, remove the whole directory we created
+    if dry_run {
+        std::fs::remove_dir_all(&dry_run_dir).with_context(|| {
+            format!(
+                "couldn't remove the dry run directory {}",
+                dry_run_dir.display()
+            )
+        })?;
+    }
+
     Ok(())
 }
 
@@ -355,7 +399,7 @@ pub fn clean_chemistries(
     let rem_pls = &present_pls - &used_pls;
     // check if the chemistry already exists and log
     if dry_run {
-        info!("The following files in the permit list directory are unused and would be removed: {:#?}", rem_pls);
+        info!("[dry_run] : The following files in the permit list directory are unused and would be removed: {:#?}", rem_pls);
     } else {
         for pl in rem_pls {
             info!("removing {}", pl.display());
@@ -366,7 +410,7 @@ pub fn clean_chemistries(
     Ok(())
 }
 
-/// Remove the entry for the provided chemistry in `chemistries.json` if it is present.
+/// Remove the entry (or entries matching the provided regex) for the provided chemistry in `chemistries.json` if it is present.
 pub fn remove_chemistry(
     af_home_path: PathBuf,
     remove_opts: crate::simpleaf_commands::ChemistryRemoveOpts,
@@ -376,12 +420,37 @@ pub fn remove_chemistry(
     let chem_p = af_home_path.join(CHEMISTRIES_PATH);
 
     let mut chem_hm = get_custom_chem_hm(&chem_p)?;
+    let mut num_matched = 0;
+    let keys = chem_hm.keys().cloned().collect::<Vec<String>>();
 
-    // check if the chemistry already exists and log
-    if chem_hm.contains_key(&name) {
-        info!("chemistry {} found in the registry; removing it!", name);
-        chem_hm.remove(&name);
+    if let Ok(name_re) = regex::Regex::new(&name) {
+        for k in keys {
+            if name_re.is_match(&k) {
+                num_matched += 1;
+                if remove_opts.dry_run {
+                    info!(
+                        "[dry_run] : would remove chemistry {} from the registry.",
+                        k
+                    );
+                } else {
+                    info!("chemistry {} found in the registry; removing it!", k);
+                    chem_hm.remove(&k);
+                }
+            }
+        }
+    } else {
+        bail!(
+            "The provided chemistry name {} was neither a valid chemistry name nor a valid regex",
+            name
+        );
+    }
 
+    if num_matched == 0 {
+        info!(
+            "no chemistry with name {} (or matching this as a regex) was found in the registry; nothing to remove",
+            name
+        );
+    } else if !remove_opts.dry_run {
         // convert the custom chemistry hashmap to json
         let v = custom_chem_hm_into_json(chem_hm)?;
 
@@ -393,16 +462,13 @@ pub fn remove_chemistry(
         custom_chem_file
             .write_all(serde_json::to_string_pretty(&v).unwrap().as_bytes())
             .with_context(|| format!("could not write {}", chem_p.display()))?;
-    } else {
-        info!(
-            "no chemistry with name {} was found in the registry; nothing to remove",
-            name
-        );
     }
 
     Ok(())
 }
 
+/// Lookup the chemistry, or the chemistries matching the provided regex in the
+/// chemistry registry.
 pub fn lookup_chemistry(
     af_home_path: PathBuf,
     lookup_opts: crate::simpleaf_commands::ChemistryLookupOpts,
@@ -420,6 +486,19 @@ pub fn lookup_chemistry(
         println!("{:#?}", cc);
     } else {
         info!("no chemistry with name {} was found in the registry!", name);
+        info!(
+            "treating {} as a regex and searching for matching chemistries",
+            name
+        );
+        if let Ok(re) = Regex::new(&name) {
+            for (cname, cval) in chem_hm.iter() {
+                if re.is_match(cname) {
+                    println!("chemistry name : {}", cname);
+                    println!("==============");
+                    println!("{:#?}", cval);
+                }
+            }
+        }
     }
 
     Ok(())
@@ -427,19 +506,36 @@ pub fn lookup_chemistry(
 
 struct FetchSet<'a> {
     pub m: HashSet<&'a String>,
-    pub fetch_all: bool,
+    pub re: Option<Regex>,
 }
 
 impl<'a> FetchSet<'a> {
+    pub fn from_re(s: &str) -> Result<Self> {
+        if let Ok(re) = regex::Regex::new(s) {
+            Ok(Self {
+                m: HashSet::new(),
+                re: Some(re),
+            })
+        } else {
+            bail!("could not compile regex : [{}]", s)
+        }
+    }
+
+    pub fn from_hash_set(m: HashSet<&'a String>) -> Self {
+        Self { m, re: None }
+    }
+
     pub fn contains(&self, k: &String) -> bool {
-        if self.fetch_all {
-            true
+        if let Some(ref re) = self.re {
+            re.is_match(k)
         } else {
             self.m.contains(k)
         }
     }
 }
 
+/// Fetch the permit lists for the provided chemistry (or the chemistries matching the provided
+/// regex) in the registry.
 pub fn fetch_chemistries(
     af_home: PathBuf,
     refresh_opts: crate::simpleaf_commands::ChemistryFetchOpts,
@@ -463,20 +559,17 @@ pub fn fetch_chemistries(
 
     if let Some(chem_obj) = parse_resource_json_file(&chem_path, None)?.as_object() {
         // if the user used the special `*`, then we lookup all chemistries
-        let fetch_chems: FetchSet = if refresh_opts.chemistries.len() == 1
-            && matches!(refresh_opts.chemistries.first(), Some(x) if x == "*")
-        {
-            FetchSet {
-                m: HashSet::new(),
-                fetch_all: true,
-            }
+        let fetch_chems: FetchSet = if refresh_opts.chemistries.len() == 1 {
+            FetchSet::from_re(
+                refresh_opts
+                    .chemistries
+                    .first()
+                    .expect("first entry is valid"),
+            )?
         } else {
             // otherwise, collect just the set they requested
             let hs = HashSet::from_iter(refresh_opts.chemistries.iter());
-            FetchSet {
-                m: hs,
-                fetch_all: false,
-            }
+            FetchSet::from_hash_set(hs)
         };
 
         for (k, v) in chem_obj.iter() {
@@ -491,7 +584,7 @@ pub fn fetch_chemistries(
                         if let Some(serde_json::Value::String(rpath)) = v.get(REMOTE_PL_URL_KEY) {
                             if refresh_opts.dry_run {
                                 info!(
-                                    "fetch would fetch missing file {} for {} from {}",
+                                    "[dry_run] : fetch would fetch missing file {} for {} from {}",
                                     pfile, k, rpath
                                 );
                             } else {

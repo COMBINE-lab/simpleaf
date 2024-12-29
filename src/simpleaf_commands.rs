@@ -445,9 +445,12 @@ pub struct IndexOpts {
 #[derive(Args, Clone, Debug)]
 #[command(arg_required_else_help = true)]
 pub struct ChemistryRemoveOpts {
-    /// the name of the chemistry you wish to remove
+    /// the name of the chemistry you wish to remove (can be a rege;x)
     #[arg(short, long)]
     pub name: String,
+    /// print out the action that would be taken rather than taking it
+    #[arg(short, long)]
+    pub dry_run: bool,
 }
 
 /// Download the corresponding permit lists for the chemistry/ies
@@ -520,6 +523,10 @@ pub struct ChemistryRefreshOpts {
     /// overwrite an existing matched chemistry even if the version isn't newer
     #[arg(short, long)]
     pub force: bool,
+    /// report what would happen with a refresh without actually performing one on the
+    /// actual chemistry registry.
+    #[arg(short, long)]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Subcommand)]

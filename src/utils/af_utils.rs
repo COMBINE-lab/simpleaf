@@ -9,12 +9,11 @@ use std::fmt;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
-use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::atac::commands::AtacChemistry;
-use crate::utils::chem_utils::{get_single_custom_chem_from_file, CustomChemistry};
+use crate::utils::chem_utils::{get_single_custom_chem_from_file, CustomChemistry, ExpectedOri};
 use crate::utils::{self, prog_utils};
 
 use super::chem_utils::{QueryInRegistry, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY};
@@ -370,6 +369,8 @@ pub enum PermitListResult {
     UnregisteredChemistry,
 }
 
+/// Check if the provided directory `odir` exists, and create it if it doesn't.
+/// Returns Ok(()) on success or an `anyhow::Error` otherwise.
 pub fn create_dir_if_absent<T: AsRef<Path>>(odir: T) -> Result<()> {
     let pdir = odir.as_ref();
     if !pdir.exists() {
@@ -383,30 +384,65 @@ pub fn create_dir_if_absent<T: AsRef<Path>>(odir: T) -> Result<()> {
     Ok(())
 }
 
+/// Checks if the provided str `s` is a builtin (designated by starting with a double-underscore
+/// "__").  If the provided string is a builtin, then return the part after the leading "__",
+/// otherwise return `None`.
+fn is_builtin(s: &str) -> Option<&str> {
+    // anything starting with `__` is a built-in or reserved keyword, so
+    // don't attempt to parse it as a geometry.
+    if s.starts_with("__") {
+        // calling `unwrap` here is OK because we
+        // called `starts_with` above to determine we have a leading `__`
+        let keyword = s.strip_prefix("__").unwrap();
+        Some(keyword)
+    } else {
+        None
+    }
+}
+
+/// determines if a given geometry string is valid; if so
+/// it returns `Ok(())`, otherwise it returns an `anyhow::Error` describing
+/// why parsing failed.
+/// NOTE: Currently, any builtin (i.e. geometry string starting with "__") will be considered
+/// valid.
 pub fn validate_geometry(geo: &str) -> Result<()> {
-    if geo != "__builtin" {
+    if let Some(builtin_kwd) = is_builtin(geo) {
+        debug!(
+            "geometry string started with \"__\" and so is reserved. Keyword :: [{}]",
+            builtin_kwd
+        );
+        Ok(()) //bail!("The provided geometry is a builtin keyword [{}] (preceeded by \"__\") and so no attempt was made to parse it", builtin_kwd);
+    } else {
         let fg = FragmentGeomDesc::try_from(geo);
-        return match fg {
+        match fg {
             Ok(_fg) => Ok(()),
             Err(e) => {
                 bail!("Could not parse geometry {}. Please ensure that it is a valid geometry definition wrapped by quotes. The error message was: {:?}", geo, e);
             }
-        };
-    }
-    Ok(())
-}
-
-pub fn extract_geometry(geo: &str) -> Result<FragmentGeomDesc> {
-    let fg = FragmentGeomDesc::try_from(geo);
-    match fg {
-        Ok(fg) => Ok(fg),
-        Err(e) => {
-            error!("Could not parse geometry {}. Please ensure that it is a valid geometry definition wrapped by quotes. The error message was: {:?}", geo, e);
-            Err(e)
         }
     }
 }
 
+/// Parses the geometry encoded by the string `geo`, returning an `Ok(FragmentGeomDesc)`
+/// if the string is a valid geometry description and an `anyhow::Error` otherwise.
+/// NOTE: As opposed to `validate_geometry`, if the passed in string is a builtin, this function
+/// will return an error (as there is no corresponding `FragmentGeomDesc` in general).
+pub fn extract_geometry(geo: &str) -> Result<FragmentGeomDesc> {
+    if let Some(builtin_kwd) = is_builtin(geo) {
+        bail!("The provided geometry is a builtin keyword [{}] (preceeded by \"__\") and so no attempt was made to parse it", builtin_kwd);
+    } else {
+        let fg = FragmentGeomDesc::try_from(geo);
+        match fg {
+            Ok(fg) => Ok(fg),
+            Err(e) => {
+                error!("Could not parse geometry {}. Please ensure that it is a valid geometry definition wrapped by quotes. The error message was: {:?}", geo, e);
+                Err(e)
+            }
+        }
+    }
+}
+
+/// Adds the appropriate chemistry arguments to the `salmon` command line in the expected format.
 pub fn add_chemistry_to_args_salmon(chem_str: &str, cmd: &mut std::process::Command) -> Result<()> {
     match KNOWN_CHEM_MAP_SALMON.get(chem_str) {
         Some(v) => {
@@ -429,6 +465,7 @@ pub fn add_chemistry_to_args_salmon(chem_str: &str, cmd: &mut std::process::Comm
     Ok(())
 }
 
+/// Adds the appropriate chemistry arguments to the `piscem` command line in the expected format.
 pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Command) -> Result<()> {
     match KNOWN_CHEM_MAP_PISCEM.get(chem_str) {
         Some(v) => {
@@ -685,49 +722,13 @@ pub fn add_or_transform_fragment_library(
     }
 }
 
-#[derive(Debug, Clone, PartialEq, EnumIter)]
-pub enum ExpectedOri {
-    Forward,
-    Reverse,
-    Both,
-}
-
-impl std::fmt::Display for ExpectedOri {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self.as_str())
-    }
-}
-
-impl ExpectedOri {
-    pub fn default() -> ExpectedOri {
-        ExpectedOri::Both
-    }
-
-    pub fn as_str(&self) -> &str {
-        match self {
-            ExpectedOri::Forward => "fw",
-            ExpectedOri::Reverse => "rc",
-            ExpectedOri::Both => "both",
-        }
-    }
-
-    // construct the expected_ori from a str
-    pub fn from_str(s: &str) -> Result<ExpectedOri> {
-        match s {
-            "fw" => Ok(ExpectedOri::Forward),
-            "rc" => Ok(ExpectedOri::Reverse),
-            "both" => Ok(ExpectedOri::Both),
-            _ => Err(anyhow!("Invalid expected_ori value: {}", s)),
-        }
-    }
-
-    pub fn all_to_str() -> Vec<String> {
-        ExpectedOri::iter()
-            .map(|v| v.to_string())
-            .collect::<Vec<String>>()
-    }
-}
-
+/// Reads the JSON file at the provided path `p`, parses the file and returns the result as an
+/// `Ok(serde_json::Value)` if the parse is successful.  If the file exists and the parsing is not
+/// successful, returns an `anyhow::Error` describing the failure.
+///
+/// If no file exists at the provided path `p`, then the `url` argument is evaluated.
+/// If it is `None`, nothing is done, otherwise, if it is `Some(s)`, then `s` is treated
+/// as a remote URL and an attempt is made to fetch and parse the content from this URL.
 pub fn parse_resource_json_file(p: &Path, url: Option<&str>) -> Result<Value> {
     // check if the custom_chemistries.json file exists
     let resource_exists = p.is_file();

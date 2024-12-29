@@ -1,12 +1,13 @@
-use crate::utils::af_utils::{
-    extract_geometry, parse_resource_json_file, validate_geometry, ExpectedOri,
-};
+use crate::utils::af_utils::{extract_geometry, parse_resource_json_file, validate_geometry};
 use crate::utils::constants::*;
 use anyhow::{anyhow, bail, Context, Result};
 use semver::Version;
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::path::Path;
+use strum::EnumIter;
+use strum::IntoEnumIterator;
+use tracing::warn;
 
 // TODO: Change to main repo when we are ready
 
@@ -22,6 +23,58 @@ pub trait QueryInRegistry {
     fn registry_key(&self) -> &str;
 }
 
+/// Represents the expected orientation for a chemistry; the
+/// orientation in which the fragment is expected to map.
+#[derive(Debug, Clone, PartialEq, EnumIter)]
+pub enum ExpectedOri {
+    Forward,
+    Reverse,
+    Both,
+}
+
+impl std::fmt::Display for ExpectedOri {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl ExpectedOri {
+    pub fn default() -> ExpectedOri {
+        ExpectedOri::Both
+    }
+
+    /// convert an `ExpectedOri` to a string
+    pub fn as_str(&self) -> &str {
+        match self {
+            ExpectedOri::Forward => "fw",
+            ExpectedOri::Reverse => "rc",
+            ExpectedOri::Both => "both",
+        }
+    }
+
+    // construct the `ExpectedOri` from a str
+    pub fn from_str(s: &str) -> Result<ExpectedOri> {
+        match s {
+            "fw" => Ok(ExpectedOri::Forward),
+            "rc" => Ok(ExpectedOri::Reverse),
+            "both" => Ok(ExpectedOri::Both),
+            _ => Err(anyhow!("Invalid expected_ori value: {}", s)),
+        }
+    }
+
+    /// Return a vector of all of the string representations of
+    /// ExpectedOris
+    pub fn all_to_str() -> Vec<String> {
+        ExpectedOri::iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<String>>()
+    }
+}
+
+/// A CustomChemistry is a description of a chemistry that is not
+/// covered under the different built-in chemistries.  It defines the
+/// relevant information about how a chemistry should be defined including
+/// the name, geometry string, potential permit list etc.
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub struct CustomChemistry {
@@ -34,13 +87,14 @@ pub struct CustomChemistry {
     pub meta: Option<Value>,
 }
 
+/// The key to use to query a custom chemistry
+/// in the registry.
 impl QueryInRegistry for CustomChemistry {
     fn registry_key(&self) -> &str {
         self.name()
     }
 }
 
-#[allow(dead_code)]
 impl CustomChemistry {
     pub fn simple_custom(geometry: &str) -> Result<CustomChemistry> {
         extract_geometry(geometry)?;
@@ -78,34 +132,40 @@ impl CustomChemistry {
         &self.plist_name
     }
 
+    #[allow(dead_code)]
     pub fn remote_pl_url(&self) -> &Option<String> {
         &self.remote_pl_url
     }
 }
-// IO
-impl CustomChemistry {
-    pub fn into_value(self) -> Value {
+
+/// Allow obtaining a `serde_json::Value` from a `CustomChemistry`
+/// and allow converting a `CustomChemistry` into a `serde_json::Value`.
+impl From<CustomChemistry> for Value {
+    fn from(cc: CustomChemistry) -> Value {
         let mut value = json!({
-            GEOMETRY_KEY: self.geometry
+            GEOMETRY_KEY: cc.geometry
         });
-        value[EXPECTED_ORI_KEY] = json!(self.expected_ori.to_string());
-        value[VERSION_KEY] = json!(self.version);
-        value[LOCAL_PL_PATH_KEY] = if let Some(lpp) = self.plist_name {
+        value[EXPECTED_ORI_KEY] = json!(cc.expected_ori.as_str());
+        value[VERSION_KEY] = json!(cc.version);
+        value[LOCAL_PL_PATH_KEY] = if let Some(lpp) = cc.plist_name {
             json!(lpp)
         } else {
             json!(null)
         };
-        value[REMOTE_PL_URL_KEY] = if let Some(rpu) = self.remote_pl_url {
+        value[REMOTE_PL_URL_KEY] = if let Some(rpu) = cc.remote_pl_url {
             json!(rpu)
         } else {
             json!(null)
         };
-        if let Some(meta) = self.meta {
+        if let Some(meta) = cc.meta {
             value[META_KEY] = meta;
         }
         value
     }
+}
 
+// IO
+impl CustomChemistry {
     /// Parse the value that corresponds to a key in the top-level custom chemistry JSON object.
     /// The key is ONLY used for error messages and assigning the name field of the CustomChemistry struct.
     /// The value must be an json value object with a valid geometry field that can be parsed into a CustomChemistry struct.
@@ -113,6 +173,7 @@ impl CustomChemistry {
         match value {
             // deprecated case. Need to warn and return an error
             Value::String(record_v) => {
+                warn!("The geometry entry for {} was a string rather than an object. String values for geometry keys are deprecated and this should not happen!.", key);
                 match validate_geometry(record_v) {
                     Ok(_) => Err(anyhow!(
                         "Found string version of custom chemistry {}: {}. This is deprecated. Please add the chemistry again using simpleaf chem add.",
@@ -128,14 +189,11 @@ impl CustomChemistry {
             }
 
             Value::Object(obj) => {
-                let geometry = try_get_str_from_json(
-                    GEOMETRY_KEY, obj,
-                    FieldType::Mandatory,
-                    None
-                )?;
+                let geometry =
+                    try_get_str_from_json(GEOMETRY_KEY, obj, FieldType::Mandatory, None)?;
 
                 let geometry = geometry.unwrap(); // we made this Some, safe to unwrap
-                // check if geometry is valid
+                                                  // check if geometry is valid
                 validate_geometry(&geometry)?;
 
                 let expected_ori = try_get_str_from_json(
@@ -162,14 +220,13 @@ impl CustomChemistry {
                     obj,
                     FieldType::Optional,
                     Some(CustomChemistry::default_version()),
-                )?.unwrap(); // we made this Some, safe to unwrap
+                )?
+                .unwrap(); // we made this Some, safe to unwrap
 
                 Version::parse(&version).with_context(|| {
                     format!(
                         "Found invalid {} string for the custom chemistry {}: {}",
-                        VERSION_KEY,
-                        key,
-                        &version
+                        VERSION_KEY, key, &version
                     )
                 })?;
 
@@ -291,7 +348,7 @@ pub fn custom_chem_hm_into_json(custom_chem_hm: HashMap<String, CustomChemistry>
     let v: Value = custom_chem_hm
         .into_iter()
         .map(|(k, v)| {
-            let value = v.into_value();
+            let value: Value = v.into();
             (k, value)
         })
         .collect();
