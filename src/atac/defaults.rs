@@ -1,3 +1,4 @@
+/// default parameters for ATAC-seq
 use crate::defaults::DefaultParams;
 
 pub(super) struct AtacIndexParams;

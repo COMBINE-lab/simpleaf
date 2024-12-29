@@ -400,6 +400,11 @@ fn is_builtin(s: &str) -> Option<&str> {
     }
 }
 
+/// determines if a given geometry string is valid; if so
+/// it returns `Ok(())`, otherwise it returns an `anyhow::Error` describing
+/// why parsing failed.
+/// NOTE: Currently, any builtin (i.e. geometry string starting with "__") will be considered
+/// valid.
 pub fn validate_geometry(geo: &str) -> Result<()> {
     if let Some(builtin_kwd) = is_builtin(geo) {
         debug!(
@@ -418,6 +423,10 @@ pub fn validate_geometry(geo: &str) -> Result<()> {
     }
 }
 
+/// Parses the geometry encoded by the string `geo`, returning an `Ok(FragmentGeomDesc)`
+/// if the string is a valid geometry description and an `anyhow::Error` otherwise.
+/// NOTE: As opposed to `validate_geometry`, if the passed in string is a builtin, this function
+/// will return an error (as there is no corresponding `FragmentGeomDesc` in general).
 pub fn extract_geometry(geo: &str) -> Result<FragmentGeomDesc> {
     if let Some(builtin_kwd) = is_builtin(geo) {
         bail!("The provided geometry is a builtin keyword [{}] (preceeded by \"__\") and so no attempt was made to parse it", builtin_kwd);
@@ -433,6 +442,7 @@ pub fn extract_geometry(geo: &str) -> Result<FragmentGeomDesc> {
     }
 }
 
+/// Adds the appropriate chemistry arguments to the `salmon` command line in the expected format.
 pub fn add_chemistry_to_args_salmon(chem_str: &str, cmd: &mut std::process::Command) -> Result<()> {
     match KNOWN_CHEM_MAP_SALMON.get(chem_str) {
         Some(v) => {
@@ -455,6 +465,7 @@ pub fn add_chemistry_to_args_salmon(chem_str: &str, cmd: &mut std::process::Comm
     Ok(())
 }
 
+/// Adds the appropriate chemistry arguments to the `piscem` command line in the expected format.
 pub fn add_chemistry_to_args_piscem(chem_str: &str, cmd: &mut std::process::Command) -> Result<()> {
     match KNOWN_CHEM_MAP_PISCEM.get(chem_str) {
         Some(v) => {
@@ -711,6 +722,13 @@ pub fn add_or_transform_fragment_library(
     }
 }
 
+/// Reads the JSON file at the provided path `p`, parses the file and returns the result as an
+/// `Ok(serde_json::Value)` if the parse is successful.  If the file exists and the parsing is not
+/// successful, returns an `anyhow::Error` describing the failure.
+///
+/// If no file exists at the provided path `p`, then the `url` argument is evaluated.
+/// If it is `None`, nothing is done, otherwise, if it is `Some(s)`, then `s` is treated
+/// as a remote URL and an attempt is made to fetch and parse the content from this URL.
 pub fn parse_resource_json_file(p: &Path, url: Option<&str>) -> Result<Value> {
     // check if the custom_chemistries.json file exists
     let resource_exists = p.is_file();

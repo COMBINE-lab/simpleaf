@@ -1,3 +1,4 @@
+/// default parameters for RNA-seq
 pub trait DefaultMappingParams {
     const MAX_EC_CARD: u32;
     const MAX_HIT_OCC: u32;

@@ -5,27 +5,45 @@ The ``chemistry`` command allows operation (e.g. adding or removing) on custom c
 inspecting the information associated with a specific chemistry. The command currently has 4 sub-commands: ``add``, ``remove``, ``refresh``, and ``lookup``.  
 
 .. code-block:: bash
-    operate on or inspect the chemistry registry
 
-    Usage: simpleaf chemistry <COMMAND>
+  operate on or inspect the chemistry registry
 
-    Commands:
-      refresh  Add or refresh chemistry definitions from the upstream repository
-      add      Add a new chemistry to the registry of custom chemistries
-      remove   Remove a chemistry from the chemistry registry
-      lookup   Lookup a chemistry in the chemistry registry
-      help     Print this message or the help of the given subcommand(s)
+  Usage: simpleaf chemistry <COMMAND>
 
-    Options:
-      -h, --help     Print help
-      -V, --version  Print version
+  Commands:
+    refresh  Add or refresh chemistry definitions from the upstream repository
+    add      Add a new chemistry to the registry of custom chemistries
+    remove   Remove a chemistry from the chemistry registry
+    clean    Search for unused permit lists and remove them from the ALEVIN_FRY_HOME cache
+    lookup   Lookup a chemistry in the chemistry registry
+    fetch    Download the corresponding permit lists for the chemistry/ies
+    help     Print this message or the help of the given subcommand(s)
+
+  Options:
+    -h, --help     Print help
+    -V, --version  Print version
 
 These sub-commands are described below.
 
 ``simpleaf chemistry refresh``
 -----------------------
 
-The ``refresh`` sub-command takes no arguments, it consults the remote ``simpleaf`` GitHub repository to check for an updated chemistry registry, and, adds any new chemistries from that registry or updates the entries for any chemistries in that registry whose version number has increased.
+The ``refresh`` sub-command takes no *required* arguments; it's usage is shown below:
+
+.. code-block:: bash
+
+  Add or refresh chemistry definitions from the upstream repository
+
+  Usage: simpleaf chemistry refresh [OPTIONS]
+
+  Options:
+    -f, --force    overwrite an existing matched chemistry even if the version isn't newer
+    -d, --dry-run  report what would happen with a refresh without actually performing one on the actual chemistry registry
+    -h, --help     Print help
+
+This sub-command consults the remote ``simpleaf`` repository to check for an updated chemistry registry, and adds any new chemistries from that registry (or updates the entries for any chemistries in that registry whose version number has increased).  
+If the ``dry-run`` flag is passed, the actions to be taken will be printed, but the registry will not be modified. If the ``--force`` command is passed, local chemistry definitions will be overwritten by matching remote definitions, even if the remote
+definition has a lower version number.
 
 ``simpleaf chemistry add``
 -------------------
@@ -33,6 +51,7 @@ The ``refresh`` sub-command takes no arguments, it consults the remote ``simplea
 The ``add`` sub-command has the usage shown below:
 
 .. code-block:: bash
+
     Add a new chemistry to the registry of custom chemistries
 
     Usage: simpleaf chemistry add [OPTIONS] --name <NAME> --geometry <GEOMETRY> --expected-ori <EXPECTED_ORI>
@@ -70,16 +89,19 @@ In addition to the required fields, there are 3 optional fields:
 The ``remove`` sub-command has the usage shown below:
 
 .. code-block:: bash
-    Remove a chemistry from the chemistry registry
 
-    Usage: simpleaf chemistry remove --name <NAME>
+   Remove a chemistry from the chemistry registry
+   Usage: simpleaf chemistry remove [OPTIONS] --name <NAME>
 
-    Options:
-      -n, --name <NAME>  the name of the chemistry you wish to remove
-      -h, --help         Print help
-      -V, --version      Print version
+   Options:
+     -n, --name <NAME>  the name of the chemistry you wish to remove (can be a regex)
+     -d, --dry-run      print out the action that would be taken rather than taking it
+     -h, --help         Print help
+     -V, --version      Print version
 
-The single required argument ``--name`` should be the key (name) of an existing chemistry in the current registry. If the key (name) of any chemistry matches, it will be removed from the registry.
+The single required argument ``--name`` should be the key (name) of some chemistry in the current registry *or* a regular expression that can be used to match one or more 
+chemistries in the registry.  If this chemistry is found, it will be removed from the registry. If the ``--dry-run`` flag is passed, the chemistries to be removed 
+will be printed, but no modification of the registry will occur.
 
 ``simpleaf chemistry lookup``
 ----------------------
@@ -87,13 +109,58 @@ The single required argument ``--name`` should be the key (name) of an existing 
 The ``lookup`` sub-command has the usage shown below:
 
 .. code-block:: bash
-   Lookup a chemistry in the chemistry registry
 
-   Usage: simpleaf chemistry lookup --name <NAME>
+  Lookup a chemistry in the chemistry registry
 
-   Options:
-     -n, --name <NAME>  the name of the chemistry you wish to lookup
-     -h, --help         Print help
-     -V, --version      Print version
+  Usage: simpleaf chemistry lookup --name <NAME>
 
-The single required argument ``--name`` should be the key (name) of an existing chemistry in the current registry. If the key (name) of any chemistry matches, its associated information will be printed.
+  Options:
+    -n, --name <NAME>  the name of the chemistry you wish to lookup (or a regex for matching chemistry names)
+    -h, --help         Print help
+    -V, --version      Print version
+
+The single required argument ``--name`` should be the key (name) of a chemistry in the current registry or a regular expression that can match the names of chemistries in the 
+registry. If the provided name or regex matches any registered chemistry, its associated information will be printed.
+
+``clean`` sub-command
+---------------------
+
+The ``clean`` sub-command has the usage shown below:
+
+.. code-block:: bash
+  Search for unused permit lists and remove them from the ALEVIN_FRY_HOME cache
+
+  Usage: simpleaf chemistry clean [OPTIONS]
+
+  Options:
+    -d, --dry-run  just show what is to be removed rather than
+    -h, --help     Print help
+    -V, --version  Print version
+
+
+There is no required argument.  The sub-command will search for unused permit list files in the ``simpleaf`` permit list directory, and remove them.
+If the ``--dry-run`` flag is passed, the names of the files to be removed will be printed, but those files will noe be removed.
+
+
+``fetch`` sub-command
+---------------------
+
+The ``fetch`` sub-command has the usage shown below:
+
+.. code-block:: bash
+   
+  Download the corresponding permit lists for the chemistry/ies
+
+  Usage: simpleaf chemistry fetch [OPTIONS]
+
+  Options:
+    -c, --chemistries <CHEMISTRIES>  a list of chemistries to fetch (or a single regex for matching multiple chemistries)
+    -d, --dry-run                    show what will be downloaded without downloading anything
+    -h, --help                       Print help
+    -V, --version                    Print version
+
+
+The required ``--chemistries`` argument can be the name of a chemistry, a "," separated list of chemistries, or a (singular) regular expression 
+matching the names of multiple chemistries.  The registry will be scanned, and for any chemistry in the requested list of matching the provided
+regular expression, the corresponding permit list will be downloaded (unless it is already present).  If the ``--dry-run`` flag is passed, then 
+the permit lists that would be fetched will be printed, but none will actually be downloaded.

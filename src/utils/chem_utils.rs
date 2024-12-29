@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use strum::EnumIter;
 use strum::IntoEnumIterator;
+use tracing::warn;
 
 // TODO: Change to main repo when we are ready
 
@@ -137,30 +138,34 @@ impl CustomChemistry {
     }
 }
 
-// IO
-impl CustomChemistry {
-    pub fn into_value(self) -> Value {
+/// Allow obtaining a `serde_json::Value` from a `CustomChemistry`
+/// and allow converting a `CustomChemistry` into a `serde_json::Value`.
+impl From<CustomChemistry> for Value {
+    fn from(cc: CustomChemistry) -> Value {
         let mut value = json!({
-            GEOMETRY_KEY: self.geometry
+            GEOMETRY_KEY: cc.geometry
         });
-        value[EXPECTED_ORI_KEY] = json!(self.expected_ori.as_str());
-        value[VERSION_KEY] = json!(self.version);
-        value[LOCAL_PL_PATH_KEY] = if let Some(lpp) = self.plist_name {
+        value[EXPECTED_ORI_KEY] = json!(cc.expected_ori.as_str());
+        value[VERSION_KEY] = json!(cc.version);
+        value[LOCAL_PL_PATH_KEY] = if let Some(lpp) = cc.plist_name {
             json!(lpp)
         } else {
             json!(null)
         };
-        value[REMOTE_PL_URL_KEY] = if let Some(rpu) = self.remote_pl_url {
+        value[REMOTE_PL_URL_KEY] = if let Some(rpu) = cc.remote_pl_url {
             json!(rpu)
         } else {
             json!(null)
         };
-        if let Some(meta) = self.meta {
+        if let Some(meta) = cc.meta {
             value[META_KEY] = meta;
         }
         value
     }
+}
 
+// IO
+impl CustomChemistry {
     /// Parse the value that corresponds to a key in the top-level custom chemistry JSON object.
     /// The key is ONLY used for error messages and assigning the name field of the CustomChemistry struct.
     /// The value must be an json value object with a valid geometry field that can be parsed into a CustomChemistry struct.
@@ -168,6 +173,7 @@ impl CustomChemistry {
         match value {
             // deprecated case. Need to warn and return an error
             Value::String(record_v) => {
+                warn!("The geometry entry for {} was a string rather than an object. String values for geometry keys are deprecated and this should not happen!.", key);
                 match validate_geometry(record_v) {
                     Ok(_) => Err(anyhow!(
                         "Found string version of custom chemistry {}: {}. This is deprecated. Please add the chemistry again using simpleaf chem add.",
@@ -183,14 +189,11 @@ impl CustomChemistry {
             }
 
             Value::Object(obj) => {
-                let geometry = try_get_str_from_json(
-                    GEOMETRY_KEY, obj,
-                    FieldType::Mandatory,
-                    None
-                )?;
+                let geometry =
+                    try_get_str_from_json(GEOMETRY_KEY, obj, FieldType::Mandatory, None)?;
 
                 let geometry = geometry.unwrap(); // we made this Some, safe to unwrap
-                // check if geometry is valid
+                                                  // check if geometry is valid
                 validate_geometry(&geometry)?;
 
                 let expected_ori = try_get_str_from_json(
@@ -217,14 +220,13 @@ impl CustomChemistry {
                     obj,
                     FieldType::Optional,
                     Some(CustomChemistry::default_version()),
-                )?.unwrap(); // we made this Some, safe to unwrap
+                )?
+                .unwrap(); // we made this Some, safe to unwrap
 
                 Version::parse(&version).with_context(|| {
                     format!(
                         "Found invalid {} string for the custom chemistry {}: {}",
-                        VERSION_KEY,
-                        key,
-                        &version
+                        VERSION_KEY, key, &version
                     )
                 })?;
 
@@ -346,7 +348,7 @@ pub fn custom_chem_hm_into_json(custom_chem_hm: HashMap<String, CustomChemistry>
     let v: Value = custom_chem_hm
         .into_iter()
         .map(|(k, v)| {
-            let value = v.into_value();
+            let value: Value = v.into();
             (k, value)
         })
         .collect();
