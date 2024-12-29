@@ -1,6 +1,6 @@
 [package]
 name = "simpleaf"
-version = "0.18.0"
+version = "0.18.1"
 edition = "2021"
 authors = [
   "Rob Patro <rob@cs.umd.edu>",
@@ -54,7 +54,7 @@ tracing-subscriber = { version = "0.3.19", default-features = true, features = [
   "env-filter",
 ] }
 semver = "^1.0.24"
-serde = { version = "1.0.216", features = ["derive"] }
+serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.134"
 time = { version = "^0.3.37", features = [
   "macros",
@@ -85,7 +85,10 @@ niffler = { version = "2.6.0", default-features = false, features = [
   "gz_cloudflare_zlib",
 ] }
 blake3 = { version = "1.5.5", features = ["mmap", "serde"] }
-regex = { version = "1.11.1", default-features = false, features = ["perf", "std"] }
+regex = { version = "1.11.1", default-features = false, features = [
+  "perf",
+  "std",
+] }
 
 [profile.release]
 lto = "thin"
