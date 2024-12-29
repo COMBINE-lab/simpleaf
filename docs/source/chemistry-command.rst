@@ -5,6 +5,7 @@ The ``chemistry`` command allows operation on (e.g. adding or removing) custom c
 inspecting the information associated with a specific chemistry. The command currently has 4 sub-commands ``add``, ``remove``, ``refresh``, and ``lookup``.  
 
 .. code-block:: bash
+
   operate on or inspect the chemistry registry
 
   Usage: simpleaf chemistry <COMMAND>
@@ -30,6 +31,7 @@ These sub-commands are dscribed below.
 The ``refresh`` sub-command takes no *required* arguments; it's usage is shown below:
 
 .. code-block:: bash
+
   Add or refresh chemistry definitions from the upstream repository
 
   Usage: simpleaf chemistry refresh [OPTIONS]
@@ -49,6 +51,7 @@ definition has a lower version number.
 The ``add`` sub-command has the usage shown below:
 
 .. code-block:: bash
+
     Add a new chemistry to the registry of custom chemistries
 
     Usage: simpleaf chemistry add [OPTIONS] --name <NAME> --geometry <GEOMETRY> --expected-ori <EXPECTED_ORI>
@@ -79,6 +82,7 @@ In addition to the required fields, there are 4 optional fields: ``expected-ori`
 The ``remove`` sub-command has the usage shown below:
 
 .. code-block:: bash
+
    Remove a chemistry from the chemistry registry
    Usage: simpleaf chemistry remove [OPTIONS] --name <NAME>
 
@@ -98,6 +102,7 @@ will be printed, but no modification of the registry will occur.
 The ``lookup`` sub-command has the usage shown below:
 
 .. code-block:: bash
+
   Lookup a chemistry in the chemistry registry
 
   Usage: simpleaf chemistry lookup --name <NAME>
@@ -137,6 +142,7 @@ If the ``--dry-run`` flag is passed, the names of the files to be removed will b
 The ``fetch`` sub-command has the usage shown below:
 
 .. code-block:: bash
+   
   Download the corresponding permit lists for the chemistry/ies
 
   Usage: simpleaf chemistry fetch [OPTIONS]
