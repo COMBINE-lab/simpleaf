@@ -78,21 +78,27 @@ fn main() -> anyhow::Result<()> {
                 alevin_fry,
             },
         ),
+
         Commands::Chemistry(ChemistryCommand::Add(add_opts)) => {
             add_chemistry(af_home_path, add_opts)
         }
+
         Commands::Chemistry(ChemistryCommand::Remove(rem_opts)) => {
             remove_chemistry(af_home_path, rem_opts)
         }
+
         Commands::Chemistry(ChemistryCommand::Clean(clean_opts)) => {
             clean_chemistries(af_home_path, clean_opts)
         }
+
         Commands::Chemistry(ChemistryCommand::Lookup(lookup_opts)) => {
             lookup_chemistry(af_home_path, lookup_opts)
         }
+
         Commands::Chemistry(ChemistryCommand::Refresh(refresh_opts)) => {
             refresh_chemistries(af_home_path, refresh_opts)
         }
+
         Commands::Chemistry(ChemistryCommand::Fetch(fetch_opts)) => {
             fetch_chemistries(af_home_path, fetch_opts)
         }
