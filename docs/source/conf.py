@@ -22,7 +22,7 @@ copyright = '2022-, Dongze He, Rob Patro'
 author = 'Dongze He, Rob Patro'
 
 # The full version, including alpha/beta/rc tags
-release = '0.17.1'
+release = '0.18.2'
 
 master_doc = 'index'
 
