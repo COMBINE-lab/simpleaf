@@ -445,7 +445,7 @@ pub struct IndexOpts {
 #[derive(Args, Clone, Debug)]
 #[command(arg_required_else_help = true)]
 pub struct ChemistryRemoveOpts {
-    /// the name of the chemistry you wish to remove (can be a rege;x)
+    /// the name of the chemistry you wish to remove (can be a regex)
     #[arg(short, long)]
     pub name: String,
     /// print out the action that would be taken rather than taking it
@@ -457,7 +457,7 @@ pub struct ChemistryRemoveOpts {
 #[derive(Args, Clone, Debug)]
 #[command(arg_required_else_help = true)]
 pub struct ChemistryFetchOpts {
-    /// a list of chemistries to fetch (use "*" to download all)
+    /// a list of chemistries to fetch (or a single regex for matching multiple chemistries)
     #[arg(short, long, value_delimiter = ',')]
     pub chemistries: Vec<String>,
     /// show what will be downloaded without downloading anything
@@ -479,7 +479,7 @@ pub struct ChemistryCleanOpts {
 #[derive(Args, Clone, Debug)]
 #[command(arg_required_else_help = true)]
 pub struct ChemistryLookupOpts {
-    /// the name of the chemistry you wish to lookup
+    /// the name of the chemistry you wish to lookup (or a regex for matching chemistry names)
     #[arg(short, long)]
     pub name: String,
 }
