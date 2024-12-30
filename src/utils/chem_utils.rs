@@ -4,6 +4,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use semver::Version;
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
+use std::fmt;
 use std::path::Path;
 use strum::EnumIter;
 use strum::IntoEnumIterator;
@@ -139,22 +140,30 @@ impl CustomChemistry {
     pub fn meta(&self) -> &Option<Value> {
         &self.meta
     }
-    pub fn print(&self) {
-        println!("chemistry name\t: {}", self.name());
-        println!("{}\t: {}", GEOMETRY_KEY, self.geometry());
-        println!("{}\t: {}", EXPECTED_ORI_KEY, self.expected_ori());
+}
+
+impl fmt::Display for CustomChemistry {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "chemistry name\t: {}", self.name())?;
+        writeln!(f, "{}\t: {}", GEOMETRY_KEY, self.geometry())?;
+        writeln!(f, "{}\t: {}", EXPECTED_ORI_KEY, self.expected_ori())?;
         if let Some(plist_name) = self.plist_name() {
-            println!("{}\t: {}", LOCAL_PL_PATH_KEY, plist_name);
-        }  
+            writeln!(f, "{}\t: {}", LOCAL_PL_PATH_KEY, plist_name)?;
+        }
         if let Some(remote_pl_url) = self.remote_pl_url() {
-            println!("{}\t: {}", REMOTE_PL_URL_KEY, remote_pl_url);
+            writeln!(f, "{}\t: {}", REMOTE_PL_URL_KEY, remote_pl_url)?;
         }
 
-        if let Some(meta) = self.meta() {
-            if let Some(Value::String(s)) = meta.get("cr_filename") {
-                println!("cr_filename\t: {}", s);
+        if let Some(serde_json::Value::Object(meta)) = self.meta() {
+            if !meta.is_empty() {
+                writeln!(f, "meta\t: {{")?;
+                for (k, v) in meta.iter() {
+                    writeln!(f, "  {}\t: {:#}", k, v)?;
+                }
+                writeln!(f, "}}")?;
             }
         }
+        Ok(())
     }
 }
 
@@ -213,7 +222,7 @@ impl CustomChemistry {
                     try_get_str_from_json(GEOMETRY_KEY, obj, FieldType::Mandatory, None)?;
 
                 let geometry = geometry.unwrap(); // we made this Some, safe to unwrap
-                // check if geometry is valid
+                                                  // check if geometry is valid
                 validate_geometry(&geometry)?;
 
                 let expected_ori = try_get_str_from_json(

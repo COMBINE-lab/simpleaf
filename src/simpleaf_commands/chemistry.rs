@@ -99,7 +99,7 @@ pub fn add_chemistry(
 
             // check if the file already exists
             if local_plist_path.is_file() {
-                info!("Found a content-equivalent permit list file; Will use the existing file.");
+                info!("Found a content-equivalent permit list file; will use the existing file.");
             } else {
                 info!(
                     "Copying {} to {}",
@@ -116,7 +116,10 @@ pub fn add_chemistry(
             }
             local_plist = Some(local_plist_name.display().to_string());
         } else {
-            bail!("The provided local path does not point to a file: {}; Cannot proceed.", local_url.display());
+            bail!(
+                "The provided local path does not point to a file: {}; cannot proceed.",
+                local_url.display()
+            );
         }
     } else if let Some(ref remote_url) = add_opts.remote_url {
         let pdir = af_home_path.join("plist");
@@ -136,7 +139,9 @@ pub fn add_chemistry(
 
         // check if the file already exists
         if local_plist_path.is_file() {
-            info!("Found a cached, content-equivalent permit list file; Will use the existing file.");
+            info!(
+                "Found a cached, content-equivalent permit list file; will use the existing file."
+            );
 
             // remove what we just downloaded
             fs::remove_file(tmpfile)?;
@@ -299,7 +304,10 @@ pub fn refresh_chemistries(
                 bail!("Could not parse the main registry from \"{}\" file. Please report this on GitHub.", chem_path.display());
             }
         } else {
-            bail!("Could not parse the main registry from \"{}\" file. Please report this on GitHub.", chem_path.display());
+            bail!(
+                "Could not parse the main registry from \"{}\" file. Please report this on GitHub.",
+                chem_path.display()
+            );
         }
     }
 
@@ -378,7 +386,10 @@ pub fn clean_chemistries(
     let chem_p = af_home_path.join(CHEMISTRIES_PATH);
     let plist_path = af_home_path.join("plist");
     if !plist_path.is_dir() {
-        info!("The permit list cache directory {} does not exist; Nothing to clean.", plist_path.display());
+        info!(
+            "The permit list cache directory {} does not exist; Nothing to clean.",
+            plist_path.display()
+        );
         return Ok(());
     }
 
@@ -412,7 +423,8 @@ pub fn clean_chemistries(
             info!("[dry_run] : No permit list files in the cache directory are currently unused; Nothing to clean.");
         } else {
             info!("[dry_run] : The following files in the permit list directory do not match any registered chemistries and would be removed: {:#?}", present_pls);
-        }    } else {
+        }
+    } else {
         for pl in rem_pls {
             info!("removing file from {}", pl.display());
             std::fs::remove_file(pl)?;
@@ -459,7 +471,7 @@ pub fn remove_chemistry(
 
     if num_matched == 0 {
         info!(
-            "No chemistry with name \"{}\" (or matching this as a regex) was found in the registry; Nothing to remove.",
+            "No chemistry with name \"{}\" (or matching this as a regex) was found in the registry; nothing to remove.",
             name
         );
     } else if !remove_opts.dry_run {
@@ -492,7 +504,7 @@ pub fn lookup_chemistry(
     // check if the chemistry already exists and log
     if let Some(cc) = get_single_custom_chem_from_file(&chem_p, &name)? {
         println!("=================");
-        cc.print();
+        print!("{}", cc);
         println!("=================");
     } else {
         info!("No chemistry with name {} was found in the registry!", name);
@@ -506,13 +518,15 @@ pub fn lookup_chemistry(
             println!("=================");
             for (cname, cval) in chem_hm.iter() {
                 if re.is_match(cname) {
-                    cval.print();
-                    
+                    print!("{}", cval);
                     println!("=================");
                 }
             }
         } else {
-            info!("No chemistry matching regex pattern {} was found in the registry!", name);
+            info!(
+                "No chemistry matching regex pattern {} was found in the registry!",
+                name
+            );
         }
     }
 
@@ -556,16 +570,15 @@ pub fn fetch_chemistries(
     fetch_opts: crate::simpleaf_commands::ChemistryFetchOpts,
 ) -> Result<()> {
     if fetch_opts.name.is_empty() {
-        bail!("The list of chemistries to fetch was empty; Nothing to do!");
+        bail!("The list of chemistries to fetch was empty; nothing to do!");
     }
 
     // check if the chemistry file is absent altogether
     // if so, then download it
-    // @rob-p: why don't we just download the file if it's missing?
     let chem_path = af_home.join(CHEMISTRIES_PATH);
     if !chem_path.is_file() {
-        bail!(
-            "The chemistry file is missing from {}; Nothing to download.",
+        warn!(
+            "The chemistry file is missing from {}; Nothing to download. To fetch the base chemistry registry itself, please issue the `refresh` command.",
             chem_path.display()
         );
     }
@@ -576,12 +589,7 @@ pub fn fetch_chemistries(
     if let Some(chem_obj) = parse_resource_json_file(&chem_path, None)?.as_object() {
         // if the user used the special `*`, then we lookup all chemistries
         let fetch_chems: FetchSet = if fetch_opts.name.len() == 1 {
-            FetchSet::from_re(
-                fetch_opts
-                    .name
-                    .first()
-                    .expect("First entry is valid"),
-            )?
+            FetchSet::from_re(fetch_opts.name.first().expect("First entry is valid"))?
         } else {
             // otherwise, collect just the set they requested
             let hs = HashSet::from_iter(fetch_opts.name.iter());
@@ -611,10 +619,7 @@ pub fn fetch_chemistries(
                                     warn!("Downloaded the file for chemistry {} from {}, but the observed hash {} was not equal to the expcted hash {}",
                                     k, rpath, observed_hash, expected_hash);
                                 }
-                                info!(
-                                    "Fetched permit list file for {} to {}",
-                                    k, fpath.display()
-                                );
+                                info!("Fetched permit list file for {} to {}", k, fpath.display());
                             }
                         } else {
                             warn!(

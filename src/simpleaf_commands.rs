@@ -174,7 +174,7 @@ pub struct MapQuantOpts {
         conflicts_with = "use_piscem")]
     pub skipping_strategy: String,
 
-    /// d\Determines the maximum cardinality equivalence class
+    /// Determines the maximum cardinality equivalence class
     /// (number of (txp, orientation status) pairs) to examine (cannot be used with
     /// --ignore-ambig-hits).
     #[arg(
@@ -185,14 +185,14 @@ pub struct MapQuantOpts {
         conflicts_with = "use_piscem")]
     pub max_ec_card: u32,
 
-    /// In the first pass, consider only k-mers of a read having <= --max-hit-occ hits.
+    /// In the first pass, consider only collected and matched k-mers of a read having <= --max-hit-occ hits.
     #[arg(long,
         default_value_t = DefaultParams::MAX_HIT_OCC,
         help_heading = "Piscem Mapping Options",
         conflicts_with = "use_piscem")]
     pub max_hit_occ: u32,
 
-    /// if all k-mers of a read have > --max-hit-occ hits, then make a second pass and consider k-mers
+    /// If all collected and matched k-mers of a read have > --max-hit-occ hits, then make a second pass and consider k-mers
     /// having <= --max-hit-occ-recover hits.
     #[arg(long,
         default_value_t = DefaultParams::MAX_HIT_OCC_RECOVER,
@@ -200,7 +200,7 @@ pub struct MapQuantOpts {
         conflicts_with = "use_piscem")]
     pub max_hit_occ_recover: u32,
 
-    /// Threshold for discarding reads with too many  mappings 
+    /// Threshold for discarding reads with too many  mappings
     #[arg(long,
         default_value_t = DefaultParams::MAX_READ_OCC,
         help_heading = "Piscem Mapping Options",
@@ -506,9 +506,9 @@ pub struct ChemistryAddOpts {
     /// will be locally cached in ALEVIN_FRY_HOME after that.
     #[arg(long)]
     pub remote_url: Option<String>,
-    /// A semver format version tag, 
-    /// e.g., `0.1.0`, indicating the 
-    /// version of the chemistry definition. 
+    /// A semver format version tag,
+    /// e.g., `0.1.0`, indicating the
+    /// version of the chemistry definition.
     /// To update a registered chemistry,
     /// please provide a higher version number,
     /// e.g., `0.2.0`.
