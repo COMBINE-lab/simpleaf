@@ -59,19 +59,19 @@ fn ref_type_parser(s: &str) -> Result<ReferenceType, String> {
     .args(["index", "map_dir"])
 ))]
 pub struct MapQuantOpts {
-    /// chemistry, if a custom geometry is provided, it should be wrapped in quotes
+    /// The name of a registered chemistry or a quoted string representing a custom geometry specification.
     #[arg(short, long)]
     pub chemistry: String,
 
-    /// output directory
+    /// Path to the output directory
     #[arg(short, long)]
     pub output: PathBuf,
 
-    /// number of threads to use when running
+    /// Number of threads to use when running
     #[arg(short, long, default_value_t = 16)]
     pub threads: u32,
 
-    /// path to index
+    /// Path to a folder containing the index files
     #[arg(
         short = 'i',
         long = "index",
@@ -83,7 +83,7 @@ pub struct MapQuantOpts {
     )]
     pub index: Option<PathBuf>,
 
-    /// comma-separated list of paths to read 1 files
+    /// Comma-separated list of paths to read 1 files. The order must match the read 2 files.
     #[arg(
         short = '1',
         long = "reads1",
@@ -94,7 +94,7 @@ pub struct MapQuantOpts {
     )]
     pub reads1: Option<Vec<PathBuf>>,
 
-    /// comma-separated list of paths to read 2 files
+    /// Comma-separated list of paths to read 2 files. The order must match the read 1 files.
     #[arg(
         short = '2',
         long = "reads2",
@@ -112,11 +112,11 @@ pub struct MapQuantOpts {
     // up when it's fixed.
     // NOTE: yes, the field names and option names are swapped below, because that's
     // what's required to make this work ...
-    /// don't use the default piscem mapper, instead use salmon-alevin
+    /// Don't use the default piscem mapper, instead, use salmon-alevin
     #[arg(long="no-piscem", requires = "index", help_heading = "Mapping Options", action = ArgAction::SetFalse)]
     pub use_piscem: bool,
 
-    /// use piscem for mapping (requires that index points to the piscem index)
+    /// Use piscem for mapping (requires that index points to the piscem index)
     #[arg(
         long = "use-piscem",
         requires = "index",
@@ -128,7 +128,7 @@ pub struct MapQuantOpts {
     // NOTE: Because of the reversal of `use_piscem` and `_no_piscem` in the parser
     // due to the parsing quirk, the *meaning* of `conflicts_with = "use_piscem"`
     // below is actually that it conflicts with the option `--no-piscem` being passed.
-    /// use selective-alignment for mapping (only if using salmon alevin
+    /// Use selective-alignment for mapping (only if using salmon alevin
     /// as the underlying mapper).
     #[arg(
         short = 's',
@@ -138,7 +138,7 @@ pub struct MapQuantOpts {
     )]
     pub use_selective_alignment: bool,
 
-    /// if using piscem >= 0.7.0, enable structural constraints
+    /// If piscem >= 0.7.0, enable structural constraints
     #[arg(
         long,
         help_heading = "Piscem Mapping Options",
@@ -146,7 +146,7 @@ pub struct MapQuantOpts {
     )]
     pub struct_constraints: bool,
 
-    /// skip checking of the equivalence classes of k-mers that were too ambiguous to be otherwise
+    /// Skip checking of the equivalence classes of k-mers that were too ambiguous to be otherwise
     /// considered (passing this flag can speed up mapping slightly, but may reduce specificity)
     #[arg(
         long,
@@ -156,7 +156,7 @@ pub struct MapQuantOpts {
     )]
     pub ignore_ambig_hits: bool,
 
-    /// do not consider poison k-mers, even if the underlying index contains them. In this case,
+    /// Do not consider poison k-mers, even if the underlying index contains them. In this case,
     /// the mapping results will be identical to those obtained as if no poison table was added to
     /// the index.
     #[arg(
@@ -166,7 +166,7 @@ pub struct MapQuantOpts {
     )]
     pub no_poison: bool,
 
-    /// the skipping strategy to use for k-mer collection
+    /// The skipping strategy to use for k-mer collection
     #[arg(long,
         default_value = &DefaultParams::SKIPPING_STRATEGY,
         value_parser = clap::builder::PossibleValuesParser::new(["permissive", "strict"]), 
@@ -174,7 +174,7 @@ pub struct MapQuantOpts {
         conflicts_with = "use_piscem")]
     pub skipping_strategy: String,
 
-    /// determines the maximum cardinality equivalence class
+    /// d\Determines the maximum cardinality equivalence class
     /// (number of (txp, orientation status) pairs) to examine (cannot be used with
     /// --ignore-ambig-hits).
     #[arg(
@@ -185,14 +185,14 @@ pub struct MapQuantOpts {
         conflicts_with = "use_piscem")]
     pub max_ec_card: u32,
 
-    /// in the first pass, consider only k-mers having <= --max-hit-occ hits.
+    /// In the first pass, consider only k-mers of a read having <= --max-hit-occ hits.
     #[arg(long,
         default_value_t = DefaultParams::MAX_HIT_OCC,
         help_heading = "Piscem Mapping Options",
         conflicts_with = "use_piscem")]
     pub max_hit_occ: u32,
 
-    /// if all k-mers have > --max-hit-occ hits, then make a second pass and consider k-mers
+    /// if all k-mers of a read have > --max-hit-occ hits, then make a second pass and consider k-mers
     /// having <= --max-hit-occ-recover hits.
     #[arg(long,
         default_value_t = DefaultParams::MAX_HIT_OCC_RECOVER,
@@ -200,35 +200,34 @@ pub struct MapQuantOpts {
         conflicts_with = "use_piscem")]
     pub max_hit_occ_recover: u32,
 
-    /// reads with more than this number of mappings will not have
-    /// their mappings reported.
+    /// Threshold for discarding reads with too many  mappings 
     #[arg(long,
         default_value_t = DefaultParams::MAX_READ_OCC,
         help_heading = "Piscem Mapping Options",
         conflicts_with = "use_piscem")]
     pub max_read_occ: u32,
 
-    /// path to a mapped output directory containing a RAD file to skip mapping
+    /// Path to a mapped output directory containing a RAD file to skip mapping
     #[arg(long = "map-dir", conflicts_with_all = ["index", "reads1", "reads2"], help_heading = "Mapping Options")]
     pub map_dir: Option<PathBuf>,
 
-    /// use knee filtering mode
+    /// Use knee filtering mode
     #[arg(short, long, help_heading = "Permit List Generation Options")]
     pub knee: bool,
 
-    /// use unfiltered permit list
+    /// Use unfiltered permit list
     #[arg(short, long, help_heading = "Permit List Generation Options")]
     pub unfiltered_pl: Option<Option<PathBuf>>,
 
-    /// use forced number of cells
+    /// Use forced number of cells
     #[arg(short, long, help_heading = "Permit List Generation Options")]
     pub forced_cells: Option<usize>,
 
-    /// use a filtered, explicit permit list
+    /// Use a filtered, explicit permit list
     #[arg(short = 'x', long, help_heading = "Permit List Generation Options")]
     pub explicit_pl: Option<PathBuf>,
 
-    /// use expected number of cells
+    /// Use expected number of cells
     #[arg(short, long, help_heading = "Permit List Generation Options")]
     pub expect_cells: Option<usize>,
 
@@ -237,7 +236,7 @@ pub struct MapQuantOpts {
     #[arg(short = 'd', long, help_heading="Permit List Generation Options", value_parser = clap::builder::PossibleValuesParser::new(["fw", "rc", "both"]))]
     pub expected_ori: Option<String>,
 
-    /// minimum read count threshold for a cell to be retained/processed; only used with --unfiltered-pl
+    /// Minimum read count threshold for a cell to be retained/processed; only use with --unfiltered-pl
     #[arg(
         long,
         help_heading = "Permit List Generation Options",
@@ -245,11 +244,11 @@ pub struct MapQuantOpts {
     )]
     pub min_reads: usize,
 
-    /// transcript to gene map
+    /// Path to a transcript to gene map file
     #[arg(short = 'm', long, help_heading = "UMI Resolution Options")]
     pub t2g_map: Option<PathBuf>,
 
-    /// resolution mode
+    /// UMI resolution mode
     #[arg(short, long, help_heading = "UMI Resolution Options", value_parser = clap::builder::PossibleValuesParser::new(["cr-like", "cr-like-em", "parsimony", "parsimony-em", "parsimony-gene", "parsimony-gene-em"]))]
     pub resolution: String,
 }
@@ -262,11 +261,11 @@ pub struct MapQuantOpts {
         .args(["fasta", "ref_seq"])
 ))]
 pub struct IndexOpts {
-    /// specify whether an expanded reference, spliced+intronic (or splici) or spliced+unspliced (or spliceu), should be built
+    /// Specify whether an expanded reference, spliced+intronic (or splici) or spliced+unspliced (or spliceu), should be built
     #[arg(long, help_heading="Expanded Reference Options", display_order = 1, default_value = "spliced+intronic", value_parser = ref_type_parser)]
     pub ref_type: ReferenceType,
 
-    /// reference genome to be used for the expanded reference construction
+    /// Path to a reference genome to be used for the expanded reference construction
     #[arg(short, long, help_heading="Expanded Reference Options", display_order = 2, 
               requires_ifs([
                 (ArgPredicate::IsPresent, "gtf") 
@@ -274,7 +273,7 @@ pub struct IndexOpts {
               conflicts_with = "ref_seq")]
     pub fasta: Option<PathBuf>,
 
-    /// reference GTF/GFF3 file to be used for the expanded reference construction
+    /// Path to a reference GTF/GFF3 file to be used for the expanded reference construction
     #[arg(
         short,
         long,
@@ -285,7 +284,7 @@ pub struct IndexOpts {
     )]
     pub gtf: Option<PathBuf>,
 
-    /// denotes that the input annotation is a GFF3 (instead of GTF) file
+    /// Denotes that the input annotation is a GFF3 (instead of GTF) file
     #[arg(
         long,
         display_order = 4,
@@ -294,7 +293,7 @@ pub struct IndexOpts {
     )]
     pub gff3_format: bool,
 
-    /// the target read length the splici index will be built for
+    /// The Read length used in roers to add flanking lengths to intronic sequences
     #[arg(
         short,
         long,
@@ -307,7 +306,7 @@ pub struct IndexOpts {
     )]
     pub rlen: i64,
 
-    /// deduplicate identical sequences in roers when building an expanded reference  reference
+    /// Deduplicate identical sequences in roers when building the expanded reference
     #[arg(
         long = "dedup",
         help_heading = "Expanded Reference Options",
@@ -317,12 +316,12 @@ pub struct IndexOpts {
     )]
     pub dedup: bool,
 
-    /// target sequences (provide target sequences directly; avoid expanded reference construction)
+    /// Reference sequences to directly build index on, and avoid expanded reference construction
     #[arg(long, alias = "refseq", help_heading = "Direct Reference Options", display_order = 7,
               conflicts_with_all = ["dedup", "unspliced", "spliced", "rlen", "gtf", "fasta"])]
     pub ref_seq: Option<PathBuf>,
 
-    /// path to FASTA file with extra spliced sequence to add to the index
+    /// Path to FASTA file with extra spliced sequence to add to the index
     #[arg(
         long,
         help_heading = "Expanded Reference Options",
@@ -332,7 +331,7 @@ pub struct IndexOpts {
     )]
     pub spliced: Option<PathBuf>,
 
-    /// path to FASTA file with extra unspliced sequence to add to the index
+    /// Path to a FASTA file with extra unspliced sequence to add to the index
     #[arg(
         long,
         help_heading = "Expanded Reference Options",
@@ -349,7 +348,7 @@ pub struct IndexOpts {
     // up when it's fixed.
     // NOTE: yes, the field names and option names are swapped below, because that's
     // what's required to make this work ...
-    /// use piscem instead of salmon for indexing and mapping (default)
+    /// Use piscem instead of salmon for indexing and mapping (default)
     #[arg(
         long = "use-piscem",
         help_heading = "Piscem Index Options",
@@ -357,11 +356,11 @@ pub struct IndexOpts {
     )]
     pub _no_piscem: bool,
 
-    /// don't use the default piscem mapper, instead use salmon-alevin
+    /// Don't use the default piscem mapper, instead, use salmon-alevin
     #[arg(long="no-piscem", help_heading = "Alternative salmon-alevin Index Options", action = ArgAction::SetFalse)]
     pub use_piscem: bool,
 
-    /// the value of m to be used to construct the piscem index (must be < k)
+    /// Minimizer length to be used to construct the piscem index (must be < k)
     #[arg(
         short = 'm',
         long = "minimizer-length",
@@ -372,7 +371,7 @@ pub struct IndexOpts {
     )]
     pub minimizer_length: u32,
 
-    /// path to (optional) decoy sequence used to insert poison
+    /// Paths to decoy sequence FASTA files used to insert poison
     /// k-mer information into the index (only if using piscem >= 0.7).
     #[arg(
         long,
@@ -383,7 +382,7 @@ pub struct IndexOpts {
     )]
     pub decoy_paths: Option<Vec<PathBuf>>,
 
-    /// seed value to use in SSHash index construction
+    /// The seed value to use in SSHash index construction
     /// (try changing this in the rare event index build fails).
     #[arg(
         long = "seed",
@@ -394,7 +393,7 @@ pub struct IndexOpts {
     )]
     pub hash_seed: u64,
 
-    /// working directory where temporary files should be placed
+    /// The working directory where temporary files should be placed
     #[arg(
         long = "work-dir",
         conflicts_with = "use_piscem",
@@ -404,19 +403,19 @@ pub struct IndexOpts {
     )]
     pub work_dir: PathBuf,
 
-    /// path to output directory (will be created if it doesn't exist)
+    /// Path to output directory (will be created if it doesn't exist)
     #[arg(short, long, display_order = 1)]
     pub output: PathBuf,
 
-    /// overwrite existing files if the output directory is already populated
+    /// Overwrite existing files if the output directory is already populated
     #[arg(long, display_order = 6)]
     pub overwrite: bool,
 
-    /// number of threads to use when running
+    /// Number of threads to use when running
     #[arg(short, long, default_value_t = 16, display_order = 2)]
     pub threads: u32,
 
-    /// the value of k to be used to construct the index
+    /// The value of k to be used to construct the index
     #[arg(
         short = 'k',
         long = "kmer-length",
@@ -425,11 +424,11 @@ pub struct IndexOpts {
     )]
     pub kmer_length: u32,
 
-    /// keep duplicated identical sequences when constructing the index
+    /// Keep duplicated identical sequences when constructing the index
     #[arg(long, display_order = 4)]
     pub keep_duplicates: bool,
 
-    /// if this flag is passed, build the sparse rather than dense index for mapping
+    /// If this flag is passed, build the sparse rather than dense index for mapping
     #[arg(
         long,
         short = 'p',
@@ -441,90 +440,91 @@ pub struct IndexOpts {
     pub sparse: bool,
 }
 
-/// Remove a chemistry from the chemistry registry
+/// Remove chemistries from the local chemistry registry
 #[derive(Args, Clone, Debug)]
 #[command(arg_required_else_help = true)]
 pub struct ChemistryRemoveOpts {
-    /// the name of the chemistry you wish to remove (can be a regex)
+    /// A chemistry name or a regex pattern matching the names of chemistries in the registry to remove
     #[arg(short, long)]
     pub name: String,
-    /// print out the action that would be taken rather than taking it
+    /// Print the chemistries that would be removed without removing them
     #[arg(short, long)]
     pub dry_run: bool,
 }
 
-/// Download the corresponding permit lists for the chemistry/ies
+/// Download the permit list files for registered chemistries
 #[derive(Args, Clone, Debug)]
 #[command(arg_required_else_help = true)]
 pub struct ChemistryFetchOpts {
-    /// a list of chemistries to fetch (or a single regex for matching multiple chemistries)
+    /// A comma-separated list of chemistry names to fetch (or a *single* regex pattern for matching multiple chemistries). Use '.*' to fetch for all registered chemistries.
     #[arg(short, long, value_delimiter = ',')]
-    pub chemistries: Vec<String>,
-    /// show what will be downloaded without downloading anything
+    pub name: Vec<String>,
+    /// Print the permit list file(s) that will be downloaded without downloading them
     #[arg(short, long)]
     pub dry_run: bool,
 }
 
-/// Search for unused permit lists and remove them
-/// from the ALEVIN_FRY_HOME cache
+/// Remove cached permit list files that do not belong to any registered chemistries
 #[derive(Args, Clone, Debug)]
-#[command(arg_required_else_help = true)]
+#[command(arg_required_else_help = false)]
 pub struct ChemistryCleanOpts {
-    /// just show what is to be removed rather than
+    /// Print the permit list file(s) that will be removed without removing them
     #[arg(short, long)]
     pub dry_run: bool,
 }
 
-/// Lookup a chemistry in the chemistry registry
+/// Look up chemistries in the local registry and print the details
 #[derive(Args, Clone, Debug)]
 #[command(arg_required_else_help = true)]
 pub struct ChemistryLookupOpts {
-    /// the name of the chemistry you wish to lookup (or a regex for matching chemistry names)
+    /// The name of a registered chemistry, or a regex pattern for matching registered chemistries' names.
     #[arg(short, long)]
     pub name: String,
 }
 
-/// Add a new chemistry to the registry of custom chemistries
+/// Add a new or update an existing chemistry in the local registry
 #[derive(Args, Clone, Debug)]
 #[command(arg_required_else_help = true, disable_version_flag = true)]
 pub struct ChemistryAddOpts {
-    /// the name to give the chemistry
+    /// The name to give to the chemistry
     #[arg(short, long)]
     pub name: String,
-    /// the geometry to which the chemistry maps, wrapped in quotes.
+    /// A quoted string representing the geometry to which the chemistry maps
     #[arg(short, long)]
     pub geometry: String,
-    /// the expected orientation indicating the direction of biological reads to reference sequences.
+    /// The direction of the first (most upstream) mappable biological sequence.
     #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(["fw", "rc", "both"]))]
     pub expected_ori: String,
-    /// the (fully-qualified) path to a local file that will be copied into
-    /// the permit list directory of the ALEVIN_FRY_HOME directory to provide
-    /// a permit list for use with this chemistry.
+    /// The (fully-qualified) path to a local permit list file that will be copied into
+    /// the ALEVIN_FRY_HOME directory for future use.
     #[arg(long)]
     pub local_url: Option<PathBuf>,
-    /// the url of a remote file that will be downloaded (*on demand*)
+    /// The url of a remote file that will be downloaded (on demand)
     /// to provide a permit list for use with this chemistry. This file
     /// should be obtainable with the equivalent of `wget <local-url>`.
     /// The file will only be downloaded the first time it is needed and
     /// will be locally cached in ALEVIN_FRY_HOME after that.
     #[arg(long)]
     pub remote_url: Option<String>,
-    /// optionally assign a version number to this chemistry. A chemistry's
-    /// entry can be updated in the future by adding it again with a higher
-    /// version number.
+    /// A semver format version tag, 
+    /// e.g., `0.1.0`, indicating the 
+    /// version of the chemistry definition. 
+    /// To update a registered chemistry,
+    /// please provide a higher version number,
+    /// e.g., `0.2.0`.
     #[arg(long, default_value = "0.0.0")]
     pub version: Option<String>,
 }
 
-/// Add or refresh chemistry definitions from the upstream repository
+/// Update the local chemistry registry according to the upstream repository
 #[derive(Args, Clone, Debug)]
 #[command(disable_version_flag = true)]
 pub struct ChemistryRefreshOpts {
-    /// overwrite an existing matched chemistry even if the version isn't newer
+    /// overwrite existing chemistries even if the versions aren't newer
     #[arg(short, long)]
     pub force: bool,
-    /// report what would happen with a refresh without actually performing one on the
-    /// actual chemistry registry.
+    /// print the chemistries that will be added or updated without
+    /// modifying the local registry.
     #[arg(short, long)]
     pub dry_run: bool,
 }

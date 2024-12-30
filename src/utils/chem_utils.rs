@@ -132,9 +132,29 @@ impl CustomChemistry {
         &self.plist_name
     }
 
-    #[allow(dead_code)]
     pub fn remote_pl_url(&self) -> &Option<String> {
         &self.remote_pl_url
+    }
+
+    pub fn meta(&self) -> &Option<Value> {
+        &self.meta
+    }
+    pub fn print(&self) {
+        println!("chemistry name\t: {}", self.name());
+        println!("{}\t: {}", GEOMETRY_KEY, self.geometry());
+        println!("{}\t: {}", EXPECTED_ORI_KEY, self.expected_ori());
+        if let Some(plist_name) = self.plist_name() {
+            println!("{}\t: {}", LOCAL_PL_PATH_KEY, plist_name);
+        }  
+        if let Some(remote_pl_url) = self.remote_pl_url() {
+            println!("{}\t: {}", REMOTE_PL_URL_KEY, remote_pl_url);
+        }
+
+        if let Some(meta) = self.meta() {
+            if let Some(Value::String(s)) = meta.get("cr_filename") {
+                println!("cr_filename\t: {}", s);
+            }
+        }
     }
 }
 
@@ -193,7 +213,7 @@ impl CustomChemistry {
                     try_get_str_from_json(GEOMETRY_KEY, obj, FieldType::Mandatory, None)?;
 
                 let geometry = geometry.unwrap(); // we made this Some, safe to unwrap
-                                                  // check if geometry is valid
+                // check if geometry is valid
                 validate_geometry(&geometry)?;
 
                 let expected_ori = try_get_str_from_json(
@@ -266,7 +286,8 @@ pub fn get_custom_chem_hm(custom_chem_p: &Path) -> Result<HashMap<String, Custom
         Ok(hm) => Ok(hm),
         Err(e) => {
             bail!(
-                "{}; Please consider delete it from {}",
+                "{}; \
+                Please consider delete it from {}",
                 e,
                 custom_chem_p.display()
             );
@@ -319,10 +340,10 @@ pub fn try_get_str_from_json(
             }
         }
         Some(Value::String(s)) => Ok(Some(s.to_string())),
-        _ => Err(anyhow!(
-            "Couldn't parse the {} field, {}, to a string for the json object {:#?}",
+        v => Err(anyhow!(
+            "Couldn't parse the {} field, {:#?}, to a string for the json object {:#?}",
             key,
-            obj.get(key).unwrap(),
+            v,
             obj
         )),
     }
