@@ -1,8 +1,14 @@
 ``chemistry`` command
 =====================
 
-The ``chemistry`` command allows operation on (e.g. adding or removing) custom chemistries to ``simpleaf``'s registry of recognized chemistries, and also alows 
-inspecting the information associated with a specific chemistry. The command currently has 4 sub-commands ``add``, ``remove``, ``refresh``, and ``lookup``.  
+The ``chemistry`` command provides functionality to manage and inspect custom chemistries in ``simpleaf``'s registry of recognized custom chemistries. It supports the following operations:
+
+- Add new custom chemistries.
+- Remove existing custom chemistries.
+- Add or refresh chemistry definitions from the upstream repository.
+- Lookup details of a specific chemistry.
+- Download corresponding permit lists for chemistries.
+- Search for unused permit lists and remove them from the cache.
 
 .. code-block:: bash
 
@@ -23,9 +29,9 @@ inspecting the information associated with a specific chemistry. The command cur
     -h, --help     Print help
     -V, --version  Print version
 
-These sub-commands are dscribed below.
+These sub-commands are described below.
 
-``refresh`` sub-command
+``simpleaf chemistry refresh``
 -----------------------
 
 The ``refresh`` sub-command takes no *required* arguments; it's usage is shown below:
@@ -41,11 +47,11 @@ The ``refresh`` sub-command takes no *required* arguments; it's usage is shown b
     -d, --dry-run  report what would happen with a refresh without actually performing one on the actual chemistry registry
     -h, --help     Print help
 
-This sub-command consults the remote ``simpleaf`` repository to check for an updated chemistry registry, and adds any new chemistries from that registry (or updates the entries for any chemistries in that registry whose version number has incresed).  
-If the ``dry-run`` flag is passed, the actions to be taken will be printed, but the registry will not be modified. If the ``--force`` command is passed, local chemistry definitions will be overwritten by matching remote definitions, even if the remote
-definition has a lower version number.
+This sub-command consults the remote ``simpleaf`` GitHub repository to check for updates to the local chemistry registry. It adds any new chemistries from the remote or updates entries for existing chemistries if their version number has increased.
 
-``add`` sub-command
+If the ``dry-run`` flag is passed, the actions to be taken will be printed, but the registry will not be modified. If the ``--force`` command is passed, local chemistry definitions will be overwritten by matching remote definitions, even if the remote definition has a lower version number.
+
+``simpleaf chemistry add``
 -------------------
 
 The ``add`` sub-command has the usage shown below:
@@ -67,16 +73,26 @@ The ``add`` sub-command has the usage shown below:
       -h, --help                         Print help
 
 
-This command allows the user to register a new chemistry with ``simpleaf``.  Once a chemisty is registered, then ``simpleaf`` will be able to lookup certain information about this chemistry when other commands are invoked, allowing the user to avoid having to pass potentially long command-line flags in future invocations.
+This command allows the user to register a new chemistry or modify an existing one. Once a chemistry is registered, ``simpleaf`` can lookup information about this chemistry when other commands are invoked, eliminating the need to repeatedly pass potentially lengthy command-line flags for this chemistry in the future.
 
-Every chemistry added to the registry has 2 mandatory associated properties: a ``name`` and a ``geometry`` specification. The name must be a unique (within the existing registry) name, and a valid UTF-8 identifier. This geometry specification should be provided enclosed in quotes, an in the `same format <https://simpleaf.readthedocs.io/en/latest/quant-command.html#a-note-on-the-chemistry-flag>`_ as would be provided to the ``quant`` command.
-
-In addition to the required fields, there are 4 optional fields: ``expected-ori`` (an expected mapping orientation for reads generated with this chemistry), ``local-url`` a fully-qualified path to a file containing the permit list (i.e. whitelist) for this chemistry (if one exists), ``remote-url`` a remote URL providing a location from which this permit list can be downloaded and ``version`` a version tag you wish to specify along with this chemistry
-
-**Note** any file provided via the ``local-url`` will be *copied* into a subdirectory of the ``ALEVIN_FRY_HOME`` directory. Also, note that the version flag here is **not** meant to specify the version or revision of the physical chemistry itself (e.g. as the V2 or V3 in chromium V2 or chromium V3), but rather is a `semver <https://semver.org/>`_ format tag that will be used for interal tracking purposes (e.g. you will bump this version if you wish to update the chemistry in the registry).
+Every chemistry added to the registry has three mandatory properties: ``name``, ``geometry``, and ``expected-ori``.
 
 
-``remove`` sub-command
+- ``name``: A unique name (within the existing registry) of the chemistry. It must be a valid UTF-8 identifier. If the name is already registered, the existing definition will be updated if a higher ``--version`` is provided (see below for details). Otherwise, simpleaf will complain and fail.
+- ``geometry``: The geometry specification must be provided as a quoted string, and must follow the `Sequence Fragment Geometry Description Language <https://hackmd.io/@PI7Og0l1ReeBZu_pjQGUQQ/rJMgmvr13>`_ as used in the `quant command <https://simpleaf.readthedocs.io/en/latest/quant-command.html#a-note-on-the-chemistry-flag>`. 
+- ``expected-ori``: The expected orientation of the chemistry. It must be one of the following: fw (forward), rc (reverse complement), or both (both orientations). It describes the expected orientation relative to the first (most upstream) mappable biological sequence.
+Imagine we have reads from 10x Chromium 5' protocols with read1s and read2s both of 150 base pairs. With this specification, a read1, which is in the forward orientation, contains, from 5' to 3', a cell barcode, a UMI, a fixed fragment, and a fragment representing the 5' end of the cDNA. A read2, which is in the reverse complementary orientation, contains the second (downstream) cDNA fragment relative to its read1. You can find a detailed explanation of the 10x Chromium 5' protocol from Single Cell Genomics Library Structure <https://teichlab.github.io/scg_lib_structs/methods_html/10xChromium5.html>_.
+If we map the biological sequence in read1s and read2s as paired-end reads (currently only supported when using the default mapper -- piscem), as biological read1s are the first mappable sequences, the expected orientation for this chemistry should be ``fw``, the orientation of read1s. However, if we only map read2s, the expected orientation should be ``rc``, because read2s are the first mappable sequences and are in the reverse complementary orientation.
+
+In addition to the required fields, there are 3 optional fields, as described below. A permit list file must be a TSV file without a header, and the first column must contain the sequence of permitted cell barcodes, i.e., the whitelist of cell barcodes.
+
+- ``local-url``: A fully-qualified path to a file containing the permit list.
+- ``remote-url``:  A remote URL providing a location from which a permit list can be downloaded.
+- ``version``: A `semver <https://semver.org/>`_ format version tag, e.g., `0.1.0`, indicating the version of the chemistry definition. It is NOT the version or revision of the physical chemistry itself, e.g., as the V2 or V3 in chromium V2 or chromium V3.
+
+**Note** any file provided via the ``local-url`` will be *copied* into the ``ALEVIN_FRY_HOME`` directory. To avoid this copying, for example when you have an extremely large file, you can provide the file directly to the simpleaf commands that take the file, for example, ``simpleaf quant -u /path/to/your/large/permit/list/file``.
+
+``simpleaf chemistry remove``
 ----------------------
 
 The ``remove`` sub-command has the usage shown below:
@@ -92,11 +108,9 @@ The ``remove`` sub-command has the usage shown below:
      -h, --help         Print help
      -V, --version      Print version
 
-The single required argument ``--name`` should be the key of some chemistry in the current registry *or* a regular expression that can be used to match one or more 
-chemistries in the registry.  If this chemistry is found, it will be removed from the registry. If the ``--dry-run`` flag is passed, the chemistries to be removed 
-will be printed, but no modification of the registry will occur.
+The single required argument ``--name`` should be the key (name) of a chemistry in the current registry or a regular expression that matches the name of one or more chemistries in the registry. If one or more chemistries match, they will be removed from the registry. If the ``--dry-run`` flag is passed, the chemistries to be removed will be printed, but no modification of the registry will occur.
 
-``lookup`` sub-command
+``simpleaf chemistry lookup``
 ----------------------
 
 The ``lookup`` sub-command has the usage shown below:
@@ -112,9 +126,7 @@ The ``lookup`` sub-command has the usage shown below:
     -h, --help         Print help
     -V, --version      Print version
 
-The single required argument ``--name`` should be the key of some chemistry in the current registry or a regular expression that can match the names of chemistries in the 
-registry .  If this chemistry (or any chemistry matching this regex) is found, its associated information will be printed.
-
+The single required argument ``--name`` should be the key (name) of a chemistry in the current registry or a regular expression that matches the name of one or more chemistries in the registry. If the provided name or regex matches any registered chemistry, its associated information will be printed.
 
 ``clean`` sub-command
 ---------------------
@@ -132,8 +144,8 @@ The ``clean`` sub-command has the usage shown below:
     -V, --version  Print version
 
 
-There is no required argument.  The sub-command will search for unused permit list files in the ``simpleaf`` permit list directory, and remove them.
-If the ``--dry-run`` flag is passed, the names of the files to be removed will be printed, but those files will noe be removed.
+There is no required argument. The sub-command will search for permit list files in the ``simpleaf`` permit list directory that do not match any registered chemistry, and remove them.
+If the ``--dry-run`` flag is passed, the names of the files to be removed will be printed, but those files will not be removed.
 
 
 ``fetch`` sub-command
@@ -153,8 +165,6 @@ The ``fetch`` sub-command has the usage shown below:
     -h, --help                       Print help
     -V, --version                    Print version
 
+The required ``--chemistries`` argument can be the name of a single chemistry, a comma-separated (``,``) list of chemistries' names, or a regular expression matching the names of multiple chemistries. The registry will be scanned, and for any chemistry in the requested list or matching the provided regular expression, the corresponding permit list file(s) will be downloaded unless they are already present.
 
-The required ``--chemistries`` argument can be the name of a chemistry, a "," separated list of chemistries, or a (singular) regular expression 
-matching the names of multiple chemistries.  The registry will be scanned, and for any chemistry in the requested list of matching the provided
-regular expression, the corresponding permit list will be downloaded (unless it is already present).  If the ``--dry-run`` flag is passed, then 
-the permit lists that would be fetched will be printed, but none will actually be downloaded.
+If the --dry-run flag is passed, the permit list file(s) that would be fetched will be printed, but no files will actually be downloaded.

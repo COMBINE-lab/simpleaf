@@ -17,8 +17,8 @@ use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 use tracing::{info, warn};
 
-/// Adds a chemsitry to the `chemistries.json` file. The user provides a name
-/// and geometry string, and optionally a local-url and / or remote-url.  
+/// Adds a chemistry to the local registry. The user provides a name,
+/// a quoted geometry string, and an expected orientation, and optionally a local path and / or a remote-url pointing to the barcode permit list.  
 ///
 /// If a local-url is provided, the Blake3 hash of the corresponding file is
 /// computed and that file is copied to `ALEVIN_FRY_HOME/plist` under the name
@@ -50,7 +50,7 @@ pub fn add_chemistry(
     let version = add_opts
         .version
         .unwrap_or(CustomChemistry::default_version());
-    let add_ver = Version::parse(version.as_ref()).with_context(|| format!("could not parse version {}. Please follow https://semver.org/. A valid example is 0.1.0", version))?;
+    let add_ver = Version::parse(version.as_ref()).with_context(|| format!("Could not parse version {}. Please follow https://semver.org/. A valid example is 0.1.0", version))?;
 
     let name = add_opts.name;
 
@@ -59,9 +59,9 @@ pub fn add_chemistry(
 
     if let Some(existing_entry) = get_single_custom_chem_from_file(&chem_p, &name)? {
         let existing_ver_str = existing_entry.version();
-        let existing_ver = Version::parse(existing_ver_str).with_context( || format!("could not parse version {} found in existing chemistries.json file. Please correct this entry", existing_ver_str))?;
+        let existing_ver = Version::parse(existing_ver_str).with_context( || format!("Could not parse version {} found in existing chemistries.json file. Please correct this entry", existing_ver_str))?;
         if add_ver <= existing_ver {
-            info!("Attempting to add chemistry with version {:#} which is <= than the existing version ({:#}) for this chemistry. Skipping addition", add_ver, existing_ver);
+            info!("Attempting to add chemistry with version {:#} which is <= than the existing version ({:#}) for this chemistry; Skipping addition.", add_ver, existing_ver);
             return Ok(());
         } else {
             info!(
@@ -77,7 +77,7 @@ pub fn add_chemistry(
             let metadata = std::fs::metadata(&local_url)?;
             let flen = metadata.size();
             if flen > 4_294_967_296 {
-                warn!("The file provided to local-url ({}) is {} bytes. This file will be *copied* into the ALEVIN_FRY_HOME directory", local_url.display(), flen);
+                warn!("The file provided to local-url ({}) is {:.1} GB. This file will be *copied* into the ALEVIN_FRY_HOME directory", local_url.display(), flen / 1_073_741_824);
             }
 
             let mut hasher = blake3::Hasher::new();
@@ -99,7 +99,7 @@ pub fn add_chemistry(
 
             // check if the file already exists
             if local_plist_path.is_file() {
-                info!("A content-equivalent permit list file already exists; will use the exising file.");
+                info!("Found a content-equivalent permit list file; Will use the existing file.");
             } else {
                 info!(
                     "Copying {} to {}",
@@ -108,7 +108,7 @@ pub fn add_chemistry(
                 );
                 std::fs::copy(&local_url, &local_plist_path).with_context(|| {
                     format!(
-                        "failed to copy local permit list url {} to location {}",
+                        "Failed to copy local permit list url {} to location {}",
                         local_url.display(),
                         local_plist_path.display()
                     )
@@ -116,7 +116,7 @@ pub fn add_chemistry(
             }
             local_plist = Some(local_plist_name.display().to_string());
         } else {
-            bail!("The local-url {} was provided, but no file could be found at that location. Cannot continue.", local_url.display());
+            bail!("The provided local path does not point to a file: {}; Cannot proceed.", local_url.display());
         }
     } else if let Some(ref remote_url) = add_opts.remote_url {
         let pdir = af_home_path.join("plist");
@@ -136,9 +136,8 @@ pub fn add_chemistry(
 
         // check if the file already exists
         if local_plist_path.is_file() {
-            info!(
-                "A content-equivalent permit list file already exists; will use the exising file."
-            );
+            info!("Found a cached, content-equivalent permit list file; Will use the existing file.");
+
             // remove what we just downloaded
             fs::remove_file(tmpfile)?;
         } else {
@@ -165,13 +164,13 @@ pub fn add_chemistry(
 
     // check if the chemistry already exists and log
     if let Some(cc) = chem_hm.get(custom_chem.name()) {
-        info!("chemistry {} already existed, with geometry {} the one recorded: {}; overwriting geometry specification", custom_chem.name(), if cc.geometry() == custom_chem.geometry() {"same as"} else {"different with"}, cc.geometry());
+        info!("Chemistry {} is already registered, with geometry {} the one recorded: {}; overwriting geometry specification.", custom_chem.name(), if cc.geometry() == custom_chem.geometry() {"same as"} else {"different with"}, cc.geometry());
         chem_hm
             .entry(custom_chem.name().to_string())
             .and_modify(|e| *e = custom_chem);
     } else {
         info!(
-            "inserting chemistry {} with geometry {}",
+            "Inserting chemistry {} with geometry {}",
             custom_chem.name(),
             custom_chem.geometry()
         );
@@ -183,12 +182,12 @@ pub fn add_chemistry(
 
     // write out the new custom chemistry file
     let mut custom_chem_file = std::fs::File::create(&chem_p)
-        .with_context(|| format!("could not create {}", chem_p.display()))?;
+        .with_context(|| format!("Could not create {}", chem_p.display()))?;
     custom_chem_file.rewind()?;
 
     custom_chem_file
         .write_all(serde_json::to_string_pretty(&v).unwrap().as_bytes())
-        .with_context(|| format!("could not write {}", chem_p.display()))?;
+        .with_context(|| format!("Could not write {}", chem_p.display()))?;
 
     Ok(())
 }
@@ -211,9 +210,7 @@ pub fn refresh_chemistries(
     // but read it in and attempt to populate.
     let custom_chem_file = af_home.join(CUSTOM_CHEMISTRIES_PATH);
     let merge_custom_chem = if custom_chem_file.exists() {
-        warn!("{}The \"custom_chemistries.json\" file is deprecated, and in the future, these chemistries should be 
-        regustered in the \"chemistries.json\" file instead. We will attempt to automatically migrate over the old 
-        chemistries into the new file", dry_run_pref);
+        warn!("{}Found deprecated chemistry registry file \"{}\"; Attempting to merge the chemistries defined in this file into the main registry.", dry_run_pref, CUSTOM_CHEMISTRIES_PATH);
         true
     } else {
         false
@@ -232,7 +229,7 @@ pub fn refresh_chemistries(
     let chem_path = if dry_run {
         std::fs::create_dir_all(&dry_run_dir).with_context(|| {
             format!(
-                "could not create dry run directory {}",
+                "Could not create dry run directory {}",
                 dry_run_dir.display()
             )
         })?;
@@ -265,15 +262,15 @@ pub fn refresh_chemistries(
                         Some(ev) => {
                             let curr_ver = Version::parse(
                                 ev.get("version")
-                                    .expect("chemistry should have a version field")
+                                    .expect("Chemistry should have a version field")
                                     .as_str()
-                                    .expect("version should be a string"),
+                                    .expect("Version should be a string"),
                             )?;
                             let new_ver = Version::parse(
                                 v.get("version")
-                                    .expect("chemistry should have a version field")
+                                    .expect("Chemistry should have a version field")
                                     .as_str()
-                                    .expect("version should be a string"),
+                                    .expect("Version should be a string"),
                             )?;
                             if refresh_opts.force || new_ver > curr_ver {
                                 info!("{}updating {}", dry_run_pref, k);
@@ -299,10 +296,10 @@ pub fn refresh_chemistries(
                 // remove the temp file
                 std::fs::remove_file(tmp_chem_path)?;
             } else {
-                bail!("Could not parse newly downloaded \"chemistries.json\" file as a JSON object, something is wrong. Please report this on GitHub.");
+                bail!("Could not parse the main registry from \"{}\" file. Please report this on GitHub.", chem_path.display());
             }
         } else {
-            bail!("Could not parse existing \"chemistries.json\" file as a JSON object, something is wrong. Please report this on GitHub.");
+            bail!("Could not parse the main registry from \"{}\" file. Please report this on GitHub.", chem_path.display());
         }
     }
 
@@ -313,15 +310,23 @@ pub fn refresh_chemistries(
             {
                 for (k, v) in old_custom_chem.iter() {
                     if new_chem.contains_key(k) {
-                        warn!("{}The newly downloaded \"chemistries.json\" file already contained the key {}, skipping entry from the existing \"custom_chemistries.json\" file.", dry_run_pref, k);
+                        warn!("{}The main registry already contained the chemistry \"{}\"; Ignored the one from the deprecated registry.", dry_run_pref, k);
                     } else {
-                        let new_ent = json!({
-                            "geometry": v,
-                            "expected_ori": "both",
-                            "version" : "0.1.0"
-                        });
-                        new_chem.insert(k.to_owned(), new_ent);
-                        info!("{}successfully inserted {} from old custom chemistries file into the new chemistries registry", dry_run_pref, k);
+                        if let serde_json::Value::String(v) = v {
+                            if validate_geometry(v).is_ok() {
+                                let new_ent = json!({
+                                    "geometry": v,
+                                    "expected_ori": "both",
+                                    "version" : CustomChemistry::default_version(),
+                                });
+                                new_chem.insert(k.to_owned(), new_ent);
+                                info!("{}Successfully inserted chemistry \"{}\" from the deprecated registry into the main registry.", dry_run_pref, k);
+                            } else {
+                                warn!("{}The chemistry \"{}\" in the deprecated registry is not a valid geometry string; Skipped.", dry_run_pref, k);
+                            }
+                        } else {
+                            warn!("{}The chemistry \"{}\" in the deprecated registry is not a string; Skipped.", dry_run_pref, k);
+                        }
                     }
                 }
 
@@ -337,10 +342,10 @@ pub fn refresh_chemistries(
                 let backup = custom_chem_file.with_extension("json.bak");
                 std::fs::rename(custom_chem_file, backup)?;
             } else {
-                bail!("Could not parse existing \"custom_chemistries.json\" file as a JSON object; it may be corrupted. Consider deleting this file.");
+                bail!("Could not parse the deprecated registry file as a JSON object; it may be corrupted. Consider deleting this file from {}.", custom_chem_file.display());
             }
         } else {
-            bail!("Could not parse newly downloaded \"chemistries.json\" file as a JSON object, something is wrong. Please report this on GitHub.");
+            bail!("Could not parse the main chemistry registry file, \"{}\", as a JSON object. Please report this on GitHub.", chem_path.display());
         }
     }
 
@@ -352,6 +357,8 @@ pub fn refresh_chemistries(
                 dry_run_dir.display()
             )
         })?;
+    } else {
+        info!("Successfully refreshed the chemistry registry.");
     }
 
     Ok(())
@@ -371,6 +378,7 @@ pub fn clean_chemistries(
     let chem_p = af_home_path.join(CHEMISTRIES_PATH);
     let plist_path = af_home_path.join("plist");
     if !plist_path.is_dir() {
+        info!("The permit list cache directory {} does not exist; Nothing to clean.", plist_path.display());
         return Ok(());
     }
 
@@ -378,7 +386,7 @@ pub fn clean_chemistries(
 
     let used_pls = chem_hm
         .values()
-        .filter_map(|v| v.plist_name().as_ref().map(|s| PathBuf::from(s.clone())))
+        .filter_map(|v| v.plist_name().as_ref().map(|s| plist_path.join(s)))
         .collect::<HashSet<PathBuf>>();
 
     let present_pls = std::fs::read_dir(&plist_path)?
@@ -397,12 +405,16 @@ pub fn clean_chemistries(
         .collect::<HashSet<PathBuf>>();
 
     let rem_pls = &present_pls - &used_pls;
+
     // check if the chemistry already exists and log
     if dry_run {
-        info!("[dry_run] : The following files in the permit list directory are unused and would be removed: {:#?}", rem_pls);
-    } else {
+        if rem_pls.is_empty() {
+            info!("[dry_run] : No permit list files in the cache directory are currently unused; Nothing to clean.");
+        } else {
+            info!("[dry_run] : The following files in the permit list directory do not match any registered chemistries and would be removed: {:#?}", present_pls);
+        }    } else {
         for pl in rem_pls {
-            info!("removing {}", pl.display());
+            info!("removing file from {}", pl.display());
             std::fs::remove_file(pl)?;
         }
     }
@@ -429,25 +441,25 @@ pub fn remove_chemistry(
                 num_matched += 1;
                 if remove_opts.dry_run {
                     info!(
-                        "[dry_run] : would remove chemistry {} from the registry.",
+                        "[dry_run] : Would remove chemistry \"{}\" from the registry.",
                         k
                     );
                 } else {
-                    info!("chemistry {} found in the registry; removing it!", k);
+                    info!("Chemistry \"{}\" found in the registry; Removing it!", k);
                     chem_hm.remove(&k);
                 }
             }
         }
     } else {
         bail!(
-            "The provided chemistry name {} was neither a valid chemistry name nor a valid regex",
+            "The provided chemistry name {} was neither a valid chemistry name nor a valid regex.",
             name
         );
     }
 
     if num_matched == 0 {
         info!(
-            "no chemistry with name {} (or matching this as a regex) was found in the registry; nothing to remove",
+            "No chemistry with name \"{}\" (or matching this as a regex) was found in the registry; Nothing to remove.",
             name
         );
     } else if !remove_opts.dry_run {
@@ -456,12 +468,12 @@ pub fn remove_chemistry(
 
         // write out the new custom chemistry file
         let mut custom_chem_file = std::fs::File::create(&chem_p)
-            .with_context(|| format!("could not create {}", chem_p.display()))?;
+            .with_context(|| format!("Could not create {}", chem_p.display()))?;
         custom_chem_file.rewind()?;
 
         custom_chem_file
             .write_all(serde_json::to_string_pretty(&v).unwrap().as_bytes())
-            .with_context(|| format!("could not write {}", chem_p.display()))?;
+            .with_context(|| format!("Could not write {}", chem_p.display()))?;
     }
 
     Ok(())
@@ -477,27 +489,30 @@ pub fn lookup_chemistry(
     // read in the custom chemistry file
     let chem_p = af_home_path.join(CHEMISTRIES_PATH);
 
-    let chem_hm = get_custom_chem_hm(&chem_p)?;
-
     // check if the chemistry already exists and log
-    if let Some(cc) = chem_hm.get(&name) {
-        println!("chemistry name : {}", name);
-        println!("==============");
-        println!("{:#?}", cc);
+    if let Some(cc) = get_single_custom_chem_from_file(&chem_p, &name)? {
+        println!("=================");
+        cc.print();
+        println!("=================");
     } else {
-        info!("no chemistry with name {} was found in the registry!", name);
+        info!("No chemistry with name {} was found in the registry!", name);
         info!(
-            "treating {} as a regex and searching for matching chemistries",
+            "Treating {} as a regex and searching for matching chemistries",
             name
         );
+        let chem_hm = get_custom_chem_hm(&chem_p)?;
+
         if let Ok(re) = Regex::new(&name) {
+            println!("=================");
             for (cname, cval) in chem_hm.iter() {
                 if re.is_match(cname) {
-                    println!("chemistry name : {}", cname);
-                    println!("==============");
-                    println!("{:#?}", cval);
+                    cval.print();
+                    
+                    println!("=================");
                 }
             }
+        } else {
+            info!("No chemistry matching regex pattern {} was found in the registry!", name);
         }
     }
 
@@ -517,7 +532,7 @@ impl<'a> FetchSet<'a> {
                 re: Some(re),
             })
         } else {
-            bail!("could not compile regex : [{}]", s)
+            bail!("Could not compile regex : [{}]", s)
         }
     }
 
@@ -538,18 +553,19 @@ impl<'a> FetchSet<'a> {
 /// regex) in the registry.
 pub fn fetch_chemistries(
     af_home: PathBuf,
-    refresh_opts: crate::simpleaf_commands::ChemistryFetchOpts,
+    fetch_opts: crate::simpleaf_commands::ChemistryFetchOpts,
 ) -> Result<()> {
-    if refresh_opts.chemistries.is_empty() {
-        bail!("The list of chemistries to fetch was empty; nothing to do!");
+    if fetch_opts.name.is_empty() {
+        bail!("The list of chemistries to fetch was empty; Nothing to do!");
     }
 
     // check if the chemistry file is absent altogether
     // if so, then download it
+    // @rob-p: why don't we just download the file if it's missing?
     let chem_path = af_home.join(CHEMISTRIES_PATH);
     if !chem_path.is_file() {
         bail!(
-            "The chemistry file was missing from {}; nothing to download.",
+            "The chemistry file is missing from {}; Nothing to download.",
             chem_path.display()
         );
     }
@@ -559,16 +575,16 @@ pub fn fetch_chemistries(
 
     if let Some(chem_obj) = parse_resource_json_file(&chem_path, None)?.as_object() {
         // if the user used the special `*`, then we lookup all chemistries
-        let fetch_chems: FetchSet = if refresh_opts.chemistries.len() == 1 {
+        let fetch_chems: FetchSet = if fetch_opts.name.len() == 1 {
             FetchSet::from_re(
-                refresh_opts
-                    .chemistries
+                fetch_opts
+                    .name
                     .first()
-                    .expect("first entry is valid"),
+                    .expect("First entry is valid"),
             )?
         } else {
             // otherwise, collect just the set they requested
-            let hs = HashSet::from_iter(refresh_opts.chemistries.iter());
+            let hs = HashSet::from_iter(fetch_opts.name.iter());
             FetchSet::from_hash_set(hs)
         };
 
@@ -582,9 +598,9 @@ pub fn fetch_chemistries(
                     if !fpath.is_file() {
                         //check for a remote path
                         if let Some(serde_json::Value::String(rpath)) = v.get(REMOTE_PL_URL_KEY) {
-                            if refresh_opts.dry_run {
+                            if fetch_opts.dry_run {
                                 info!(
-                                    "[dry_run] : fetch would fetch missing file {} for {} from {}",
+                                    "[dry_run] : Fetch would fetch missing file {} for {} from {}",
                                     pfile, k, rpath
                                 );
                             } else {
@@ -595,16 +611,20 @@ pub fn fetch_chemistries(
                                     warn!("Downloaded the file for chemistry {} from {}, but the observed hash {} was not equal to the expcted hash {}",
                                     k, rpath, observed_hash, expected_hash);
                                 }
+                                info!(
+                                    "Fetched permit list file for {} to {}",
+                                    k, fpath.display()
+                                );
                             }
                         } else {
                             warn!(
-                                "requested to obtain chemistry {}, but it has no remote URL!",
+                                "Requested to obtain chemistry {}, but it has no remote URL!",
                                 k
                             );
                         }
                     } else {
                         info!(
-                            "file for requested chemistry {} already exists ({}).",
+                            "File for requested chemistry {} already exists ({}).",
                             k,
                             fpath.display()
                         );
