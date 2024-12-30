@@ -569,9 +569,11 @@ pub fn fetch_chemistries(
     af_home: PathBuf,
     fetch_opts: crate::simpleaf_commands::ChemistryFetchOpts,
 ) -> Result<()> {
-    if fetch_opts.name.is_empty() {
-        bail!("The list of chemistries to fetch was empty; nothing to do!");
-    }
+    let dry_run_str = if fetch_opts.dry_run {
+        "[dry_run] : "
+    } else {
+        ""
+    };
 
     // check if the chemistry file is absent altogether
     // if so, then download it
@@ -623,13 +625,14 @@ pub fn fetch_chemistries(
                             }
                         } else {
                             warn!(
-                                "Requested to obtain chemistry {}, but it has no remote URL!",
-                                k
+                                "{}Requested to obtain chemistry {}, but it has no remote URL!",
+                                dry_run_str, k
                             );
                         }
                     } else {
                         info!(
-                            "File for requested chemistry {} already exists ({}).",
+                            "{}File for requested chemistry {} already exists ({}).",
+                            dry_run_str,
                             k,
                             fpath.display()
                         );

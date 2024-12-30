@@ -457,7 +457,7 @@ pub struct ChemistryRemoveOpts {
 #[command(arg_required_else_help = true)]
 pub struct ChemistryFetchOpts {
     /// A comma-separated list of chemistry names to fetch (or a *single* regex pattern for matching multiple chemistries). Use '.*' to fetch for all registered chemistries.
-    #[arg(short, long, value_delimiter = ',')]
+    #[arg(short, long, required = true, value_delimiter = ',')]
     pub name: Vec<String>,
     /// Print the permit list file(s) that will be downloaded without downloading them
     #[arg(short, long)]
