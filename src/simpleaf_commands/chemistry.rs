@@ -565,7 +565,7 @@ pub fn fetch_chemistries(
     let chem_path = af_home.join(CHEMISTRIES_PATH);
     if !chem_path.is_file() {
         bail!(
-            "The chemistry file is missing from {}; nothing to download.",
+            "The chemistry file is missing from {}; Nothing to download.",
             chem_path.display()
         );
     }
