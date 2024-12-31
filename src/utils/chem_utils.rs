@@ -178,25 +178,8 @@ impl fmt::Display for CustomChemistry {
 /// and allow converting a `CustomChemistry` into a `serde_json::Value`.
 impl From<CustomChemistry> for Value {
     fn from(cc: CustomChemistry) -> Value {
-        let mut value = json!({
-            GEOMETRY_KEY: cc.geometry
-        });
-        value[EXPECTED_ORI_KEY] = json!(cc.expected_ori.as_str());
-        value[VERSION_KEY] = json!(cc.version);
-        value[LOCAL_PL_PATH_KEY] = if let Some(lpp) = cc.plist_name {
-            json!(lpp)
-        } else {
-            json!(null)
-        };
-        value[REMOTE_PL_URL_KEY] = if let Some(rpu) = cc.remote_pl_url {
-            json!(rpu)
-        } else {
-            json!(null)
-        };
-        if let Some(meta) = cc.meta {
-            value[META_KEY] = meta;
-        }
-        value
+        serde_json::to_value(cc)
+            .expect("Valid chemistry should always be convertible to JSON value")
     }
 }
 
@@ -213,6 +196,7 @@ pub fn get_custom_chem_hm(custom_chem_p: &Path) -> Result<HashMap<String, Custom
     Ok(chem_hm)
 }
 
+/// convert the custom chemistry hashmap into a `serde_json::Value`
 pub fn custom_chem_hm_into_json(custom_chem_hm: HashMap<String, CustomChemistry>) -> Result<Value> {
     let v = serde_json::to_value(custom_chem_hm)?;
     Ok(v)
