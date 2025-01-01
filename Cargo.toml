@@ -89,6 +89,7 @@ regex = { version = "1.11.1", default-features = false, features = [
   "perf",
   "std",
 ] }
+tempfile = "3.14.0"
 
 [profile.release]
 lto = "thin"

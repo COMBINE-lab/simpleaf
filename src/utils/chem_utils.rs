@@ -2,7 +2,7 @@ use crate::utils::af_utils::{extract_geometry, parse_resource_json_file, validat
 use crate::utils::constants::*;
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
@@ -13,8 +13,6 @@ use strum::IntoEnumIterator;
 
 static GEOMETRY_KEY: &str = "geometry";
 static EXPECTED_ORI_KEY: &str = "expected_ori";
-static VERSION_KEY: &str = "version";
-static META_KEY: &str = "meta";
 
 pub(crate) static LOCAL_PL_PATH_KEY: &str = "plist_name";
 pub(crate) static REMOTE_PL_URL_KEY: &str = "remote_url";
@@ -80,7 +78,7 @@ impl ExpectedOri {
 /// the name, geometry string, potential permit list etc.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CustomChemistry {
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     pub name: String,
     pub geometry: String,
     #[serde(default = "ExpectedOri::default")]

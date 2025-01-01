@@ -490,11 +490,11 @@ pub struct ChemistryAddOpts {
     #[arg(short, long)]
     pub name: String,
     /// A quoted string representing the geometry to which the chemistry maps
-    #[arg(short, long)]
-    pub geometry: String,
+    #[arg(short, long, required_unless_present = "from_json")]
+    pub geometry: Option<String>,
     /// The direction of the first (most upstream) mappable biological sequence.
-    #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(["fw", "rc", "both"]))]
-    pub expected_ori: String,
+    #[arg(short, long, required_unless_present = "from_json", value_parser = clap::builder::PossibleValuesParser::new(["fw", "rc", "both"]))]
+    pub expected_ori: Option<String>,
     /// The (fully-qualified) path to a local permit list file that will be copied into
     /// the ALEVIN_FRY_HOME directory for future use.
     #[arg(long)]
@@ -514,6 +514,12 @@ pub struct ChemistryAddOpts {
     /// e.g., `0.2.0`.
     #[arg(long, default_value = "0.0.0")]
     pub version: Option<String>,
+    /// Instead of providing the chemistry directly on the command line, use the
+    /// chemistry definition provided in the provided JSON file. This JSON file
+    /// can be local or remote, but it must contain a valid JSON object with the
+    /// provided `--name` as the key of the chemistry you wish to add.
+    #[arg(long)]
+    pub from_json: Option<String>,
 }
 
 /// Update the local chemistry registry according to the upstream repository
