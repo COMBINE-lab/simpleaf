@@ -39,6 +39,7 @@ fn main() -> anyhow::Result<()> {
             EnvFilter::builder()
                 .with_default_directive(LevelFilter::INFO.into())
                 .from_env_lossy()
+                // we don't want to hear anything below a warning from ureq
                 .add_directive("ureq=warn".parse()?),
         )
         .init();
@@ -67,45 +68,29 @@ fn main() -> anyhow::Result<()> {
     // to the appropriate function.
     match cli_args.command {
         // set the paths where the relevant tools live
-        Commands::SetPaths {
-            salmon,
-            piscem,
-            alevin_fry,
-        } => set_paths(
-            af_home_path,
-            Commands::SetPaths {
-                salmon,
-                piscem,
-                alevin_fry,
-            },
-        ),
-
+        Commands::SetPaths(sp_opts) => set_paths(af_home_path, sp_opts),
+        // chemistry related commands
         Commands::Chemistry(ChemistryCommand::Add(add_opts)) => {
             add_chemistry(af_home_path, add_opts)
         }
-
         Commands::Chemistry(ChemistryCommand::Remove(rem_opts)) => {
             remove_chemistry(af_home_path, rem_opts)
         }
-
         Commands::Chemistry(ChemistryCommand::Clean(clean_opts)) => {
             clean_chemistries(af_home_path, clean_opts)
         }
-
         Commands::Chemistry(ChemistryCommand::Lookup(lookup_opts)) => {
             lookup_chemistry(af_home_path, lookup_opts)
         }
-
         Commands::Chemistry(ChemistryCommand::Refresh(refresh_opts)) => {
             refresh_chemistries(af_home_path, refresh_opts)
         }
-
         Commands::Chemistry(ChemistryCommand::Fetch(fetch_opts)) => {
             fetch_chemistries(af_home_path, fetch_opts)
         }
-
+        // Inspect the status of simpleaf
         Commands::Inspect {} => inspect_simpleaf(crate_version!(), af_home_path),
-
+        // re-refresh the versions information of all of the programs
         Commands::RefreshProgInfo {} => refresh_prog_info(af_home_path),
 
         // if we are building the reference and indexing

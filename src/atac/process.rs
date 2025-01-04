@@ -358,9 +358,56 @@ being used by simpleaf"#,
     Ok(())
 }
 
+fn macs_call_peaks(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
+    /*
+          {params.macs2_path} callpeak \
+                -f BEDPE \
+                -g {params.g} \
+                --nomodel \
+                --extsize 50 \
+                --keep-dup all \
+                -q {params.q} \
+                -t {input} \
+                -n {params.macs2_pref}
+    */
+    // Read the JSON contents of the file as an instance of `User`.
+    let v: Value = prog_utils::inspect_af_home(af_home_path)?;
+    let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+
+    let macs_prog_info = rp
+        .macs
+        .as_ref()
+        .expect("macs program info should be properly set.");
+
+    let gpl_dir = opts.output.join("af_process");
+    let bed_input = gpl_dir.join("map_sorted.bed");
+    let peaks_output = gpl_dir.join("peaks.narrowPeak");
+    let mut macs_cmd =
+        std::process::Command::new(format!("{}", &macs_prog_info.exe_path.display()));
+    macs_cmd
+        .arg("-f")
+        .arg("BEDPE")
+        .arg("--nomodel")
+        .arg("--extsize")
+        .arg("50")
+        .arg("--keep-dup")
+        .arg("all")
+        .arg("-q")
+        .arg("0.1")
+        .arg("-g")
+        .arg("hs")
+        .arg("-t")
+        .arg(bed_input)
+        .arg("-n")
+        .arg(peaks_output);
+
+    Ok(())
+}
+
 pub(crate) fn gen_bed(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
     af_gpl(af_home_path, opts)?;
     af_sort(af_home_path, opts)?;
+    macs_call_peaks(af_home_path, opts)?;
     Ok(())
 }
 
