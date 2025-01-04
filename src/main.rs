@@ -38,7 +38,8 @@ fn main() -> anyhow::Result<()> {
         .with(
             EnvFilter::builder()
                 .with_default_directive(LevelFilter::INFO.into())
-                .from_env_lossy(),
+                .from_env_lossy()
+                .add_directive("ureq=warn".parse()?),
         )
         .init();
 
