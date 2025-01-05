@@ -270,7 +270,7 @@ pub struct IndexOpts {
               requires_ifs([
                 (ArgPredicate::IsPresent, "gtf") 
               ]),
-              conflicts_with = "ref_seq")]
+              conflicts_with_all = ["ref_seq", "feature_csv", "probe_csv"])]
     pub fasta: Option<PathBuf>,
 
     /// Path to a reference GTF/GFF3 file to be used for the expanded reference construction
@@ -280,7 +280,7 @@ pub struct IndexOpts {
         help_heading = "Expanded Reference Options",
         display_order = 3,
         requires = "fasta",
-        conflicts_with = "ref_seq"
+        conflicts_with_all = ["ref_seq", "feature_csv", "probe_csv"]
     )]
     pub gtf: Option<PathBuf>,
 
@@ -289,7 +289,7 @@ pub struct IndexOpts {
         long,
         display_order = 4,
         requires = "fasta",
-        conflicts_with = "ref_seq"
+        conflicts_with_all = ["ref_seq", "feature_csv", "probe_csv"]
     )]
     pub gff3_format: bool,
 
@@ -300,7 +300,7 @@ pub struct IndexOpts {
         help_heading = "Expanded Reference Options",
         display_order = 5,
         requires = "fasta",
-        conflicts_with = "ref_seq",
+        conflicts_with_all = ["ref_seq", "feature_csv", "probe_csv"],
         default_value_t = 91,
         hide_default_value = true
     )]
@@ -312,22 +312,22 @@ pub struct IndexOpts {
         help_heading = "Expanded Reference Options",
         display_order = 6,
         requires = "fasta",
-        conflicts_with = "ref_seq"
+        conflicts_with_all = ["ref_seq", "feature_csv", "probe_csv"]
     )]
     pub dedup: bool,
 
-    /// Reference sequences to directly build index on, and avoid expanded reference construction
+    /// Path to a FASTA file containing reference sequences to directly build index on, and avoid expanded reference construction
     #[arg(long, alias = "refseq", help_heading = "Direct Reference Options", display_order = 7,
-              conflicts_with_all = ["dedup", "unspliced", "spliced", "rlen", "gtf", "fasta"])]
+              conflicts_with_all = ["dedup", "unspliced", "spliced", "rlen", "gtf", "fasta", "feature_csv", "probe_csv"])]
     pub ref_seq: Option<PathBuf>,
 
-    /// Path to FASTA file with extra spliced sequence to add to the index
+    /// Path to a FASTA file with extra spliced sequence to add to the index
     #[arg(
         long,
         help_heading = "Expanded Reference Options",
         display_order = 8,
         requires = "fasta",
-        conflicts_with = "ref_seq"
+        conflicts_with_all = ["ref_seq", "feature_csv", "probe_csv"]
     )]
     pub spliced: Option<PathBuf>,
 
@@ -337,7 +337,7 @@ pub struct IndexOpts {
         help_heading = "Expanded Reference Options",
         display_order = 9,
         requires = "fasta",
-        conflicts_with = "ref_seq"
+        conflicts_with_all = ["ref_seq", "feature_csv", "probe_csv"]
     )]
     pub unspliced: Option<PathBuf>,
 
@@ -439,12 +439,12 @@ pub struct IndexOpts {
     )]
     pub sparse: bool,
 
-    /// A CSV file containing probe sequences to use for direct reference indexing. The file must follow the format of 10x Probe Set Reference v2 CSV, containing four mandatory columns: gene_id, probe_seq, probe_id, and included, and an optional column: region.
+    /// Path to a CSV file containing probe sequences to use for direct reference indexing. The file must follow the format of 10x Probe Set Reference v2 CSV, containing four mandatory columns: gene_id, probe_seq, probe_id, and included (TRUE or FALSE), and an optional column: region (spliced or unspliced).
     #[arg(long, help_heading = "Direct Reference Options", display_order = 7,
     conflicts_with_all = ["dedup", "unspliced", "spliced", "rlen", "gtf", "fasta", "ref_seq", "feature_csv"])]
     pub probe_csv: Option<PathBuf>,
 
-    /// A CSV file containing feature barcode sequences to use for direct reference indexing. The file must follow the format of 10x Feature Reference CSV. Currently, only three columns are used: id, name, and sequence.
+    /// Path to a CSV file containing feature barcode sequences to use for direct reference indexing. The file must follow the format of 10x Feature Reference CSV. Currently, only three columns are used: id, name, and sequence.
     #[arg(long, help_heading = "Direct Reference Options", display_order = 7,
     conflicts_with_all = ["dedup", "unspliced", "spliced", "rlen", "gtf", "fasta", "ref_seq", "probe_csv"])]
     pub feature_csv: Option<PathBuf>,
@@ -557,7 +557,7 @@ pub enum ChemistryCommand {
 }
 
 #[derive(Args, Clone, Debug)]
-#[command(arg_required_else_help = true)]
+#[command(arg_required_else_help = false)]
 pub struct SetPathOpts {
     /// path to salmon to use
     #[arg(short, long)]

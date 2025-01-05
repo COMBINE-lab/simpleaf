@@ -30,7 +30,7 @@ The custom format is as follows; you must specify the content of read 1 and read
 
 In particular, this is how one would specify the 10x Chromium v3 geometry using the custom syntax.  The format string says that the read pair should be interpreted as read 1 ``1{...}`` followed by read 2 ``2{...}``.  The syntax inside the ``{}`` says how the read should be interpreted.  Here ``b[16]u[12]x:`` means that the first 16 bases constitute the barcode, the next 12 constitute the UMI, and anything that comes after that (if it exists) until the end of read 1 should be discarded (``x``).  For read 2, we have ``2{r:}``, meaning that we should interpret read 2, in it's full length, as biological sequence.
 
-It is possible to have pieces of geometry repeated, in which case they will be extracted and concatenated together.  For example, ``1{b[16]u[12]b[4]x:}`` would mean that we should obtain the barcode by extracting bases 1-16 (1-based indexing) and 29-32 and concatenating them togehter to obtain the full barcode.  A
+It is possible to have pieces of geometry repeated, in which case they will be extracted and concatenated together.  For example, ``1{b[16]u[12]b[4]x:}`` would mean that we should obtain the barcode by extracting bases 1-16 (1-based indexing) and 29-32 and concatenating them together to obtain the full barcode.  A
 
 .. note::
 
@@ -46,35 +46,78 @@ The relevant options (which you can obtain by running ``simpleaf quant -h``) are
 
 .. code-block:: bash
 
-  quantify a sample
-  
-  Usage: simpleaf quant [OPTIONS] --chemistry <CHEMISTRY> --output <OUTPUT> --resolution <RESOLUTION> <--knee|--unfiltered-pl [<UNFILTERED_PL>]|--forced-cells <FORCED_CELLS>|--expect-cells <EXPECT_CELLS>> <--index <INDEX>|--map-dir <MAP_DIR>>
-  
-  Options:
-    -c, --chemistry <CHEMISTRY>  chemistry
-    -o, --output <OUTPUT>        output directory
-    -t, --threads <THREADS>      number of threads to use when running [default: 16]
-    -h, --help                   Print help information
-    -V, --version                Print version information
-  
-  Mapping Options:
-    -i, --index <INDEX>            path to index
-    -1, --reads1 <READS1>          comma-separated list of paths to read 1 files
-    -2, --reads2 <READS2>          comma-separated list of paths to read 2 files
-    -s, --use-selective-alignment  use selective-alignment for mapping (instead of pseudoalignment with structural constraints)
-        --use-piscem               use piscem for mapping (requires that index points to the piscem index)
-        --map-dir <MAP_DIR>        path to a mapped output directory containing a RAD file to skip mapping
-  
-  Permit List Generation Options:
-    -k, --knee                             use knee filtering mode
-    -u, --unfiltered-pl [<UNFILTERED_PL>]  use unfiltered permit list
-    -f, --forced-cells <FORCED_CELLS>      use forced number of cells
-    -x, --explicit-pl <EXPLICIT_PL>        use a filtered, explicit permit list
-    -e, --expect-cells <EXPECT_CELLS>      use expected number of cells
-    -d, --expected-ori <EXPECTED_ORI>      The expected direction/orientation of alignments in the chemistry being processed. If not provided, will default to `fw` for 10xv2/10xv3, otherwise `both` [possible
-                                           values: fw, rc, both]
-        --min-reads <MIN_READS>            minimum read count threshold for a cell to be retained/processed; only used with --unfiltered-pl [default: 10]
-  
-  UMI Resolution Options:
-    -m, --t2g-map <T2G_MAP>        transcript to gene map
-    -r, --resolution <RESOLUTION>  resolution mode [possible values: cr-like, cr-like-em, parsimony, parsimony-em, parsimony-gene, parsimony-gene-em]
+    quantify a sample
+
+    Usage: simpleaf quant [OPTIONS] --chemistry <CHEMISTRY> --output <OUTPUT> --resolution <RESOLUTION> <--expect-cells <EXPECT_CELLS>|--explicit-pl <EXPLICIT_PL>|--forced-cells <FORCED_CELLS>|--knee|--unfiltered-pl [<UNFILTERED_PL>]> <--index <INDEX>|--map-dir <MAP_DIR>>
+
+    Options:
+      -c, --chemistry <CHEMISTRY>  The name of a registered chemistry or a quoted string representing a
+                                  custom geometry specification
+      -o, --output <OUTPUT>        Path to the output directory
+      -t, --threads <THREADS>      Number of threads to use when running [default: 16]
+      -h, --help                   Print help
+      -V, --version                Print version
+
+    Mapping Options:
+      -i, --index <INDEX>            Path to a folder containing the index files
+      -1, --reads1 <READS1>          Comma-separated list of paths to read 1 files. The order must
+                                    match the read 2 files
+      -2, --reads2 <READS2>          Comma-separated list of paths to read 2 files. The order must
+                                    match the read 1 files
+          --no-piscem                Don't use the default piscem mapper, instead, use salmon-alevin
+          --use-piscem               Use piscem for mapping (requires that index points to the piscem
+                                    index)
+      -s, --use-selective-alignment  Use selective-alignment for mapping (only if using salmon alevin
+                                    as the underlying mapper)
+          --map-dir <MAP_DIR>        Path to a mapped output directory containing a RAD file to skip
+                                    mapping
+
+    Piscem Mapping Options:
+          --struct-constraints
+              If piscem >= 0.7.0, enable structural constraints
+          --ignore-ambig-hits
+              Skip checking of the equivalence classes of k-mers that were too ambiguous to be
+              otherwise considered (passing this flag can speed up mapping slightly, but may reduce
+              specificity)
+          --no-poison
+              Do not consider poison k-mers, even if the underlying index contains them. In this case,
+              the mapping results will be identical to those obtained as if no poison table was added
+              to the index
+          --skipping-strategy <SKIPPING_STRATEGY>
+              The skipping strategy to use for k-mer collection [default: permissive] [possible values:
+              permissive, strict]
+          --max-ec-card <MAX_EC_CARD>
+              Determines the maximum cardinality equivalence class (number of (txp, orientation status)
+              pairs) to examine (cannot be used with --ignore-ambig-hits) [default: 4096]
+          --max-hit-occ <MAX_HIT_OCC>
+              In the first pass, consider only collected and matched k-mers of a read having <=
+              --max-hit-occ hits [default: 256]
+          --max-hit-occ-recover <MAX_HIT_OCC_RECOVER>
+              If all collected and matched k-mers of a read have > --max-hit-occ hits, then make a
+              second pass and consider k-mers having <= --max-hit-occ-recover hits [default: 1024]
+          --max-read-occ <MAX_READ_OCC>
+              Threshold for discarding reads with too many mappings [default: 2500]
+
+    Permit List Generation Options:
+      -k, --knee
+              Use knee filtering mode
+      -u, --unfiltered-pl [<UNFILTERED_PL>]
+              Use unfiltered permit list
+      -f, --forced-cells <FORCED_CELLS>
+              Use forced number of cells
+      -x, --explicit-pl <EXPLICIT_PL>
+              Use a filtered, explicit permit list
+      -e, --expect-cells <EXPECT_CELLS>
+              Use expected number of cells
+      -d, --expected-ori <EXPECTED_ORI>
+              The expected direction/orientation of alignments in the chemistry being processed. If not
+              provided, will default to `fw` for 10xv2/10xv3, otherwise `both` [possible values: fw,
+              rc, both]
+          --min-reads <MIN_READS>
+              Minimum read count threshold for a cell to be retained/processed; only use with
+              --unfiltered-pl [default: 10]
+
+    UMI Resolution Options:
+      -m, --t2g-map <T2G_MAP>        Path to a transcript to gene map file
+      -r, --resolution <RESOLUTION>  UMI resolution mode [possible values: cr-like, cr-like-em,
+                                    parsimony, parsimony-em, parsimony-gene, parsimony-gene-em]

@@ -43,7 +43,7 @@ The ``refresh`` sub-command takes no *required* arguments; it's usage is shown b
   Usage: simpleaf chemistry refresh [OPTIONS]
 
   Options:
-    -f, --force    overwrite an existing matched chemistry even if the version isn't newer
+    -f, --force    overwrite an existing matched chemistry even if the version is not newer
     -d, --dry-run  report what would happen with a refresh without actually performing one on the actual chemistry registry
     -h, --help     Print help
 
@@ -79,9 +79,9 @@ Every chemistry added to the registry has three mandatory properties: ``name``, 
 
 
 - ``name``: A unique name (within the existing registry) of the chemistry. It must be a valid UTF-8 identifier. If the name is already registered, the existing definition will be updated if a higher ``--version`` is provided (see below for details). Otherwise, simpleaf will complain and fail.
-- ``geometry``: The geometry specification must be provided as a quoted string, and must follow the `Sequence Fragment Geometry Description Language <https://hackmd.io/@PI7Og0l1ReeBZu_pjQGUQQ/rJMgmvr13>`_ as used in the `quant command <https://simpleaf.readthedocs.io/en/latest/quant-command.html#a-note-on-the-chemistry-flag>`. 
+- ``geometry``: The geometry specification must be provided as a quoted string, and must follow the `Sequence Fragment Geometry Description Language <https://hackmd.io/@PI7Og0l1ReeBZu_pjQGUQQ/rJMgmvr13>`_ as used in the `quant command <https://simpleaf.readthedocs.io/en/latest/quant-command.html#a-note-on-the-chemistry-flag>`_. 
 - ``expected-ori``: The expected orientation of the chemistry. It must be one of the following: fw (forward), rc (reverse complement), or both (both orientations). It describes the expected orientation relative to the first (most upstream) mappable biological sequence.
-Imagine we have reads from 10x Chromium 5' protocols with read1s and read2s both of 150 base pairs. With this specification, a read1, which is in the forward orientation, contains, from 5' to 3', a cell barcode, a UMI, a fixed fragment, and a fragment representing the 5' end of the cDNA. A read2, which is in the reverse complementary orientation, contains the second (downstream) cDNA fragment relative to its read1. You can find a detailed explanation of the 10x Chromium 5' protocol from Single Cell Genomics Library Structure <https://teichlab.github.io/scg_lib_structs/methods_html/10xChromium5.html>_.
+Imagine we have reads from 10x Chromium 5' protocols with read1s and read2s both of 150 base pairs. With this specification, a read1, which is in the forward orientation, contains, from 5' to 3', a cell barcode, a UMI, a fixed fragment, and a fragment representing the 5' end of the cDNA. A read2, which is in the reverse complementary orientation, contains the second (downstream) cDNA fragment relative to its read1. You can find a detailed explanation of the 10x Chromium 5' protocol from `Single Cell Genomics Library Structure <https://teichlab.github.io/scg_lib_structs/methods_html/10xChromium5.html>`_.
 If we map the biological sequence in read1s and read2s as paired-end reads (currently only supported when using the default mapper -- piscem), as biological read1s are the first mappable sequences, the expected orientation for this chemistry should be ``fw``, the orientation of read1s. However, if we only map read2s, the expected orientation should be ``rc``, because read2s are the first mappable sequences and are in the reverse complementary orientation.
 
 In addition to the required fields, there are 3 optional fields, as described below. A permit list file must be a TSV file without a header, and the first column must contain the sequence of permitted cell barcodes, i.e., the whitelist of cell barcodes.

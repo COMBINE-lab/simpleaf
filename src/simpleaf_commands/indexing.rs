@@ -192,7 +192,7 @@ fn parse_csv_record(
     has_region: bool,
     seq_id_hs: &mut HashSet<String>,
     ref_seq_writer: &mut BufWriter<File>,
-    id_to_name_writer: &mut BufWriter<File>,
+    // id_to_name_writer: &mut BufWriter<File>,
     t2g_writer: &mut BufWriter<File>,
 ) -> anyhow::Result<()> {
     if !include {
@@ -219,7 +219,7 @@ fn parse_csv_record(
     };
 
     // insert into gene id to name
-    writeln!(id_to_name_writer, "{}\t{}", ref_id, ref_id)?;
+    // writeln!(id_to_name_writer, "{}\t{}", ref_id, ref_id)?;
 
     // insert into ref seq
     writeln!(ref_seq_writer, ">{}\n{}", seq_id, sequence)?;
@@ -371,7 +371,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
 
         // define file names
         let ref_seq_path = outref.join("ref.fa");
-        let id_to_name_path = outref.join("gene_id_to_name.tsv");
+        // let id_to_name_path = outref.join("gene_id_to_name.tsv");
         let t2g_path = if has_region {
             outref.join("t2g_3col.tsv")
         } else {
@@ -380,7 +380,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
 
         // define buffer writers
         let mut ref_seq_writer = BufWriter::new(File::create(&ref_seq_path)?);
-        let mut id_to_name_writer = BufWriter::new(File::create(&id_to_name_path)?);
+        // let mut id_to_name_writer = BufWriter::new(File::create(&id_to_name_path)?);
         let mut t2g_writer = BufWriter::new(File::create(&t2g_path)?);
         let mut msl = u32::MAX;
 
@@ -400,7 +400,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
                         has_region,
                         &mut seq_id_hs,
                         &mut ref_seq_writer,
-                        &mut id_to_name_writer,
+                        // &mut id_to_name_writer,
                         &mut t2g_writer,
                     )?;
                 }
@@ -419,7 +419,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
                         has_region,
                         &mut seq_id_hs,
                         &mut ref_seq_writer,
-                        &mut id_to_name_writer,
+                        // &mut id_to_name_writer,
                         &mut t2g_writer,
                     )?;
                 }
@@ -427,12 +427,12 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
         }
 
         index_info["t2g_file"] = json!(&t2g_path);
-        index_info["gene_id_to_name"] = json!(&id_to_name_path);
+        // index_info["gene_id_to_name"] = json!(&id_to_name_path);
 
         min_seq_len = Some(msl);
         reference_sequence = Some(ref_seq_path);
         t2g = Some(t2g_path);
-        _gene_id_to_name = Some(id_to_name_path);
+        // _gene_id_to_name = Some(id_to_name_path);
     }
 
     std::fs::write(
