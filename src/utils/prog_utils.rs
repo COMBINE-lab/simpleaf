@@ -373,10 +373,10 @@ pub fn get_required_progs_from_paths(
     let opt_macs = match macs_exe {
         Some(p) => Some(p),
         None => {
-            match get_which_executable("macs2") {
+            match get_which_executable("macs3") {
                 Ok(p) => Some(p),
                 Err(_e) => {
-                    warn!("Could not find macs2 executable, peak calling cannot be peformed by simpleaf");
+                    warn!("Could not find macs3 executable, peak calling cannot be peformed by simpleaf");
                     None
                 }
             }
@@ -406,7 +406,7 @@ pub fn get_required_progs_from_paths(
     if let Some(macs) = opt_macs {
         let st = macs.display().to_string();
         let sr = run_fun!($st --version);
-        let v = check_version_constraints_from_output("macs2", ">=2.2.9, <3.0.0", sr)?;
+        let v = check_version_constraints_from_output("macs3", ">=3.0.2, <4.0.0", sr)?;
         rp.macs = Some(ProgInfo {
             exe_path: macs,
             version: format!("{}", v),
@@ -431,7 +431,7 @@ pub fn get_required_progs() -> Result<ReqProgs> {
     let salmon_exe = Some(search_for_executable("SALMON", "salmon")?);
     let piscem_exe = Some(search_for_executable("PISCEM", "piscem")?);
     let alevin_fry_exe = Some(search_for_executable("ALEVIN_FRY", "alevin-fry")?);
-    let macs_exe = Some(search_for_executable("ALEVIN_FRY", "macs2")?);
+    let macs_exe = Some(search_for_executable("ALEVIN_FRY", "macs3")?);
 
     get_required_progs_from_paths(salmon_exe, piscem_exe, alevin_fry_exe, macs_exe)
 }
