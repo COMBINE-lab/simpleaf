@@ -1,14 +1,14 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use cmd_lib::run_fun;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::ffi::{OsStr, OsString};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::LazyLock;
 use tracing::{debug, error, info, warn};
+use ureq::ResponseExt;
 use which::which;
 
 // The below functions are taken from the [`execute`](https://crates.io/crates/execute)
@@ -47,39 +47,13 @@ pub fn download_to_file_compute_hash<T: AsRef<str>>(
     file_path: &Path,
 ) -> Result<blake3::Hash> {
     let url = url.as_ref();
-
-    debug!(
-        "Downloading file from {} and writing to file {}",
-        url,
-        file_path.display()
-    );
-
-    let request = minreq::get(url).with_timeout(120).send()?;
-    match request.status_code {
-        200..=299 => {
-            // success
-            debug!(
-                "Obtained status code {} from final url {}",
-                request.status_code, request.url
-            );
-        }
-        x => {
-            return Err(anyhow!(
-                "could not obtain the requested file from {}; HTTP status code {}, reason {}",
-                url,
-                x,
-                request.reason_phrase
-            ))
-        }
-    }
-
-    let mut out_file = std::fs::File::create(file_path)?;
+    download_to_file(url, file_path)
+        .with_context(|| format!("failed to download the file from {}", url))?;
+    let new_file = std::fs::File::open(file_path)?;
+    let reader = std::io::BufReader::new(new_file);
     let mut hasher = blake3::Hasher::new();
-    let bytes = request.as_bytes();
-    hasher.update(bytes);
-    let hash = hasher.finalize();
-    out_file.write_all(bytes)?;
-    Ok(hash)
+    hasher.update_reader(reader)?;
+    Ok(hasher.finalize())
 }
 
 pub fn download_to_file<T: AsRef<str>>(url: T, file_path: &Path) -> Result<()> {
@@ -91,27 +65,37 @@ pub fn download_to_file<T: AsRef<str>>(url: T, file_path: &Path) -> Result<()> {
         file_path.display()
     );
 
-    let request = minreq::get(url).with_timeout(120).send()?;
-    match request.status_code {
-        200..=299 => {
-            // success
-            debug!(
-                "Obtained status code {} from final url {}",
-                request.status_code, request.url
-            );
+    let config = ureq::Agent::config_builder()
+        .timeout_recv_response(Some(std::time::Duration::from_secs(120)))
+        .build();
+    let agent = ureq::Agent::new_with_config(config);
+    let response = agent.get(url).call();
+
+    match response {
+        Ok(mut response) => {
+            if response.status().is_success() {
+                let mut req = response.body_mut().as_reader();
+                let f = std::fs::File::create(file_path)
+                    .with_context(|| format!("could not create file {}", file_path.display()))?;
+                let mut ofile = std::io::BufWriter::new(f);
+                std::io::copy(&mut req, &mut ofile)?;
+            } else {
+                let c = response
+                    .status()
+                    .canonical_reason()
+                    .unwrap_or("UNKNOWN FAILURE");
+                warn!(
+                    "Obtained status code {} from final url {}",
+                    c,
+                    response.get_uri()
+                );
+            }
         }
-        x => {
-            return Err(anyhow!(
-                "could not obtain the requested file from {}; HTTP status code {}, reason {}",
-                url,
-                x,
-                request.reason_phrase
-            ))
+        Err(e) => {
+            bail!("could not obtain content from {} because {:#?}", url, e);
         }
     }
 
-    let mut out_file = std::fs::File::create(file_path)?;
-    out_file.write_all(request.as_bytes())?;
     Ok(())
 }
 

@@ -1,10 +1,10 @@
-use crate::utils::af_utils::*;
 use crate::utils::chem_utils::{
     custom_chem_hm_into_json, get_custom_chem_hm, get_single_custom_chem_from_file,
     CustomChemistry, ExpectedOri, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY,
 };
 use crate::utils::constants::*;
 use crate::utils::prog_utils::{self, download_to_file_compute_hash};
+use crate::utils::{self, af_utils::*};
 use regex::Regex;
 
 use anyhow::{bail, Context, Result};
@@ -15,7 +15,90 @@ use std::fs;
 use std::io::{Seek, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
+use utils::prog_utils::download_to_file;
+use utils::remote::is_remote_url;
+
+/// Attempt to get the chemistry definition from the provided JSON file
+/// Check if the JSON file is local or remote. If remote, fetch the file first.
+/// Parse the JSON file, and look for the specific chemistry with the requested name.
+///
+/// Returns a tuple providing
+///     1. whether or not an attempt should be made to fetch a permit list for this chemistry
+///     2. the path to a local permit list file if it already exists
+///     3. any optional metadata (i.e. the "meta" field) associated with this chemistry definition.
+fn get_chem_def_from_json(
+    json_src: &str,
+    af_home_path: &PathBuf,
+    add_opts: &mut crate::simpleaf_commands::ChemistryAddOpts,
+) -> Result<(bool, Option<String>, Option<serde_json::Value>)> {
+    let need_fetch_pl;
+    let local_plist;
+
+    let source_chem = if is_remote_url(json_src) {
+        let tmp_dir = tempfile::Builder::new()
+            .prefix("jsontmpfile")
+            .rand_bytes(10)
+            .tempdir_in(af_home_path)?;
+        let file_path = tmp_dir.path().join("temp_chem.json");
+        download_to_file(json_src, &file_path)?;
+
+        if let Some(chem) =
+            utils::chem_utils::get_single_custom_chem_from_file(&file_path, &add_opts.name)?
+        {
+            tmp_dir.close()?;
+            chem
+        } else {
+            tmp_dir.close()?;
+            bail!(
+                "Could not properly parse the chemistry {} from the requested source JSON {}",
+                &add_opts.name,
+                json_src
+            );
+        }
+    } else {
+        let json_path = std::path::Path::new(&json_src);
+        if let Some(chem) =
+            utils::chem_utils::get_single_custom_chem_from_file(json_path, &add_opts.name)?
+        {
+            chem
+        } else {
+            bail!(
+                "Could not properly parse the chemistry {} from the requested source JSON {}",
+                &add_opts.name,
+                json_src
+            );
+        }
+    };
+
+    add_opts.geometry = Some(source_chem.geometry().to_owned());
+    add_opts.expected_ori = Some(source_chem.expected_ori().as_str().to_owned());
+    add_opts.remote_url = source_chem.remote_pl_url().clone();
+    add_opts.version = Some(source_chem.version().clone());
+    let meta = source_chem.meta().clone();
+
+    if let Some(plist_name) = source_chem.plist_name().clone().map(PathBuf::from) {
+        // check if the permit list is already one we have
+        let plist_path = af_home_path.join("plist").join(&plist_name);
+        local_plist = if plist_path.is_file() {
+            debug!(
+                "found permit list at {}, will not attempt to copy or download it.",
+                plist_path.display()
+            );
+            need_fetch_pl = false;
+            Some(plist_name.display().to_string())
+        } else {
+            add_opts.local_url = None;
+            need_fetch_pl = true;
+            None
+        };
+    } else {
+        local_plist = None;
+        add_opts.local_url = None;
+        need_fetch_pl = true;
+    }
+    Ok((need_fetch_pl, local_plist, meta))
+}
 
 /// Adds a chemistry to the local registry. The user provides a name,
 /// a quoted geometry string, and an expected orientation, and optionally a local path and / or a remote-url pointing to the barcode permit list.  
@@ -40,9 +123,43 @@ use tracing::{info, warn};
 /// immediately, so it requires a network connection for remote-urls.
 pub fn add_chemistry(
     af_home_path: PathBuf,
-    add_opts: crate::simpleaf_commands::ChemistryAddOpts,
+    mut add_opts: crate::simpleaf_commands::ChemistryAddOpts,
 ) -> Result<()> {
-    let geometry = add_opts.geometry;
+    let meta: Option<serde_json::Value>;
+    let need_fetch_pl;
+    let mut local_plist = None;
+
+    if let Some(json_src) = add_opts.from_json.clone() {
+        // try to get the chemistry entry from the provided JSON source
+        match get_chem_def_from_json(&json_src, &af_home_path, &mut add_opts) {
+            // successful
+            Ok((fpl, lplist, m)) => {
+                // we can't bind declared variables directly in the match
+                // so we do this instead.
+                (need_fetch_pl, local_plist, meta) = (fpl, lplist, m);
+                debug!(
+                    "obtained chemistry definition from provided JSON source : {}",
+                    json_src
+                );
+            }
+            // failure (explain why)
+            anyhow::Result::Err(e) => {
+                bail!(
+                    "failed to obtain the chemistry definition from the provided JSON source : {}. Error :: {:#}",
+                    json_src, e
+                );
+            }
+        }
+    } else {
+        // if no provided JSON source, then meta is None and we need to
+        // try and get the permit list
+        meta = None;
+        need_fetch_pl = true;
+    }
+
+    let geometry = add_opts
+        .geometry
+        .expect("geometry must be set if not providing a --from-json chemistry");
     // check geometry string, if no good then
     // propagate error.
     validate_geometry(&geometry)?;
@@ -71,98 +188,106 @@ pub fn add_chemistry(
         }
     }
 
-    let local_plist;
-    if let Some(local_url) = add_opts.local_url {
-        if local_url.is_file() {
-            let metadata = std::fs::metadata(&local_url)?;
-            let flen = metadata.size();
-            if flen > 4_294_967_296 {
-                warn!("The file provided to local-url ({}) is {:.1} GB. This file will be *copied* into the ALEVIN_FRY_HOME directory", local_url.display(), flen / 1_073_741_824);
+    if need_fetch_pl {
+        if let Some(local_url) = add_opts.local_url {
+            if local_url.is_file() {
+                let metadata = std::fs::metadata(&local_url)?;
+                let flen = metadata.size();
+                if flen > 4_294_967_296 {
+                    warn!("The file provided to local-url ({}) is {:.1} GB. This file will be *copied* into the ALEVIN_FRY_HOME directory", local_url.display(), flen / 1_073_741_824);
+                }
+
+                let mut hasher = blake3::Hasher::new();
+                hasher.update_mmap(&local_url)?;
+                let content_hash = hasher.finalize();
+                let hash_str = content_hash.to_string();
+
+                info!(
+                    "The provided permit list file {}, had Blake3 hash {}",
+                    local_url.display(),
+                    hash_str
+                );
+
+                let local_plist_name = PathBuf::from(hash_str);
+                let pdir = af_home_path.join("plist");
+                let local_plist_path = pdir.join(&local_plist_name);
+
+                create_dir_if_absent(&pdir)?;
+
+                // check if the file already exists
+                if local_plist_path.is_file() {
+                    info!(
+                        "Found a content-equivalent permit list file; will use the existing file."
+                    );
+                } else {
+                    info!(
+                        "Copying {} to {}",
+                        local_url.display(),
+                        local_plist_path.display()
+                    );
+                    std::fs::copy(&local_url, &local_plist_path).with_context(|| {
+                        format!(
+                            "Failed to copy local permit list url {} to location {}",
+                            local_url.display(),
+                            local_plist_path.display()
+                        )
+                    })?;
+                }
+                local_plist = Some(local_plist_name.display().to_string());
+            } else {
+                bail!(
+                    "The provided local path does not point to a file: {}; cannot proceed.",
+                    local_url.display()
+                );
             }
-
-            let mut hasher = blake3::Hasher::new();
-            hasher.update_mmap(&local_url)?;
-            let content_hash = hasher.finalize();
-            let hash_str = content_hash.to_string();
-
-            info!(
-                "The provided permit list file {}, had Blake3 hash {}",
-                local_url.display(),
-                hash_str
-            );
-
-            let local_plist_name = PathBuf::from(hash_str);
+        } else if let Some(ref remote_url) = add_opts.remote_url {
             let pdir = af_home_path.join("plist");
-            let local_plist_path = pdir.join(&local_plist_name);
-
             create_dir_if_absent(&pdir)?;
+
+            let tmpfile = {
+                let mut h = blake3::Hasher::new();
+                h.update(remote_url.as_bytes());
+                let hv = h.finalize();
+                pdir.join(PathBuf::from(hv.to_string()))
+            };
+
+            let hash = download_to_file_compute_hash(remote_url, &tmpfile)?;
+            let hash_str = hash.to_string();
+            let local_plist_name = PathBuf::from(&hash_str);
+            let local_plist_path = pdir.join(&local_plist_name);
 
             // check if the file already exists
             if local_plist_path.is_file() {
-                info!("Found a content-equivalent permit list file; will use the existing file.");
-            } else {
                 info!(
-                    "Copying {} to {}",
-                    local_url.display(),
-                    local_plist_path.display()
-                );
-                std::fs::copy(&local_url, &local_plist_path).with_context(|| {
-                    format!(
-                        "Failed to copy local permit list url {} to location {}",
-                        local_url.display(),
-                        local_plist_path.display()
-                    )
-                })?;
-            }
-            local_plist = Some(local_plist_name.display().to_string());
-        } else {
-            bail!(
-                "The provided local path does not point to a file: {}; cannot proceed.",
-                local_url.display()
-            );
-        }
-    } else if let Some(ref remote_url) = add_opts.remote_url {
-        let pdir = af_home_path.join("plist");
-        create_dir_if_absent(&pdir)?;
-
-        let tmpfile = {
-            let mut h = blake3::Hasher::new();
-            h.update(remote_url.as_bytes());
-            let hv = h.finalize();
-            pdir.join(PathBuf::from(hv.to_string()))
-        };
-
-        let hash = download_to_file_compute_hash(remote_url, &tmpfile)?;
-        let hash_str = hash.to_string();
-        let local_plist_name = PathBuf::from(&hash_str);
-        let local_plist_path = pdir.join(&local_plist_name);
-
-        // check if the file already exists
-        if local_plist_path.is_file() {
-            info!(
                 "Found a cached, content-equivalent permit list file; will use the existing file."
             );
 
-            // remove what we just downloaded
-            fs::remove_file(tmpfile)?;
+                // remove what we just downloaded
+                fs::remove_file(tmpfile)?;
+            } else {
+                info!("Copying {} to {}", remote_url, local_plist_path.display());
+                std::fs::rename(tmpfile, local_plist_path)?;
+            }
+            local_plist = Some(hash_str);
         } else {
-            info!("Copying {} to {}", remote_url, local_plist_path.display());
-            std::fs::rename(tmpfile, local_plist_path)?;
+            local_plist = None;
         }
-        local_plist = Some(hash_str);
-    } else {
-        local_plist = None;
     }
+
+    let ori_str = add_opts
+        .expected_ori
+        .expect("Expected ori must be set if not providing a chemistry using --from-json");
+    let ori = ExpectedOri::from_str(&ori_str)?;
 
     // init the custom chemistry struct
     let custom_chem = CustomChemistry {
         name,
         geometry,
-        expected_ori: ExpectedOri::from_str(&add_opts.expected_ori)?,
+        expected_ori: ori,
         plist_name: local_plist,
         remote_pl_url: add_opts.remote_url,
         version,
-        meta: None,
+        meta,
     };
 
     let mut chem_hm = get_custom_chem_hm(&chem_p)?;
@@ -322,9 +447,9 @@ pub fn refresh_chemistries(
                     } else if let serde_json::Value::String(v) = v {
                         if validate_geometry(v).is_ok() {
                             let new_ent = json!({
-                                "geometry": v,
-                                "expected_ori": "both",
-                                "version" : CustomChemistry::default_version(),
+                            "geometry": v,
+                            "expected_ori": "both",
+                            "version" : CustomChemistry::default_version(),
                             });
                             new_chem.insert(k.to_owned(), new_ent);
                             info!("{}Successfully inserted chemistry \"{}\" from the deprecated registry into the main registry.", dry_run_pref, k);
