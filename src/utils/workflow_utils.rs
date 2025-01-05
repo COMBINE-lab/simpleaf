@@ -5,7 +5,7 @@
 use anyhow::{anyhow, bail, Context};
 use chrono::{DateTime, Local};
 use clap::Parser;
-use cmd_lib::run_cmd;
+// use cmd_lib::run_cmd;
 use serde_json::{json, Map, Value};
 use std::boxed::Box;
 use std::collections::HashMap;
@@ -20,6 +20,7 @@ use crate::utils::prog_utils;
 use crate::utils::prog_utils::CommandVerbosityLevel;
 use crate::{Cli, Commands};
 
+use super::af_utils::create_dir_if_absent;
 use super::jrsonnet_main::ParseAction;
 use super::prog_utils::shell;
 
@@ -1288,9 +1289,7 @@ pub fn get_protocol_estuary<T: AsRef<Path>>(
         Ok(protocol_estuary)
     } else {
         // make pe
-        if !pe_dir.exists() {
-            run_cmd!(mkdir -p $pe_dir)?;
-        }
+        create_dir_if_absent(&pe_dir)?;
 
         prog_utils::download_to_file(dl_url, &pe_zip_file)?;
 

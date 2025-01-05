@@ -319,22 +319,20 @@ pub fn refresh_chemistries(
                 for (k, v) in old_custom_chem.iter() {
                     if new_chem.contains_key(k) {
                         warn!("{}The main registry already contained the chemistry \"{}\"; Ignored the one from the deprecated registry.", dry_run_pref, k);
-                    } else {
-                        if let serde_json::Value::String(v) = v {
-                            if validate_geometry(v).is_ok() {
-                                let new_ent = json!({
-                                    "geometry": v,
-                                    "expected_ori": "both",
-                                    "version" : CustomChemistry::default_version(),
-                                });
-                                new_chem.insert(k.to_owned(), new_ent);
-                                info!("{}Successfully inserted chemistry \"{}\" from the deprecated registry into the main registry.", dry_run_pref, k);
-                            } else {
-                                warn!("{}The chemistry \"{}\" in the deprecated registry is not a valid geometry string; Skipped.", dry_run_pref, k);
-                            }
+                    } else if let serde_json::Value::String(v) = v {
+                        if validate_geometry(v).is_ok() {
+                            let new_ent = json!({
+                                "geometry": v,
+                                "expected_ori": "both",
+                                "version" : CustomChemistry::default_version(),
+                            });
+                            new_chem.insert(k.to_owned(), new_ent);
+                            info!("{}Successfully inserted chemistry \"{}\" from the deprecated registry into the main registry.", dry_run_pref, k);
                         } else {
-                            warn!("{}The chemistry \"{}\" in the deprecated registry is not a string; Skipped.", dry_run_pref, k);
+                            warn!("{}The chemistry \"{}\" in the deprecated registry is not a valid geometry string; Skipped.", dry_run_pref, k);
                         }
+                    } else {
+                        warn!("{}The chemistry \"{}\" in the deprecated registry is not a string; Skipped.", dry_run_pref, k);
                     }
                 }
 
