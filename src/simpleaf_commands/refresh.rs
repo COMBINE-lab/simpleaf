@@ -13,6 +13,7 @@ pub fn refresh_prog_info(af_home_path: PathBuf) -> anyhow::Result<()> {
         current_rp.salmon.map(|p| p.exe_path),
         current_rp.piscem.map(|p| p.exe_path),
         current_rp.alevin_fry.map(|p| p.exe_path),
+        current_rp.macs.map(|p| p.exe_path),
     )?;
 
     let simpleaf_info_file = af_home_path.join("simpleaf_info.json");

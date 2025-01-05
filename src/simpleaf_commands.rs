@@ -556,6 +556,23 @@ pub enum ChemistryCommand {
     Fetch(ChemistryFetchOpts),
 }
 
+#[derive(Args, Clone, Debug)]
+#[command(arg_required_else_help = true)]
+pub struct SetPathOpts {
+    /// path to salmon to use
+    #[arg(short, long)]
+    salmon: Option<PathBuf>,
+    /// path to piscem to use
+    #[arg(short, long)]
+    piscem: Option<PathBuf>,
+    /// path to alein-fry to use
+    #[arg(short, long)]
+    alevin_fry: Option<PathBuf>,
+    /// path to macs2 to use
+    #[arg(short, long)]
+    macs: Option<PathBuf>,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     /// build the (expanded) reference index
@@ -568,17 +585,7 @@ pub enum Commands {
     /// quantify a sample
     Quant(MapQuantOpts),
     /// set paths to the programs that simpleaf will use
-    SetPaths {
-        /// path to salmon to use
-        #[arg(short, long)]
-        salmon: Option<PathBuf>,
-        /// path to piscem to use
-        #[arg(short, long)]
-        piscem: Option<PathBuf>,
-        /// path to alein-fry to use
-        #[arg(short, long)]
-        alevin_fry: Option<PathBuf>,
-    },
+    SetPaths(SetPathOpts),
     /// refreshes version information associated with programs used by simpleaf
     RefreshProgInfo {},
     /// run a sub-command dealing with atac-seq data
