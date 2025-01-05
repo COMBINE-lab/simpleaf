@@ -242,7 +242,18 @@ pub fn check_version_constraints_from_output<S1: AsRef<str>>(
         Ok(vs) => {
             let x = vs.split_whitespace();
             if let Some(version) = x.last() {
-                let parsed_version = Version::parse(version).unwrap();
+                let ver = if version.split(".").count() > 3 {
+                    warn!("version info {} is not a valid semver (more than 3 dotted version parts; looking only at the major, minor & patch versions).", version);
+                    version
+                        .split(".")
+                        .take(3)
+                        .collect::<Vec<&str>>()
+                        .join(".")
+                        .to_string()
+                } else {
+                    version.to_string()
+                };
+                let parsed_version = Version::parse(&ver).unwrap();
                 let req = VersionReq::parse(req_string.as_ref()).unwrap();
                 if req.matches(&parsed_version) {
                     return Ok(parsed_version);
@@ -250,7 +261,7 @@ pub fn check_version_constraints_from_output<S1: AsRef<str>>(
                     return Err(anyhow!(
                         "Parsed version of {} ({:?}) does not satisfy constraints {}. Please install a compatible version.",
                         prog_name,
-                        version,
+                        ver,
                         req
                     ));
                 }
@@ -395,7 +406,7 @@ pub fn get_required_progs_from_paths(
     if let Some(macs) = opt_macs {
         let st = macs.display().to_string();
         let sr = run_fun!($st --version);
-        let v = check_version_constraints_from_output("macs2", ">=2.2.9.1, <3.0.0", sr)?;
+        let v = check_version_constraints_from_output("macs2", ">=2.2.9, <3.0.0", sr)?;
         rp.macs = Some(ProgInfo {
             exe_path: macs,
             version: format!("{}", v),

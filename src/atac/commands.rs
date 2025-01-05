@@ -244,6 +244,10 @@ pub struct ProcessOpts {
     #[arg(short, long, default_value_t = 16, display_order = 5)]
     pub threads: u32,
 
+    /// do peak calling after generating the bed file
+    #[arg(long)]
+    pub call_peaks: bool,
+
     /// Use the provided file as the unfiltered permit list (i.e. whitelist).
     /// This argument only needs to be provided if you are providing the permit list explicitly,
     /// overriding the default permit list for the provided chemistry.

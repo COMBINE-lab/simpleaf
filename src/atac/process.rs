@@ -127,7 +127,10 @@ fn add_read_args(map_cmd: &mut std::process::Command, opts: &ProcessOpts) -> any
     Ok(())
 }
 
-pub(crate) fn check_progs<P: AsRef<Path>>(af_home_path: P) -> anyhow::Result<()> {
+pub(crate) fn check_progs<P: AsRef<Path>>(
+    af_home_path: P,
+    opts: &ProcessOpts,
+) -> anyhow::Result<()> {
     let af_home_path = af_home_path.as_ref();
     // Read the JSON contents of the file as an instance of `User`.
     let v: Value = prog_utils::inspect_af_home(af_home_path)?;
@@ -159,6 +162,21 @@ pub(crate) fn check_progs<P: AsRef<Path>>(af_home_path: P) -> anyhow::Result<()>
     ) {
         Ok(piscem_ver) => info!("found piscem version {:#}, proceeding", piscem_ver),
         Err(e) => return Err(e),
+    }
+
+    if opts.call_peaks {
+        let macs_prog_info = rp
+            .macs
+            .as_ref()
+            .expect("macs2 program should be properly set if using the `--call-peaks` option");
+        match prog_utils::check_version_constraints(
+            "macs2",
+            ">=2.2.9, <3.0.0",
+            &macs_prog_info.version,
+        ) {
+            Ok(macs_ver) => info!("found macs2 version {:#}, proceeding", macs_ver),
+            Err(e) => return Err(e),
+        }
     }
 
     Ok(())
@@ -380,11 +398,12 @@ fn macs_call_peaks(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()
         .expect("macs program info should be properly set.");
 
     let gpl_dir = opts.output.join("af_process");
-    let bed_input = gpl_dir.join("map_sorted.bed");
+    let bed_input = gpl_dir.join("map.bed");
     let peaks_output = gpl_dir.join("peaks.narrowPeak");
     let mut macs_cmd =
         std::process::Command::new(format!("{}", &macs_prog_info.exe_path.display()));
     macs_cmd
+        .arg("callpeak")
         .arg("-f")
         .arg("BEDPE")
         .arg("--nomodel")
@@ -400,6 +419,48 @@ fn macs_call_peaks(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()
         .arg(bed_input)
         .arg("-n")
         .arg(peaks_output);
+
+    let macs_cmd_string = prog_utils::get_cmd_line_string(&macs_cmd);
+    info!("macs2 command : {}", macs_cmd_string);
+
+    let macs_start = Instant::now();
+    let macs_proc_out = prog_utils::execute_command(&mut macs_cmd, CommandVerbosityLevel::Quiet)
+        .expect("could not execute [atac::macs]");
+    let macs_duration = macs_start.elapsed();
+
+    if !macs_proc_out.status.success() {
+        bail!(
+            "atac::macs failed with exit status {:?}",
+            macs_proc_out.status
+        );
+    } else {
+        info!("macs completed successfully in {:#?}", macs_duration);
+    }
+
+    let af_process_info_file = opts.output.join("simpleaf_process_log.json");
+    let json_file = std::fs::File::open(af_process_info_file.clone())
+        .with_context(|| format!("couldn't open file {}", af_process_info_file.display()))?;
+    let json_reader = BufReader::new(json_file);
+    let mut af_process_info: serde_json::Value = serde_json::from_reader(json_reader)
+        .with_context(|| {
+            format!(
+                "couldn't parse JSON content from {}",
+                af_process_info_file.display()
+            )
+        })?;
+
+    af_process_info["time_info"]["macs_time"] = json!(macs_duration.as_secs_f64());
+    af_process_info["cmd_info"]["macs_cmd"] = json!(macs_cmd_string);
+
+    // write the relevant info about
+    // our run to file.
+    std::fs::write(
+        &af_process_info_file,
+        serde_json::to_string_pretty(&af_process_info).unwrap(),
+    )
+    .with_context(|| format!("could not write {}", af_process_info_file.display()))?;
+
+    info!("successfully called peaks using macs2.");
 
     Ok(())
 }
