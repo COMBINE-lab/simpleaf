@@ -168,13 +168,13 @@ pub(crate) fn check_progs<P: AsRef<Path>>(
         let macs_prog_info = rp
             .macs
             .as_ref()
-            .expect("macs2 program should be properly set if using the `--call-peaks` option");
+            .expect("macs3 program should be properly set if using the `--call-peaks` option");
         match prog_utils::check_version_constraints(
-            "macs2",
-            ">=2.2.9, <3.0.0",
+            "macs3",
+            ">=3.0.2, <4.0.0",
             &macs_prog_info.version,
         ) {
-            Ok(macs_ver) => info!("found macs2 version {:#}, proceeding", macs_ver),
+            Ok(macs_ver) => info!("found macs3 version {:#}, proceeding", macs_ver),
             Err(e) => return Err(e),
         }
     }
@@ -377,17 +377,6 @@ being used by simpleaf"#,
 }
 
 fn macs_call_peaks(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
-    /*
-          {params.macs2_path} callpeak \
-                -f BEDPE \
-                -g {params.g} \
-                --nomodel \
-                --extsize 50 \
-                --keep-dup all \
-                -q {params.q} \
-                -t {input} \
-                -n {params.macs2_pref}
-    */
     // Read the JSON contents of the file as an instance of `User`.
     let v: Value = prog_utils::inspect_af_home(af_home_path)?;
     let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
@@ -399,7 +388,7 @@ fn macs_call_peaks(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()
 
     let gpl_dir = opts.output.join("af_process");
     let bed_input = gpl_dir.join("map.bed");
-    let peaks_output = gpl_dir.join("peaks.narrowPeak");
+    let peaks_output = gpl_dir.join("macs");
     let mut macs_cmd =
         std::process::Command::new(format!("{}", &macs_prog_info.exe_path.display()));
     macs_cmd
@@ -421,7 +410,7 @@ fn macs_call_peaks(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()
         .arg(peaks_output);
 
     let macs_cmd_string = prog_utils::get_cmd_line_string(&macs_cmd);
-    info!("macs2 command : {}", macs_cmd_string);
+    info!("macs3 command : {}", macs_cmd_string);
 
     let macs_start = Instant::now();
     let macs_proc_out = prog_utils::execute_command(&mut macs_cmd, CommandVerbosityLevel::Quiet)
@@ -460,7 +449,7 @@ fn macs_call_peaks(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()
     )
     .with_context(|| format!("could not write {}", af_process_info_file.display()))?;
 
-    info!("successfully called peaks using macs2.");
+    info!("successfully called peaks using macs3.");
 
     Ok(())
 }
