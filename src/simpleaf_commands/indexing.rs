@@ -1,11 +1,15 @@
+use crate::utils::af_utils::create_dir_if_absent;
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::{CommandVerbosityLevel, ReqProgs};
 
-use anyhow::{bail, Context};
-use cmd_lib::run_fun;
+use anyhow::{anyhow, bail, Context};
 use roers;
+use serde::Deserialize;
 use serde_json::json;
 use serde_json::Value;
+use std::collections::HashSet;
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tracing::{error, info, warn};
@@ -26,6 +30,199 @@ fn validate_index_type_opts(opts: &IndexOpts) -> anyhow::Result<()> {
     if bail {
         bail!("conflicting command line arguments");
     }
+    Ok(())
+}
+
+enum CsvReader {
+    Probe(csv::Reader<File>),
+    Feature(csv::Reader<File>),
+}
+
+impl CsvReader {
+    fn has_region(&mut self) -> anyhow::Result<bool> {
+        let rdr = match self {
+            CsvReader::Probe(rdr) => rdr,
+            CsvReader::Feature(rdr) => rdr,
+        };
+
+        let headers = rdr.headers()?.iter().collect::<Vec<_>>();
+        Ok(headers.contains(&"region"))
+    }
+}
+
+trait CsvRow<'de> {
+    fn ref_id(&self) -> &str;
+    fn sequence(&self) -> &str;
+    fn seq_id(&self) -> &str;
+    fn included(&self) -> bool;
+    fn region(&self) -> Option<&ProbeRegion>;
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(clippy::upper_case_acronyms)]
+enum Included {
+    TRUE,
+    FALSE,
+}
+
+#[allow(dead_code)]
+impl Included {
+    fn from_str(s: &str) -> anyhow::Result<Self> {
+        match s {
+            "TRUE" => Ok(Included::TRUE),
+            "FALSE" => Ok(Included::FALSE),
+            _ => Err(anyhow!("Invalid include value: {}", s)),
+        }
+    }
+}
+
+impl From<Included> for bool {
+    fn from(f: Included) -> bool {
+        match f {
+            Included::TRUE => true,
+            Included::FALSE => false,
+        }
+    }
+}
+
+#[derive(Deserialize, Debug)]
+struct ProbeRow {
+    gene_id: String,
+    probe_seq: String,
+    probe_id: String,
+    included: Option<Included>,
+    region: Option<ProbeRegion>,
+}
+
+impl CsvRow<'_> for ProbeRow {
+    fn ref_id(&self) -> &str {
+        &self.gene_id
+    }
+
+    fn sequence(&self) -> &str {
+        &self.probe_seq
+    }
+
+    fn seq_id(&self) -> &str {
+        &self.probe_id
+    }
+
+    fn included(&self) -> bool {
+        !matches!(self.included, Some(Included::FALSE))
+    }
+
+    fn region(&self) -> Option<&ProbeRegion> {
+        self.region.as_ref()
+    }
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(dead_code)]
+struct FeatureRow {
+    id: String,
+    name: String,
+    sequence: String,
+    read: Option<String>,
+    pattern: Option<String>,
+    feature_type: Option<String>,
+    mhc_allele: Option<String>,
+}
+
+impl CsvRow<'_> for FeatureRow {
+    fn ref_id(&self) -> &str {
+        &self.name
+    }
+
+    fn sequence(&self) -> &str {
+        &self.sequence
+    }
+
+    fn seq_id(&self) -> &str {
+        &self.id
+    }
+
+    fn included(&self) -> bool {
+        true
+    }
+
+    fn region(&self) -> Option<&ProbeRegion> {
+        None
+    }
+}
+
+#[derive(serde::Deserialize, Debug)]
+#[allow(non_camel_case_types)]
+enum ProbeRegion {
+    spliced,
+    unspliced,
+}
+
+#[allow(dead_code)]
+impl ProbeRegion {
+    fn from_str(s: &str) -> anyhow::Result<Self> {
+        match s {
+            "spliced" => Ok(ProbeRegion::spliced),
+            "unspliced" => Ok(ProbeRegion::unspliced),
+            _ => Err(anyhow!("Invalid probe region: {}", s)),
+        }
+    }
+
+    fn as_str(&self) -> &str {
+        match self {
+            ProbeRegion::spliced => "S",
+            ProbeRegion::unspliced => "U",
+        }
+    }
+}
+
+// implement display
+impl std::fmt::Display for ProbeRegion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn parse_csv_record(
+    ref_id: &str,
+    seq_id: &str,
+    sequence: &str,
+    include: bool,
+    region: Option<&ProbeRegion>,
+    has_region: bool,
+    seq_id_hs: &mut HashSet<String>,
+    ref_seq_writer: &mut BufWriter<File>,
+    // id_to_name_writer: &mut BufWriter<File>,
+    t2g_writer: &mut BufWriter<File>,
+) -> anyhow::Result<()> {
+    if !include {
+        return Ok(());
+    }
+
+    // check if probe id is duplicated
+    if seq_id_hs.contains(seq_id) {
+        bail!("Found duplicated sequence id {}; cannot proceed", seq_id);
+    } else {
+        seq_id_hs.insert(seq_id.to_string());
+    }
+
+    // check if region is expected
+    if has_region != region.is_some() {
+        bail!("Found invalid sequence, {}, with missing region.", seq_id);
+    }
+
+    // insert into t2g
+    if let Some(r) = region {
+        writeln!(t2g_writer, "{}\t{}\t{}", seq_id, ref_id, r.as_str())?;
+    } else {
+        writeln!(t2g_writer, "{}\t{}", seq_id, ref_id)?;
+    };
+
+    // insert into gene id to name
+    // writeln!(id_to_name_writer, "{}\t{}", ref_id, ref_id)?;
+
+    // insert into ref seq
+    writeln!(ref_seq_writer, ">{}\n{}", seq_id, sequence)?;
     Ok(())
 }
 
@@ -57,7 +254,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
         }
     });
 
-    run_fun!(mkdir -p $output)?;
+    create_dir_if_absent(&output)?;
 
     // wow, the compiler is smart enough to
     // figure out that this one need not be
@@ -66,9 +263,12 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     let reference_sequence;
     // these may or may not be set, so must be
     // mutable.
-    let mut splici_t2g = None;
+    let mut t2g = None;
+    let mut _gene_id_to_name = None;
     let mut roers_duration = None;
     let mut roers_aug_ref_opt = None;
+    let outref = output.join("ref");
+    let min_seq_len: Option<u32>;
 
     // if we are generating a splici reference
     if let (Some(fasta), Some(gtf)) = (opts.fasta, opts.gtf) {
@@ -87,8 +287,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
             ReferenceType::SplicedUnspliced => Some(vec![roers::AugType::GeneBody]),
         };
 
-        let outref = output.join("ref");
-        run_fun!(mkdir -p $outref)?;
+        create_dir_if_absent(&outref)?;
 
         let roers_opts = roers::AugRefOpts {
             // The path to a genome fasta file.
@@ -113,22 +312,15 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
 
         let ref_file = outref.join("roers_ref.fa");
         let t2g_file = outref.join("t2g_3col.tsv");
+        let gene_id_to_name_file = outref.join("gene_id_to_name.tsv");
 
         index_info["t2g_file"] = json!(&t2g_file);
+        index_info["gene_id_to_name"] = json!(&gene_id_to_name_file);
         index_info["args"]["fasta"] = json!(&fasta);
         index_info["args"]["gtf"] = json!(&gtf);
         index_info["args"]["spliced"] = json!(&opts.spliced);
         index_info["args"]["unspliced"] = json!(&opts.unspliced);
         index_info["args"]["dedup"] = json!(opts.dedup);
-
-        std::fs::write(
-            &info_file,
-            serde_json::to_string_pretty(&index_info).unwrap(),
-        )
-        .with_context(|| format!("could not write {}", info_file.display()))?;
-
-        // set the splici_t2g option
-        splici_t2g = Some(t2g_file);
 
         prog_utils::check_files_exist(&input_files)?;
 
@@ -138,23 +330,116 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
         roers::make_ref(roers_opts)?;
         roers_duration = Some(roers_start.elapsed());
 
+        min_seq_len = None;
         reference_sequence = Some(ref_file);
+        // set the splici_t2g option
+        t2g = Some(t2g_file);
+        _gene_id_to_name = Some(gene_id_to_name_file);
+    } else if let Some(ref_seq) = &opts.ref_seq {
+        // if we have a ref-seq fasta file
+        min_seq_len = None;
+        index_info["args"]["ref-seq"] = json!(ref_seq);
+        reference_sequence = Some(ref_seq.clone());
     } else {
-        // we are running on a set of references directly
+        // now, we have to have a probe csv or feature csv
+        create_dir_if_absent(&outref)?;
 
-        // in this path (due to the argument parser requiring
-        // either --fasta or --ref-seq, ref-seq should be safe to
-        // unwrap).
-        index_info["args"]["ref-seq"] = json!(opts.ref_seq.clone().unwrap());
+        let mut csv_reader = if let Some(probe_csv) = &opts.probe_csv {
+            index_info["args"]["probe-csv"] = json!(probe_csv);
+            let rdr = csv::ReaderBuilder::new()
+                .comment(Some(b'#'))
+                .from_path(probe_csv)?;
+            CsvReader::Probe(rdr)
+        } else if let Some(feature_csv) = &opts.feature_csv {
+            index_info["args"]["feature-csv"] = json!(feature_csv);
 
-        std::fs::write(
-            &info_file,
-            serde_json::to_string_pretty(&index_info).unwrap(),
-        )
-        .with_context(|| format!("could not write {}", info_file.display()))?;
+            let rdr = csv::ReaderBuilder::new()
+                .has_headers(true)
+                .comment(Some(b'#'))
+                .from_path(feature_csv)?;
 
-        reference_sequence = opts.ref_seq;
+            CsvReader::Feature(rdr)
+        } else {
+            bail!("No reference sequence provided. It should not happen, please report this issue on GitHub.");
+        };
+
+        // determine the format of t2g file
+        let has_region = csv_reader.has_region()?;
+
+        // we process the csv file and record the t2g and gene id to name vector
+        let mut seq_id_hs: HashSet<String> = HashSet::new();
+
+        // define file names
+        let ref_seq_path = outref.join("ref.fa");
+        // let id_to_name_path = outref.join("gene_id_to_name.tsv");
+        let t2g_path = if has_region {
+            outref.join("t2g_3col.tsv")
+        } else {
+            outref.join("t2g.tsv")
+        };
+
+        // define buffer writers
+        let mut ref_seq_writer = BufWriter::new(File::create(&ref_seq_path)?);
+        // let mut id_to_name_writer = BufWriter::new(File::create(&id_to_name_path)?);
+        let mut t2g_writer = BufWriter::new(File::create(&t2g_path)?);
+        let mut msl = u32::MAX;
+
+        match csv_reader {
+            CsvReader::Feature(mut rdr) => {
+                // process the csv file
+                for row in rdr.deserialize() {
+                    let record: FeatureRow = row?;
+                    msl = msl.min(record.sequence().len() as u32);
+
+                    parse_csv_record(
+                        record.ref_id(),
+                        record.seq_id(),
+                        record.sequence(),
+                        record.included(),
+                        record.region(),
+                        has_region,
+                        &mut seq_id_hs,
+                        &mut ref_seq_writer,
+                        // &mut id_to_name_writer,
+                        &mut t2g_writer,
+                    )?;
+                }
+            }
+            CsvReader::Probe(mut rdr) => {
+                // process the csv file
+                for row in rdr.deserialize() {
+                    let record: ProbeRow = row?;
+
+                    parse_csv_record(
+                        record.ref_id(),
+                        record.seq_id(),
+                        record.sequence(),
+                        record.included(),
+                        record.region(),
+                        has_region,
+                        &mut seq_id_hs,
+                        &mut ref_seq_writer,
+                        // &mut id_to_name_writer,
+                        &mut t2g_writer,
+                    )?;
+                }
+            }
+        }
+
+        index_info["t2g_file"] = json!(&t2g_path);
+        // index_info["gene_id_to_name"] = json!(&id_to_name_path);
+
+        min_seq_len = Some(msl);
+        reference_sequence = Some(ref_seq_path);
+        t2g = Some(t2g_path);
+        // _gene_id_to_name = Some(id_to_name_path);
     }
+
+    std::fs::write(
+        &info_file,
+        serde_json::to_string_pretty(&index_info).unwrap(),
+    )
+    .with_context(|| format!("could not write {}", info_file.display()))?;
 
     let ref_seq = reference_sequence.with_context(||
                 "Reference sequence should either be generated from --fasta with reftype spliced+intronic / spliced+unspliced or set with --ref-seq",
@@ -162,6 +447,28 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
 
     let input_files = vec![ref_seq.clone()];
     prog_utils::check_files_exist(&input_files)?;
+
+    let kmer_length: u32;
+    let minimizer_length: u32;
+    if let Some(msl) = min_seq_len {
+        if msl < 10 {
+            bail!("The reference sequences are too short for indexing. Please provide sequences with a minimum length of at least 10 bases.");
+        }
+        // only if the value is not the default value
+        if (msl / 2) < opts.kmer_length && opts.kmer_length == 31 {
+            kmer_length = msl / 2;
+            // https://github.com/COMBINE-lab/protocol-estuary/blob/2ecc65f1891ebfafff2a4a17460550e4dd1f4bb6/utils/simpleaf_workflow_utils.libsonnet#L232
+            minimizer_length = (kmer_length as f32 / 1.8).ceil() as u32 + 1;
+
+            info!("Using kmer_length = {} and minimizer_length = {} because the default values are too big for the reference sequences.", kmer_length, minimizer_length);
+        } else {
+            kmer_length = opts.kmer_length;
+            minimizer_length = opts.minimizer_length;
+        };
+    } else {
+        kmer_length = opts.kmer_length;
+        minimizer_length = opts.minimizer_length;
+    }
 
     let output_index_dir = output.join("index");
     let index_duration;
@@ -182,15 +489,15 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
         let mut piscem_index_cmd =
             std::process::Command::new(format!("{}", piscem_prog_info.exe_path.display()));
 
-        run_fun!(mkdir -p $output_index_dir)?;
+        create_dir_if_absent(&output_index_dir)?;
         let output_index_stem = output_index_dir.join("piscem_idx");
 
         piscem_index_cmd
             .arg("build")
             .arg("-k")
-            .arg(opts.kmer_length.to_string())
+            .arg(kmer_length.to_string())
             .arg("-m")
-            .arg(opts.minimizer_length.to_string())
+            .arg(minimizer_length.to_string())
             .arg("-o")
             .arg(&output_index_stem)
             .arg("-s")
@@ -264,7 +571,7 @@ simpleaf"#,
 
         // copy over the t2g file to the index
         let mut t2g_out_path: Option<PathBuf> = None;
-        if let Some(t2g_file) = splici_t2g {
+        if let Some(t2g_file) = t2g {
             let index_t2g_path = output_index_dir.join("t2g_3col.tsv");
             t2g_out_path = Some(PathBuf::from("t2g_3col.tsv"));
             std::fs::copy(t2g_file, index_t2g_path)?;
@@ -276,8 +583,8 @@ simpleaf"#,
                 "index_type" : "piscem",
                 "t2g_file" : t2g_out_path,
                 "piscem_index_parameters" : {
-                    "k" : opts.kmer_length,
-                    "m" : opts.minimizer_length,
+                    "k" : kmer_length,
+                    "m" : minimizer_length,
                     "overwrite" : opts.overwrite,
                     "threads" : threads,
                     "ref" : ref_seq
@@ -301,7 +608,7 @@ simpleaf"#,
         salmon_index_cmd
             .arg("index")
             .arg("-k")
-            .arg(opts.kmer_length.to_string())
+            .arg(kmer_length.to_string())
             .arg("-i")
             .arg(&output_index_dir)
             .arg("-t")
@@ -356,7 +663,7 @@ simpleaf"#,
 
         // copy over the t2g file to the index
         let mut t2g_out_path: Option<PathBuf> = None;
-        if let Some(t2g_file) = splici_t2g {
+        if let Some(t2g_file) = t2g {
             let index_t2g_path = output_index_dir.join("t2g_3col.tsv");
             t2g_out_path = Some(PathBuf::from("t2g_3col.tsv"));
             std::fs::copy(t2g_file, index_t2g_path)?;
@@ -364,7 +671,8 @@ simpleaf"#,
 
         let index_json_file = output_index_dir.join("simpleaf_index.json");
         let index_json = json!({
-            "cmd" : index_cmd_string,                        "index_type" : "salmon",
+                "cmd" : index_cmd_string,
+                "index_type" : "salmon",
                 "t2g_file" : t2g_out_path,
                 "salmon_index_parameters" : {
                     "k" : opts.kmer_length,

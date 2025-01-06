@@ -378,7 +378,7 @@ pub fn create_dir_if_absent<T: AsRef<Path>>(odir: T) -> Result<()> {
             "The directory {} doesn't yet exist; attempting to create it.",
             pdir.display()
         );
-        std::fs::create_dir(pdir)
+        std::fs::create_dir_all(pdir)
             .with_context(|| format!("Couldn't create the directory at {}", pdir.display()))?;
     }
     Ok(())
