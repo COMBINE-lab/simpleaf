@@ -42,6 +42,41 @@ pub fn shell<S: AsRef<OsStr>>(cmd: S) -> Command {
     command
 }
 
+/// NOTE: the body of the JSON object we fetch cannot exceed 10MB
+/// this is a limitation put in place by `ureq` (see : https://docs.rs/ureq/3.0.0-rc4/ureq/struct.Body.html#method.read_json)
+#[allow(dead_code)]
+pub fn read_json_from_remote_url<T: AsRef<str>>(url: T) -> Result<serde_json::Value> {
+    let url = url.as_ref();
+
+    let config = ureq::Agent::config_builder()
+        .timeout_recv_response(Some(std::time::Duration::from_secs(120)))
+        .build();
+    let agent = ureq::Agent::new_with_config(config);
+    let response = agent.get(url).call();
+
+    match response {
+        Ok(mut response) => {
+            if response.status().is_success() {
+                return Ok(response.body_mut().read_json()?);
+            } else {
+                let c = response
+                    .status()
+                    .canonical_reason()
+                    .unwrap_or("UNKNOWN FAILURE");
+                warn!(
+                    "Obtained status code {} from final url {}",
+                    c,
+                    response.get_uri()
+                );
+            }
+        }
+        Err(e) => {
+            bail!("could not obtain content from {} because {:#?}", url, e);
+        }
+    }
+    bail!("control should not reach here");
+}
+
 pub fn download_to_file_compute_hash<T: AsRef<str>>(
     url: T,
     file_path: &Path,
