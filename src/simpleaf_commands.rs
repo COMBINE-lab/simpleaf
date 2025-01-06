@@ -547,7 +547,7 @@ pub enum ChemistryCommand {
 }
 
 #[derive(Args, Clone, Debug)]
-#[command(arg_required_else_help = true)]
+#[command(arg_required_else_help = false)]
 pub struct SetPathOpts {
     /// path to salmon to use
     #[arg(short, long)]
@@ -558,7 +558,7 @@ pub struct SetPathOpts {
     /// path to alein-fry to use
     #[arg(short, long)]
     alevin_fry: Option<PathBuf>,
-    /// path to macs2 to use
+    /// path to macs3 to use
     #[arg(short, long)]
     macs: Option<PathBuf>,
 }
