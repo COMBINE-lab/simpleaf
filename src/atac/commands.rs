@@ -45,6 +45,20 @@ impl Macs3GenomeSize {
     }
 }
 
+fn validate_prob(p: &str) -> Result<f32, String> {
+    let v = p
+        .parse::<f32>()
+        .map_err(|_| "Cannot parse provided argument as a float")?;
+    if v > 0.0 && v <= 1.0 {
+        Ok(v)
+    } else {
+        Err(format!(
+            "The provided value must be a probability in (0,1], but {} was provided.",
+            v
+        ))
+    }
+}
+
 #[derive(EnumIter, Copy, Clone, Eq, PartialEq)]
 pub enum AtacChemistry {
     TenxV11,
@@ -366,8 +380,16 @@ pub struct ProcessOpts {
     #[arg(long, default_value_t = DefaultParams::MAX_READ_OCC, help_heading = "Advanced Options")]
     pub max_read_occ: u32,
 
-    /// The flag to be passed to the `macs3` `--gsize` (genome size) flag.
+    /// The value to be passed to the `macs3` `--gsize` (genome size) option.
     /// Possible values are "hs", "mm", "ce", "dm" or an unsigned integer.
-    #[arg(long, help_heading = "Advanced Options", default_value = "hs")]
+    #[arg(long, help_heading = "Peak Caller Options", default_value = "hs")]
     pub gsize: Macs3GenomeSize,
+
+    /// The value to be passed to the `macs3` `--qvalue` (minimum FDR cutoff) option.
+    #[arg(long, help_heading = "Peak Caller Options", value_parser = validate_prob, default_value_t = 0.1_f32)]
+    pub qvalue: f32,
+
+    /// The value to be passed to the `macs3` `--extsize` option.
+    #[arg(long, help_heading = "Peak Caller Options", default_value_t = 50)]
+    pub extsize: usize,
 }
