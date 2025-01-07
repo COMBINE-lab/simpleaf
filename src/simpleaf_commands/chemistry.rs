@@ -1,6 +1,6 @@
 use crate::utils::chem_utils::{
     custom_chem_hm_into_json, get_custom_chem_hm, get_single_custom_chem_from_file,
-    CustomChemistry, ExpectedOri, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY,
+    CustomChemistry, CustomChemistryMap, ExpectedOri, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY,
 };
 use crate::utils::constants::*;
 use crate::utils::prog_utils::{self, download_to_file_compute_hash};
@@ -14,9 +14,9 @@ use std::collections::HashSet;
 use std::fs;
 use std::io::{Seek, Write};
 use std::os::unix::fs::MetadataExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
-use utils::prog_utils::download_to_file;
+use utils::prog_utils::read_json_from_remote_url;
 use utils::remote::is_remote_url;
 
 /// Attempt to get the chemistry definition from the provided JSON file
@@ -29,29 +29,22 @@ use utils::remote::is_remote_url;
 ///     3. any optional metadata (i.e. the "meta" field) associated with this chemistry definition.
 fn get_chem_def_from_json(
     json_src: &str,
-    af_home_path: &PathBuf,
+    af_home_path: &Path,
     add_opts: &mut crate::simpleaf_commands::ChemistryAddOpts,
 ) -> Result<(bool, Option<String>, Option<serde_json::Value>)> {
     let need_fetch_pl;
     let local_plist;
 
     let source_chem = if is_remote_url(json_src) {
-        let tmp_dir = tempfile::Builder::new()
-            .prefix("jsontmpfile")
-            .rand_bytes(10)
-            .tempdir_in(af_home_path)?;
-        let file_path = tmp_dir.path().join("temp_chem.json");
-        download_to_file(json_src, &file_path)?;
-
-        if let Some(chem) =
-            utils::chem_utils::get_single_custom_chem_from_file(&file_path, &add_opts.name)?
-        {
-            tmp_dir.close()?;
-            chem
+        let chem_hm: CustomChemistryMap =
+            serde_json::from_value(read_json_from_remote_url(json_src)?)?;
+        if let Some(chem) = chem_hm.get(&add_opts.name) {
+            let mut custom_chem = chem.clone();
+            custom_chem.name = add_opts.name.to_owned();
+            custom_chem
         } else {
-            tmp_dir.close()?;
             bail!(
-                "Could not properly parse the chemistry {} from the requested source JSON {}",
+                "Could not find chemistry definition for {} from the requested JSON {}",
                 &add_opts.name,
                 json_src
             );

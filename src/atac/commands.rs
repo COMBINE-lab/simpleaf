@@ -7,7 +7,43 @@ use clap::{
 };
 use std::fmt;
 use std::path::PathBuf;
+use std::str::FromStr;
 use strum_macros::EnumIter;
+
+#[derive(Clone, Debug)]
+pub enum Macs3GenomeSize {
+    KnownOpt(&'static str),
+    Len(usize),
+}
+
+impl FromStr for Macs3GenomeSize {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "hs" => Ok(Macs3GenomeSize::KnownOpt("hs")),
+            "mm" => Ok(Macs3GenomeSize::KnownOpt("mm")),
+            "ce" => Ok(Macs3GenomeSize::KnownOpt("ce")),
+            "dm" => Ok(Macs3GenomeSize::KnownOpt("dm")),
+            x => {
+                if let Ok(n) = x.parse::<usize>() {
+                    Ok(Macs3GenomeSize::Len(n))
+                } else {
+                    anyhow::bail!("Invalid argument to custom arg");
+                }
+            }
+        }
+    }
+}
+
+impl Macs3GenomeSize {
+    pub fn as_arg_str(&self) -> String {
+        match self {
+            Macs3GenomeSize::KnownOpt(s) => s.to_string(),
+            Macs3GenomeSize::Len(n) => format!("{}", n),
+        }
+    }
+}
 
 #[derive(EnumIter, Copy, Clone, Eq, PartialEq)]
 pub enum AtacChemistry {
@@ -329,4 +365,9 @@ pub struct ProcessOpts {
     /// mappings reported
     #[arg(long, default_value_t = DefaultParams::MAX_READ_OCC, help_heading = "Advanced Options")]
     pub max_read_occ: u32,
+
+    /// The flag to be passed to the `macs3` `--gsize` (genome size) flag.
+    /// Possible values are "hs", "mm", "ce", "dm" or an unsigned integer.
+    #[arg(long, help_heading = "Advanced Options", default_value = "hs")]
+    pub gsize: Macs3GenomeSize,
 }

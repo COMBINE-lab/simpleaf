@@ -5,11 +5,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
+use std::io::Read;
 use std::path::Path;
 use strum::EnumIter;
 use strum::IntoEnumIterator;
 
 // TODO: Change to main repo when we are ready
+
+pub(crate) type CustomChemistryMap = HashMap<String, CustomChemistry>;
 
 static GEOMETRY_KEY: &str = "geometry";
 static EXPECTED_ORI_KEY: &str = "expected_ori";
@@ -198,6 +201,23 @@ pub fn get_custom_chem_hm(custom_chem_p: &Path) -> Result<HashMap<String, Custom
 pub fn custom_chem_hm_into_json(custom_chem_hm: HashMap<String, CustomChemistry>) -> Result<Value> {
     let v = serde_json::to_value(custom_chem_hm)?;
     Ok(v)
+}
+
+/// This function tries to extract the custom chemistry with the specified name from the provided
+/// reader
+#[allow(dead_code)]
+pub fn get_single_custom_chem_from_reader(
+    reader: impl Read,
+    key: &str,
+) -> Result<Option<CustomChemistry>> {
+    let chem_hm: HashMap<String, CustomChemistry> = serde_json::from_reader(reader)?;
+    if let Some(chem_v) = chem_hm.get(key) {
+        let mut custom_chem = chem_v.clone();
+        custom_chem.name = key.to_owned();
+        Ok(Some(custom_chem))
+    } else {
+        Ok(None)
+    }
 }
 
 /// This function tries to extract the custom chemistry with the specified name from the custom_chemistries.json file in the `af_home_path` directory.

@@ -176,7 +176,7 @@ impl CBListInfo {
             writeln!(final_barcodes_bw, "{}", l)?;
         }
 
-        // we remove the intermediate cb_list file we created 
+        // we remove the intermediate cb_list file we created
         std::fs::remove_file(&self.final_file)?;
         Ok(())
     }

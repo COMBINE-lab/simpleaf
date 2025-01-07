@@ -44,7 +44,6 @@ pub fn shell<S: AsRef<OsStr>>(cmd: S) -> Command {
 
 /// NOTE: the body of the JSON object we fetch cannot exceed 10MB
 /// this is a limitation put in place by `ureq` (see : https://docs.rs/ureq/3.0.0-rc4/ureq/struct.Body.html#method.read_json)
-#[allow(dead_code)]
 pub fn read_json_from_remote_url<T: AsRef<str>>(url: T) -> Result<serde_json::Value> {
     let url = url.as_ref();
 
