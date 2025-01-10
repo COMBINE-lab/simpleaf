@@ -824,27 +824,6 @@ being used by simpleaf"#,
         bail!("quant failed with exit status {:?}", quant_proc_out.status);
     }
 
-    let af_quant_info_file = opts.output.join("simpleaf_quant_log.json");
-    let af_quant_info = json!({
-        "time_info" : {
-        "map_time" : map_duration,
-        "gpl_time" : gpl_duration,
-        "collate_time" : collate_duration,
-        "quant_time" : quant_duration
-    },
-        "cmd_info" : {
-        "map_cmd" : map_cmd_string,
-        "gpl_cmd" : prog_utils::get_cmd_line_string(&alevin_gpl_cmd),
-        "collate_cmd" : prog_utils::get_cmd_line_string(&alevin_collate_cmd),
-        "quant_cmd" : prog_utils::get_cmd_line_string(&alevin_quant_cmd)
-    },
-        "map_info" : {
-        "mapper" : sc_mapper,
-        "map_cmd" : map_cmd_string,
-        "map_outdir": map_output_string
-    }
-    });
-
     // If we had a gene_id_to_name.tsv file handy, copy it over into the
     // quantification directory.
     if let Some(gene_name_path) = gene_id_to_name_opt {
@@ -865,6 +844,39 @@ being used by simpleaf"#,
     // we add the auxilary info to the barcodes.tsv file.
     let quants_mat_rows_p = gpl_output.join("alevin").join("quants_mat_rows.txt");
     pl_info.update_af_quant_barcodes_tsv(&quants_mat_rows_p)?;
+
+    let mut convert_duration = None;
+    if opts.anndata_out {
+        let convert_start = Instant::now();
+        let opath = gpl_output.join("alevin").join("quant.h5ad");
+        af_anndata::convert_csr_to_anndata(&gpl_output, &opath)?;
+        convert_duration = Some(convert_start.elapsed());
+    }
+
+    let af_quant_info_file = opts.output.join("simpleaf_quant_log.json");
+    let mut af_quant_info = json!({
+        "time_info" : {
+        "map_time" : map_duration,
+        "gpl_time" : gpl_duration,
+        "collate_time" : collate_duration,
+        "quant_time" : quant_duration
+    },
+        "cmd_info" : {
+        "map_cmd" : map_cmd_string,
+        "gpl_cmd" : prog_utils::get_cmd_line_string(&alevin_gpl_cmd),
+        "collate_cmd" : prog_utils::get_cmd_line_string(&alevin_collate_cmd),
+        "quant_cmd" : prog_utils::get_cmd_line_string(&alevin_quant_cmd)
+    },
+        "map_info" : {
+        "mapper" : sc_mapper,
+        "map_cmd" : map_cmd_string,
+        "map_outdir": map_output_string
+    }
+    });
+
+    if let Some(ctime) = convert_duration {
+        af_quant_info["time_info"]["conversion_time"] = json!(ctime);
+    }
 
     // write the relevant info about
     // our run to file.

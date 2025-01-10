@@ -251,6 +251,11 @@ pub struct MapQuantOpts {
     /// UMI resolution mode
     #[arg(short, long, help_heading = "UMI Resolution Options", value_parser = clap::builder::PossibleValuesParser::new(["cr-like", "cr-like-em", "parsimony", "parsimony-em", "parsimony-gene", "parsimony-gene-em"]))]
     pub resolution: String,
+
+    /// Generate an anndata (h5ad format) count matrix from the standard (matrix-market format)
+    /// output.
+    #[arg(long, help_heading = "Output Options")]
+    pub anndata_out: bool,
 }
 
 #[derive(Args, Clone, Debug)]

@@ -76,7 +76,8 @@ strum = { version = "0.26.3", features = ["derive", "phf"] }
 strum_macros = "0.26.4"
 niffler = { version = "2.6.0", default-features = false, features = [
   "gz",
-  "gz_cloudflare_zlib",
+  #"gz_cloudflare_zlib", # they broke this, figure out how to file the issue!
+  #"gz_zlib-ng-compat",
 ] }
 blake3 = { version = "1.5.5", features = ["mmap", "serde"] }
 regex = { version = "1.11.1", default-features = false, features = [
@@ -84,7 +85,8 @@ regex = { version = "1.11.1", default-features = false, features = [
   "std",
 ] }
 tempfile = "3.15.0"
-ureq = { version = "3.0.0-rc4", features = ["json"] }
+ureq = { version = "3.0.0-rc5", features = ["json"] }
+af-anndata = "0.1.0"
 
 [profile.release]
 lto = "thin"
