@@ -49,6 +49,7 @@ pub fn read_json_from_remote_url<T: AsRef<str>>(url: T) -> Result<serde_json::Va
 
     let config = ureq::Agent::config_builder()
         .timeout_recv_response(Some(std::time::Duration::from_secs(120)))
+        .max_redirects(10)
         .build();
     let agent = ureq::Agent::new_with_config(config);
     let response = agent.get(url).call();
@@ -101,6 +102,7 @@ pub fn download_to_file<T: AsRef<str>>(url: T, file_path: &Path) -> Result<()> {
 
     let config = ureq::Agent::config_builder()
         .timeout_recv_response(Some(std::time::Duration::from_secs(120)))
+        .max_redirects(10)
         .build();
     let agent = ureq::Agent::new_with_config(config);
     let response = agent.get(url).call();
@@ -226,9 +228,9 @@ pub struct ReqProgs {
 
 impl ReqProgs {
     pub fn issue_recommended_version_messages(&self) {
-        // Currently (11/29/2024) want to recommend piscem >= 0.11.0
+        // Currently (1/24/2025) want to recommend piscem >= 0.12.0
         if let Some(ref piscem_info) = self.piscem {
-            let desired_ver = VersionReq::parse(">=0.11.0").unwrap();
+            let desired_ver = VersionReq::parse(">=0.12.0").unwrap();
             let current_ver = Version::parse(&piscem_info.version).unwrap();
             if desired_ver.matches(&current_ver) {
                 // nothing to do here
