@@ -17,10 +17,10 @@ use crate::utils::chem_utils::ExpectedOri;
 use crate::utils::constants::{CHEMISTRIES_PATH, NUM_SAMPLE_LINES};
 
 fn get_generic_buf_reader(ipath: &PathBuf) -> anyhow::Result<impl BufRead> {
-    let (reader, compression) = niffler_temp::from_path(ipath)
+    let (reader, compression) = niffler::from_path(ipath)
         .with_context(|| format!("Could not open requsted file {}", ipath.display()))?;
     match compression {
-        niffler_temp::compression::Format::No => info!("found uncompressed file"),
+        niffler::compression::Format::No => info!("found uncompressed file"),
         f => info!("found file compressed using {:?}", f),
     }
     Ok(BufReader::new(reader))
