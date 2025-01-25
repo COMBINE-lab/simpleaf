@@ -7,12 +7,12 @@ authors = [
   "Dongze He <dhe17@umd.edu>",
   "Noor Pratap Singh <npsingh@umd.edu>",
 ]
-description = "A rust framework to make using alevin-fry even simpler."
+description = "A rust framework to make using alevin-fry and alevin-fry-ATAC even simpler."
 license-file = "LICENSE"
 readme = "README.md"
 repository = "https://github.com/COMBINE-lab/simpleaf"
-homepage = "https://github.com/COMBINE-lab/simpleaf"
-# documentation = "https://alevin-fry.readthedocs.io/en/latest/"
+homepage = "https://simpleaf.readthedocs.io"
+#documentation = "https://fry.readthedocs.io/en/latest/"
 include = [
   "/src/*.rs",
   "/src/utils/*.rs",
