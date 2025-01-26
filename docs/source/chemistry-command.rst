@@ -10,7 +10,7 @@ The ``chemistry`` command provides functionality to manage and inspect custom ch
 - Download corresponding permit lists for chemistries.
 - Search for unused permit lists and remove them from the cache.
 
-.. code-block:: bash
+.. code-block:: console
 
   operate on or inspect the chemistry registry
 
@@ -36,7 +36,7 @@ These sub-commands are described below.
 
 The ``refresh`` sub-command takes no *required* arguments; it's usage is shown below:
 
-.. code-block:: bash
+.. code-block:: console
 
   Add or refresh chemistry definitions from the upstream repository
 
@@ -56,7 +56,7 @@ If the ``dry-run`` flag is passed, the actions to be taken will be printed, but 
 
 The ``add`` sub-command has the usage shown below:
 
-.. code-block:: bash
+.. code-block:: console
 
     Add a new chemistry to the registry of custom chemistries
 
@@ -97,7 +97,7 @@ In addition to the required fields, there are 3 optional fields, as described be
 
 The ``remove`` sub-command has the usage shown below:
 
-.. code-block:: bash
+.. code-block:: console
 
    Remove a chemistry from the chemistry registry
    Usage: simpleaf chemistry remove [OPTIONS] --name <NAME>
@@ -115,7 +115,7 @@ The single required argument ``--name`` should be the key (name) of a chemistry 
 
 The ``lookup`` sub-command has the usage shown below:
 
-.. code-block:: bash
+.. code-block:: console
 
   Lookup a chemistry in the chemistry registry
 
@@ -133,7 +133,8 @@ The single required argument ``--name`` should be the key (name) of a chemistry 
 
 The ``clean`` sub-command has the usage shown below:
 
-.. code-block:: bash
+.. code-block:: console
+
   Search for unused permit lists and remove them from the ALEVIN_FRY_HOME cache
 
   Usage: simpleaf chemistry clean [OPTIONS]
@@ -153,7 +154,7 @@ If the ``--dry-run`` flag is passed, the names of the files to be removed will b
 
 The ``fetch`` sub-command has the usage shown below:
 
-.. code-block:: bash
+.. code-block:: console
    
   Download the corresponding permit lists for the chemistry/ies
 

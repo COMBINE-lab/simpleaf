@@ -11,7 +11,7 @@ Recommended: installing from conda
 
 We recommend all x86 (Linux or Mac) users to install ``simpleaf`` from bioconda, because all its dependencies are also available on conda, and will be automatically installed (except ``piscem``) when installing ``simpleaf``.
 
-.. code-block:: bash
+.. code-block:: console
 
     conda install simpleaf piscem -c bioconda -c conda-forge
 
@@ -23,7 +23,7 @@ Installing with cargo
 
 cargo is the rust package manager. ``simpleaf`` is available on `crate.io <https://crates.io/crates/simpleaf>`_ and can be installed from cargo.
 
-.. code-block:: bash
+.. code-block:: console
 
     cargo install simpleaf
 
@@ -35,7 +35,7 @@ Building from source (from GitHub)
 
 You can also choose to build simpleaf from source by pulling its GitHub repo and build it as a normal rust program. Then, one needs to `set up simpleaf manually <https://combine-lab.github.io/alevin-fry-tutorials/2023/simpleaf-piscem/#:~:text=4.%20Set%20Up%20Simpleaf%20Manually>`_.
 
-.. code-block:: bash
+.. code-block:: console
 
     git clone https://github.com/COMBINE-lab/simpleaf.git && cd simpleaf
     cargo build --release

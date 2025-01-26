@@ -12,6 +12,8 @@ On the other hand, if you have already performed quantification or have, for som
 
 **Note**: If you use the unfiltered-permit-list ``-u`` mode for permit-list generation, and you are using either ``10xv2`` or ``10xv3`` chemistry, you can provide the flag by itself, and ``simpleaf`` will automatically fetch and apply the appropriate unifltered permit list.  However, if you are using ``-u`` with any other chemistry, you must explicitly provide a path to the unfiltered permit list to be used.  The ``-d``/``--expected-ori`` flag allows controlling the like-named option that is passed to the ``generate-permit-list`` command of ``alevin-fry``. This is an "optional" option.  If it is not provided explicitly, it is set to "both" (allowing reads aligning in both orientations to pass through), unless the chemistry is set as ``10xv2`` or ``10xv3``, in which case it is set as "fw".  Regardless of the chemistry, if the user sets this option explicitly, this choice is respected.
 
+The default output format is a Matrix Market format sparse matrix with the relevant counts.  However, if you pass the ``--anndata-out`` flag to the ``quant`` command (in addition to the normal ``-o`` argument to specify the output directory), then additionally an `AnnData <https://anndata.readthedocs.io/en/stable/>`__ file will be created, which should be directly usable in downstream workflows expecting this data type.
+
 A note on the ``--chemistry`` flag
 ----------------------------------
 
@@ -23,7 +25,7 @@ The ``--chemistry`` option can take either a string describing the specific chem
 
 The custom format is as follows; you must specify the content of read 1 and read 2 in terms of the barcode, UMI, and mappable read sequence. A specification looks like this:
 
-.. code-block:: bash
+.. code-block:: console
   
   1{b[16]u[12]x:}2{r:}
 
@@ -42,17 +44,19 @@ It is possible to have pieces of geometry repeated, in which case they will be e
         "flarb" : "1{b[16]u[12]x:}2{r:}"
       }
 
+
 The relevant options (which you can obtain by running ``simpleaf quant -h``) are below:
 
-.. code-block:: bash
+
+.. code-block:: console
 
     quantify a sample
 
-    Usage: simpleaf quant [OPTIONS] --chemistry <CHEMISTRY> --output <OUTPUT> --resolution <RESOLUTION> <--expect-cells <EXPECT_CELLS>|--explicit-pl <EXPLICIT_PL>|--forced-cells <FORCED_CELLS>|--knee|--unfiltered-pl [<UNFILTERED_PL>]> <--index <INDEX>|--map-dir <MAP_DIR>>
+    Usage: simpleaf quant [OPTIONS] --chemistry <CHEMISTRY> --output <OUTPUT> --resolution <RESOLUTION> <--expect-cells <EXPECT_CELLS>|--explicit-pl <EXPLICIT_PL>|--
+    forced-cells <FORCED_CELLS>|--knee|--unfiltered-pl [<UNFILTERED_PL>]> <--index <INDEX>|--map-dir <MAP_DIR>>
 
     Options:
-      -c, --chemistry <CHEMISTRY>  The name of a registered chemistry or a quoted string representing a
-                                  custom geometry specification
+      -c, --chemistry <CHEMISTRY>  The name of a registered chemistry or a quoted string representing a custom geometry specification
       -o, --output <OUTPUT>        Path to the output directory
       -t, --threads <THREADS>      Number of threads to use when running [default: 16]
       -h, --help                   Print help
@@ -60,64 +64,42 @@ The relevant options (which you can obtain by running ``simpleaf quant -h``) are
 
     Mapping Options:
       -i, --index <INDEX>            Path to a folder containing the index files
-      -1, --reads1 <READS1>          Comma-separated list of paths to read 1 files. The order must
-                                    match the read 2 files
-      -2, --reads2 <READS2>          Comma-separated list of paths to read 2 files. The order must
-                                    match the read 1 files
+      -1, --reads1 <READS1>          Comma-separated list of paths to read 1 files. The order must match the read 2 files
+      -2, --reads2 <READS2>          Comma-separated list of paths to read 2 files. The order must match the read 1 files
           --no-piscem                Don't use the default piscem mapper, instead, use salmon-alevin
-          --use-piscem               Use piscem for mapping (requires that index points to the piscem
-                                    index)
-      -s, --use-selective-alignment  Use selective-alignment for mapping (only if using salmon alevin
-                                    as the underlying mapper)
-          --map-dir <MAP_DIR>        Path to a mapped output directory containing a RAD file to skip
-                                    mapping
+          --use-piscem               Use piscem for mapping (requires that index points to the piscem index)
+      -s, --use-selective-alignment  Use selective-alignment for mapping (only if using salmon alevin as the underlying mapper)
+          --map-dir <MAP_DIR>        Path to a mapped output directory containing a RAD file to skip mapping
 
     Piscem Mapping Options:
-          --struct-constraints
-              If piscem >= 0.7.0, enable structural constraints
-          --ignore-ambig-hits
-              Skip checking of the equivalence classes of k-mers that were too ambiguous to be
-              otherwise considered (passing this flag can speed up mapping slightly, but may reduce
-              specificity)
-          --no-poison
-              Do not consider poison k-mers, even if the underlying index contains them. In this case,
-              the mapping results will be identical to those obtained as if no poison table was added
-              to the index
-          --skipping-strategy <SKIPPING_STRATEGY>
-              The skipping strategy to use for k-mer collection [default: permissive] [possible values:
-              permissive, strict]
-          --max-ec-card <MAX_EC_CARD>
-              Determines the maximum cardinality equivalence class (number of (txp, orientation status)
-              pairs) to examine (cannot be used with --ignore-ambig-hits) [default: 4096]
-          --max-hit-occ <MAX_HIT_OCC>
-              In the first pass, consider only collected and matched k-mers of a read having <=
-              --max-hit-occ hits [default: 256]
-          --max-hit-occ-recover <MAX_HIT_OCC_RECOVER>
-              If all collected and matched k-mers of a read have > --max-hit-occ hits, then make a
-              second pass and consider k-mers having <= --max-hit-occ-recover hits [default: 1024]
-          --max-read-occ <MAX_READ_OCC>
-              Threshold for discarding reads with too many mappings [default: 2500]
+          --struct-constraints                         If piscem >= 0.7.0, enable structural constraints
+          --ignore-ambig-hits                          Skip checking of the equivalence classes of k-mers that were too ambiguous to be otherwise considered (passing
+                                                       this flag can speed up mapping slightly, but may reduce specificity)
+          --no-poison                                  Do not consider poison k-mers, even if the underlying index contains them. In this case, the mapping results
+                                                       will be identical to those obtained as if no poison table was added to the index
+          --skipping-strategy <SKIPPING_STRATEGY>      The skipping strategy to use for k-mer collection [default: permissive] [possible values: permissive, strict]
+          --max-ec-card <MAX_EC_CARD>                  Determines the maximum cardinality equivalence class (number of (txp, orientation status) pairs) to examine
+                                                       (cannot be used with --ignore-ambig-hits) [default: 4096]
+          --max-hit-occ <MAX_HIT_OCC>                  In the first pass, consider only collected and matched k-mers of a read having <= --max-hit-occ hits [default:
+                                                       256]
+          --max-hit-occ-recover <MAX_HIT_OCC_RECOVER>  If all collected and matched k-mers of a read have > --max-hit-occ hits, then make a second pass and consider
+                                                       k-mers having <= --max-hit-occ-recover hits [default: 1024]
+          --max-read-occ <MAX_READ_OCC>                Threshold for discarding reads with too many mappings [default: 2500]
 
     Permit List Generation Options:
-      -k, --knee
-              Use knee filtering mode
-      -u, --unfiltered-pl [<UNFILTERED_PL>]
-              Use unfiltered permit list
-      -f, --forced-cells <FORCED_CELLS>
-              Use forced number of cells
-      -x, --explicit-pl <EXPLICIT_PL>
-              Use a filtered, explicit permit list
-      -e, --expect-cells <EXPECT_CELLS>
-              Use expected number of cells
-      -d, --expected-ori <EXPECTED_ORI>
-              The expected direction/orientation of alignments in the chemistry being processed. If not
-              provided, will default to `fw` for 10xv2/10xv3, otherwise `both` [possible values: fw,
-              rc, both]
-          --min-reads <MIN_READS>
-              Minimum read count threshold for a cell to be retained/processed; only use with
-              --unfiltered-pl [default: 10]
+      -k, --knee                             Use knee filtering mode
+      -u, --unfiltered-pl [<UNFILTERED_PL>]  Use unfiltered permit list
+      -f, --forced-cells <FORCED_CELLS>      Use forced number of cells
+      -x, --explicit-pl <EXPLICIT_PL>        Use a filtered, explicit permit list
+      -e, --expect-cells <EXPECT_CELLS>      Use expected number of cells
+      -d, --expected-ori <EXPECTED_ORI>      The expected direction/orientation of alignments in the chemistry being processed. If not provided, will default to `fw`
+                                             for 10xv2/10xv3, otherwise `both` [possible values: fw, rc, both]
+          --min-reads <MIN_READS>            Minimum read count threshold for a cell to be retained/processed; only use with --unfiltered-pl [default: 10]
 
     UMI Resolution Options:
       -m, --t2g-map <T2G_MAP>        Path to a transcript to gene map file
-      -r, --resolution <RESOLUTION>  UMI resolution mode [possible values: cr-like, cr-like-em,
-                                    parsimony, parsimony-em, parsimony-gene, parsimony-gene-em]
+      -r, --resolution <RESOLUTION>  UMI resolution mode [possible values: cr-like, cr-like-em, parsimony, parsimony-em, parsimony-gene, parsimony-gene-em]
+
+    Output Options:
+          --anndata-out  Generate an anndata (h5ad format) count matrix from the standard (matrix-market format) output
+

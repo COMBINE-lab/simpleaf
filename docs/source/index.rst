@@ -28,7 +28,7 @@ like the permit lsits for certain chemistries).  So, before you run ``simpleaf``
 set the ``ALEVIN_FRY_HOME`` environment variable (you can also set it on the command line when you run 
 ``simpleaf``, but setting it in your environment once is much simpler).  In most shells, this can be done with
 
-.. code-block:: bash
+.. code-block:: console
 
    $ export ALEVIN_FRY_HOME=/full/path/to/dir/you/want/to/use
 
