@@ -36,14 +36,7 @@ It is possible to have pieces of geometry repeated, in which case they will be e
 
 .. note::
 
-   If you use a custom geometry frequently, you can add it to a `json` file ``custom_chemistries.json`` in the ``ALEVIN_FRY_HOME`` directory.  This file simply acts as a key-value store mapping each custom geometry to the name you wish to use for it.  For example, putting the contents below into this file would allow you to pass ``--chemistry flarb`` to the ``simpleaf quant`` command, and it would interpret the reads as having the specified geometry (in this case, the same as the ``10xv3`` geometry).  Multiple custom chemistries can be added by simply adding more entries to this `json` file.
-
-   .. code-block:: json
-    
-      {
-        "flarb" : "1{b[16]u[12]x:}2{r:}"
-      }
-
+   If you use a custom geometry frequently, you can add it to the chemistries registry. For details on adding your own chemistry definition to the registry, please read about the :ref:`simpleaf chemistry<chemistry-command>` command.
 
 The relevant options (which you can obtain by running ``simpleaf quant -h``) are below:
 

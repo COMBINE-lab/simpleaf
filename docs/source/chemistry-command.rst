@@ -52,7 +52,7 @@ This sub-command consults the remote ``simpleaf`` GitHub repository to check for
 If the ``dry-run`` flag is passed, the actions to be taken will be printed, but the registry will not be modified. If the ``--force`` command is passed, local chemistry definitions will be overwritten by matching remote definitions, even if the remote definition has a lower version number.
 
 ``simpleaf chemistry add``
--------------------
+--------------------------
 
 The ``add`` sub-command has the usage shown below:
 
@@ -93,7 +93,7 @@ In addition to the required fields, there are 3 optional fields, as described be
 **Note** any file provided via the ``local-url`` will be *copied* into the ``ALEVIN_FRY_HOME`` directory. To avoid this copying, for example when you have an extremely large file, you can provide the file directly to the simpleaf commands that take the file, for example, ``simpleaf quant -u /path/to/your/large/permit/list/file``.
 
 ``simpleaf chemistry remove``
-----------------------
+-----------------------------
 
 The ``remove`` sub-command has the usage shown below:
 
@@ -111,7 +111,7 @@ The ``remove`` sub-command has the usage shown below:
 The single required argument ``--name`` should be the key (name) of a chemistry in the current registry or a regular expression that matches the name of one or more chemistries in the registry. If one or more chemistries match, they will be removed from the registry. If the ``--dry-run`` flag is passed, the chemistries to be removed will be printed, but no modification of the registry will occur.
 
 ``simpleaf chemistry lookup``
-----------------------
+-----------------------------
 
 The ``lookup`` sub-command has the usage shown below:
 
