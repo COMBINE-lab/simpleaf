@@ -36,7 +36,7 @@ It is possible to have pieces of geometry repeated, in which case they will be e
 
 .. note::
 
-   If you use a custom geometry frequently, you can add it to the chemistries registry. For details on adding your own chemistry definition to the registry, please read about the :ref:`simpleaf chemistry<chemistry-command>` command.
+   If you use a custom geometry frequently, you can add it to the chemistries registry. For details on adding your own chemistry definition to the registry, please read about the :doc:`/chemistry-command`.
 
 The relevant options (which you can obtain by running ``simpleaf quant -h``) are below:
 
