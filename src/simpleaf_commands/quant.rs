@@ -848,7 +848,7 @@ being used by simpleaf"#,
     let mut convert_duration = None;
     if opts.anndata_out {
         let convert_start = Instant::now();
-        let opath = gpl_output.join("alevin").join("quant.h5ad");
+        let opath = gpl_output.join("alevin").join("quants.h5ad");
         af_anndata::convert_csr_to_anndata(&gpl_output, &opath)?;
         convert_duration = Some(convert_start.elapsed());
     }
