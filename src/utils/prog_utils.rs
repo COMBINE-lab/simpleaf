@@ -412,7 +412,7 @@ pub fn get_required_progs_from_paths(
             match get_which_executable("macs3") {
                 Ok(p) => Some(p),
                 Err(_e) => {
-                    warn!("Could not find macs3 executable, peak calling cannot be peformed by simpleaf");
+                    info!("Could not find macs3 executable, peak calling cannot be peformed by simpleaf");
                     None
                 }
             }
