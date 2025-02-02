@@ -79,10 +79,6 @@ niffler = { version = "2.7.0", default-features = false, features = [
   "gz",
   "gz_zlib-ng",
 ] }
-#git = "https://github.com/rob-p/niffler", branch = "master", version = "2.6.0", default-features = false, features = [
-#"gz_zlib-ng-compat",
-#] }
-#niffler = { version = "2.6.0", default-features = false, features = ["gz"] }
 blake3 = { version = "1.5.5", features = ["mmap", "serde"] }
 regex = { version = "1.11.1", default-features = false, features = [
   "perf",
