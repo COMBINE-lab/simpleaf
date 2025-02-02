@@ -19,8 +19,8 @@ checksum = "512761e0bb2578dd7380c6baaa0f4ce03e84f95e960231d1dec8bf4d7d6e2627"
 
 [[package]]
 name = "af-anndata"
-version = "0.2.0"
-source = "git+https://github.com/COMBINE-lab/af-anndata#536095ceef1a995a12ac704c83e77049c129b0ed"
+version = "0.3.0"
+source = "git+https://github.com/COMBINE-lab/af-anndata#664c2ada072b24ecfc127c12b0f5d9b852644baa"
 dependencies = [
  "anndata",
  "anndata-hdf5",
