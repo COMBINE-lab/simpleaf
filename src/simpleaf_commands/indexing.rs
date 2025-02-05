@@ -264,7 +264,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     // these may or may not be set, so must be
     // mutable.
     let mut t2g = None;
-    let mut _gene_id_to_name = None;
+    let mut gene_id_to_name = None;
     let mut roers_duration = None;
     let mut roers_aug_ref_opt = None;
     let outref = output.join("ref");
@@ -334,7 +334,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
         reference_sequence = Some(ref_file);
         // set the splici_t2g option
         t2g = Some(t2g_file);
-        _gene_id_to_name = Some(gene_id_to_name_file);
+        gene_id_to_name = Some(gene_id_to_name_file);
     } else if let Some(ref_seq) = &opts.ref_seq {
         // if we have a ref-seq fasta file
         min_seq_len = None;
@@ -669,11 +669,20 @@ simpleaf"#,
             std::fs::copy(t2g_file, index_t2g_path)?;
         }
 
+        // copy over the gene_id_to_name.tsv file to the index
+        let mut gene_id_to_name_out_path: Option<PathBuf> = None;
+        if let Some(gene_id_to_name_file) = gene_id_to_name {
+            let index_id2name_path = output_index_dir.join("gene_id_to_name.tsv");
+            gene_id_to_name_out_path = Some(PathBuf::from("gene_id_to_name.tsv"));
+            std::fs::copy(gene_id_to_name_file, index_id2name_path)?;
+        }
+
         let index_json_file = output_index_dir.join("simpleaf_index.json");
         let index_json = json!({
                 "cmd" : index_cmd_string,
                 "index_type" : "salmon",
                 "t2g_file" : t2g_out_path,
+                "gene_id_to_name_file" : gene_id_to_name_out_path,
                 "salmon_index_parameters" : {
                     "k" : opts.kmer_length,
                     "overwrite" : opts.overwrite,
