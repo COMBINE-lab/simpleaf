@@ -323,7 +323,9 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
                 // if the user used simpleaf for index construction, then we also built the
                 // reference and populated the gene_id_to_name.tsv file.  See if we can grab
                 // that as well.
-                if let Some(index_parent) = index.parent() {
+                if index.join("gene_id_to_name.tsv").exists() {
+                    gene_id_to_name_opt = Some(index.join("gene_id_to_name.tsv"));
+                } else if let Some(index_parent) = index.parent() {
                     // we are doing index_dir/../ref/gene_id_to_name.tsv
                     let gene_name_path = index_parent.join("ref").join("gene_id_to_name.tsv");
                     if gene_name_path.exists() && gene_name_path.is_file() {
