@@ -35,12 +35,12 @@ categories = ["command-line-utilities", "science"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-cc = "1.2.10"
+cc = "1.2.13"
 seq_geom_parser = { git = "https://github.com/COMBINE-lab/seq_geom_parser", branch = "dev", version = "0.3.0" }
 seq_geom_xform = { git = "https://github.com/COMBINE-lab/seq_geom_xform", branch = "dev", version = "0.4.0" }
 roers = { git = "https://github.com/COMBINE-lab/roers", branch = "main", version = "0.4.0" }
 anyhow = "^1.0"
-clap = { version = "4.5.27", features = [
+clap = { version = "4.5.28", features = [
   "derive",
   "cargo",
   "deprecated",
@@ -56,7 +56,7 @@ tracing-subscriber = { version = "0.3.19", default-features = true, features = [
 ] }
 semver = "^1.0.25"
 serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.137"
+serde_json = "1.0.138"
 time = { version = "^0.3.37", features = [
   "macros",
   "formatting",
@@ -64,7 +64,7 @@ time = { version = "^0.3.37", features = [
   "serde",
   "serde-human-readable",
 ] }
-which = "7.0.1"
+which = "7.0.2"
 jrsonnet-evaluator = "0.5.0-pre95"
 jrsonnet-cli = "0.5.0-pre95"
 jrsonnet-parser = "0.5.0-pre95"
@@ -88,8 +88,8 @@ regex = { version = "1.11.1", default-features = false, features = [
   "perf",
   "std",
 ] }
-tempfile = "3.15.0"
-ureq = { version = "3.0.3", features = ["json"] }
+tempfile = "3.16.0"
+ureq = { version = "3.0.5", features = ["json"] }
 af-anndata = { version = "0.3.0", git = "https://github.com/COMBINE-lab/af-anndata" }
 
 [profile.release]
