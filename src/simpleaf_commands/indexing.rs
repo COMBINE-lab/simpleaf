@@ -577,11 +577,20 @@ simpleaf"#,
             std::fs::copy(t2g_file, index_t2g_path)?;
         }
 
+        // copy over the gene_id_to_name.tsv file to the index
+        let mut gene_id_to_name_out_path: Option<PathBuf> = None;
+        if let Some(gene_id_to_name_file) = gene_id_to_name {
+            let index_id2name_path = output_index_dir.join("gene_id_to_name.tsv");
+            gene_id_to_name_out_path = Some(PathBuf::from("gene_id_to_name.tsv"));
+            std::fs::copy(gene_id_to_name_file, index_id2name_path)?;
+        }
+
         let index_json_file = output_index_dir.join("simpleaf_index.json");
         let index_json = json!({
                 "cmd" : index_cmd_string,
                 "index_type" : "piscem",
                 "t2g_file" : t2g_out_path,
+                "gene_id_to_name_file" : gene_id_to_name_out_path,
                 "piscem_index_parameters" : {
                     "k" : kmer_length,
                     "m" : minimizer_length,
@@ -671,6 +680,7 @@ simpleaf"#,
 
         // copy over the gene_id_to_name.tsv file to the index
         let mut gene_id_to_name_out_path: Option<PathBuf> = None;
+        info!("{:?}", gene_id_to_name);
         if let Some(gene_id_to_name_file) = gene_id_to_name {
             let index_id2name_path = output_index_dir.join("gene_id_to_name.tsv");
             gene_id_to_name_out_path = Some(PathBuf::from("gene_id_to_name.tsv"));
