@@ -117,6 +117,7 @@
     "version": "0.1.0",
     "meta": {
       "cr_filename": "737K-cratac-v1.txt"
+      "barcode_ori": "forward" 
     }
   },
   "10x-atac-v2": {
@@ -127,6 +128,7 @@
     "version": "0.1.0",
     "meta": {
       "cr_filename": "737K-cratac-v1.txt"
+      "barcode_ori": "forward" 
     }
   },
   "10x-arc-atac-v1": {
@@ -137,6 +139,7 @@
     "version": "0.1.0",
     "meta": {
       "cr_filename": "737K-arc-v1.txt"
+      "barcode_ori": "reverse" 
     }
   }
 }

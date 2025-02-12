@@ -1,4 +1,7 @@
 use crate::atac::commands::ProcessOpts;
+use crate::utils::chem_utils::get_single_custom_chem_from_file;
+use crate::utils::chem_utils::QueryInRegistry;
+use crate::utils::constants::CHEMISTRIES_PATH;
 use crate::utils::{
     prog_utils,
     prog_utils::{CommandVerbosityLevel, ReqProgs},
@@ -614,6 +617,37 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
         );
     }*/
 
+    // see if we need to reverse complement barcodes
+    let custom_chem_p = af_home_path.join(CHEMISTRIES_PATH);
+    let mut reverse_complement_barcodes = false;
+    if custom_chem_p.is_file() {
+        let chem_key = opts.chemistry.registry_key();
+        if let Some(chem_obj) = get_single_custom_chem_from_file(&custom_chem_p, chem_key)? {
+            if let Some(serde_json::Value::Object(meta_obj)) = chem_obj.meta() {
+                let fw_str = serde_json::Value::String(String::from("forward"));
+                let dir_str = meta_obj.get("barcode_ori").unwrap_or(&fw_str);
+                match dir_str.as_str() {
+                    Some("reverse") => {
+                        reverse_complement_barcodes = true;
+                    }
+                    Some("forward") => {
+                        reverse_complement_barcodes = false;
+                    }
+                    Some(s) => {
+                        warn!("barcode_ori \"{}\" is unknown; assuming forward.", s);
+                    }
+                    None => {
+                        warn!("couldn't interpret value associated with \"barcode_ori\" as a string; assuming forward.");
+                    }
+                }
+            } else {
+                warn!("No meta field present for the chemistry so can't check if barcodes should be reverse complemented.");
+            }
+        }
+    } else {
+        warn!("Couldn't find expected chemistry registry {} so can't check if barcodes should be reverse complemented.", custom_chem_p.display());
+    }
+
     let map_file = opts.output.join("af_map");
     let mut af_gpl = std::process::Command::new(format!("{}", &af_prog_info.exe_path.display()));
     af_gpl
@@ -621,6 +655,9 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
         .arg("generate-permit-list")
         .arg("--input")
         .arg(map_file);
+    if reverse_complement_barcodes {
+        af_gpl.arg("--rc");
+    }
 
     let out_dir = opts.output.join("af_process");
     af_gpl.arg("--output-dir").arg(out_dir);
