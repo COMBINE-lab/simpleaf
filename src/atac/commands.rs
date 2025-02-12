@@ -1,6 +1,6 @@
 use crate::atac::defaults::{AtacIndexParams, DefaultAtacParams};
 use crate::defaults::{DefaultMappingParams, DefaultParams};
-use crate::utils::chem_utils::QueryInRegistry;
+use crate::utils::chem_utils::{ExpectedOri, QueryInRegistry};
 use clap::{
     builder::{ArgPredicate, PossibleValue},
     Args, Subcommand, ValueEnum,
@@ -9,6 +9,17 @@ use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
 use strum_macros::EnumIter;
+
+fn barcode_ori_parser(s: &str) -> Result<ExpectedOri, String> {
+    match s {
+        "forward" | "fw" | "+" => Ok(ExpectedOri::Forward),
+        "reverse" | "rc" | "-" => Ok(ExpectedOri::Reverse),
+        t => Err(format!(
+            "Do not recognize expected permit-list barcode orientation {}",
+            t
+        )),
+    }
+}
 
 #[derive(Clone, Debug)]
 pub enum Macs3GenomeSize {
@@ -297,6 +308,20 @@ pub struct ProcessOpts {
     /// do peak calling after generating the bed file
     #[arg(long)]
     pub call_peaks: bool,
+
+    /// The expected orientation of the barcodes in the permit list relative
+    /// to the barcodes extracted from the reads. If this is "fw", it is expected
+    /// that the sequences will match directly, if "rc" it is expected the reverse
+    /// complement of the permit-list sequence will match the reads' barcodes.
+    /// If provided, this value will be used, if not provided, simpleaf will attempt
+    /// to look up the appropriate orientation in the chemistry registry.
+    #[arg(
+        long,
+        default_value = None,
+        value_parser = barcode_ori_parser,
+        help_heading = "Permit List Generation Options",
+    )]
+    pub permit_barcode_ori: Option<ExpectedOri>,
 
     /// Use the provided file as the unfiltered permit list (i.e. whitelist).
     /// This argument only needs to be provided if you are providing the permit list explicitly,
