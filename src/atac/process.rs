@@ -621,12 +621,14 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
     // see if we need to reverse complement barcodes
     let custom_chem_p = af_home_path.join(CHEMISTRIES_PATH);
     let reverse_complement_barcodes = if let Some(ori) = &opts.permit_barcode_ori {
+        info!("Using user-provided permitlist barcode orientation");
         match ori {
             ExpectedOri::Forward => false,
             ExpectedOri::Reverse => true,
             _ => false,
         }
     } else {
+        info!("Fetching permitlits barcode orientation from file");
         let mut rco = false;
         if custom_chem_p.is_file() {
             let chem_key = opts.chemistry.registry_key();
@@ -636,9 +638,11 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
                     let dir_str = meta_obj.get("barcode_ori").unwrap_or(&fw_str);
                     match dir_str.as_str() {
                         Some("reverse") => {
+                            info!("\treverse-complement");
                             rco = true;
                         }
                         Some("forward") => {
+                            info!("\tforward");
                             rco = false;
                         }
                         Some(s) => {
@@ -666,7 +670,7 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
         .arg("--input")
         .arg(map_file);
     if reverse_complement_barcodes {
-        af_gpl.arg("--rc");
+        af_gpl.arg("--rev-comp").arg("true");
     }
 
     let out_dir = opts.output.join("af_process");
