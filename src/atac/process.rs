@@ -620,16 +620,16 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
 
     // see if we need to reverse complement barcodes
     let custom_chem_p = af_home_path.join(CHEMISTRIES_PATH);
-    let reverse_complement_barcodes = if let Some(ori) = &opts.permit_barcode_ori {
+    let permit_bc_ori = if let Some(ori) = &opts.permit_barcode_ori {
         info!("Using user-provided permitlist barcode orientation");
         match ori {
-            ExpectedOri::Forward => false,
-            ExpectedOri::Reverse => true,
-            _ => false,
+            ExpectedOri::Forward => "fw",
+            ExpectedOri::Reverse => "rc",
+            _ => "rc",
         }
     } else {
         info!("Fetching permitlits barcode orientation from file");
-        let mut rco = false;
+        let mut pbco = "rc";
         if custom_chem_p.is_file() {
             let chem_key = opts.chemistry.registry_key();
             if let Some(chem_obj) = get_single_custom_chem_from_file(&custom_chem_p, chem_key)? {
@@ -639,11 +639,11 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
                     match dir_str.as_str() {
                         Some("reverse") => {
                             info!("\treverse-complement");
-                            rco = true;
+                            pbco = "rc";
                         }
                         Some("forward") => {
                             info!("\tforward");
-                            rco = false;
+                            pbco = "fw";
                         }
                         Some(s) => {
                             warn!("barcode_ori \"{}\" is unknown; assuming forward.", s);
@@ -659,7 +659,7 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
         } else {
             warn!("Couldn't find expected chemistry registry {} so can't check if barcodes should be reverse complemented.", custom_chem_p.display());
         }
-        rco
+        pbco
     };
 
     let map_file = opts.output.join("af_map");
@@ -668,10 +668,9 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
         .arg("atac")
         .arg("generate-permit-list")
         .arg("--input")
-        .arg(map_file);
-    if reverse_complement_barcodes {
-        af_gpl.arg("--rev-comp").arg("true");
-    }
+        .arg(map_file)
+        .arg("--permit-bc-ori")
+        .arg(permit_bc_ori);
 
     let out_dir = opts.output.join("af_process");
     af_gpl.arg("--output-dir").arg(out_dir);
