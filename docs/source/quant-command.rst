@@ -32,7 +32,7 @@ The custom format is as follows; you must specify the content of read 1 and read
 
 In particular, this is how one would specify the 10x Chromium v3 geometry using the custom syntax.  The format string says that the read pair should be interpreted as read 1 ``1{...}`` followed by read 2 ``2{...}``.  The syntax inside the ``{}`` says how the read should be interpreted.  Here ``b[16]u[12]x:`` means that the first 16 bases constitute the barcode, the next 12 constitute the UMI, and anything that comes after that (if it exists) until the end of read 1 should be discarded (``x``).  For read 2, we have ``2{r:}``, meaning that we should interpret read 2, in it's full length, as biological sequence.
 
-It is possible to have pieces of geometry repeated, in which case they will be extracted and concatenated together.  For example, ``1{b[16]u[12]b[4]x:}`` would mean that we should obtain the barcode by extracting bases 1-16 (1-based indexing) and 29-32 and concatenating them together to obtain the full barcode.  A
+It is possible to have pieces of geometry repeated, in which case they will be extracted and concatenated together.  For example, ``1{b[16]u[12]b[4]x:}`` would mean that we should obtain the barcode by extracting bases 1-16 (1-based indexing) and 29-32 and concatenating them together to obtain the full barcode.
 
 .. note::
 
