@@ -342,6 +342,10 @@ pub struct ProcessOpts {
     )]
     pub min_reads: usize,
 
+    /// compress the output mapping bed file.
+    #[arg(long, help_heading = "Advanced Options")]
+    pub compress: bool,
+
     /// skip checking of the equivalence classes of k-mers that were too
     /// ambiguous to be otherwise considered (passing this flag can speed
     /// up mapping slightly, but may reduce specificity)

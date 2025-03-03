@@ -503,6 +503,10 @@ fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
     }
     af_sort.arg("--threads").arg(threads.to_string());
 
+    if opts.compress {
+        af_sort.arg("--compress");
+    }
+
     let sort_cmd_string = prog_utils::get_cmd_line_string(&af_sort);
     info!("sort command : {}", sort_cmd_string);
 

@@ -1,6 +1,6 @@
 [package]
 name = "simpleaf"
-version = "0.19.2"
+version = "0.19.3"
 edition = "2021"
 authors = [
   "Rob Patro <rob@cs.umd.edu>",
@@ -35,12 +35,12 @@ categories = ["command-line-utilities", "science"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-cc = "1.2.13"
+cc = "1.2.16"
 seq_geom_parser = { git = "https://github.com/COMBINE-lab/seq_geom_parser", branch = "dev", version = "0.3.0" }
 seq_geom_xform = { git = "https://github.com/COMBINE-lab/seq_geom_xform", branch = "dev", version = "0.4.0" }
 roers = { git = "https://github.com/COMBINE-lab/roers", branch = "main", version = "0.4.0" }
 anyhow = "^1.0"
-clap = { version = "4.5.28", features = [
+clap = { version = "4.5.31", features = [
   "derive",
   "cargo",
   "deprecated",
@@ -55,8 +55,8 @@ tracing-subscriber = { version = "0.3.19", default-features = true, features = [
   "env-filter",
 ] }
 semver = "^1.0.25"
-serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.138"
+serde = { version = "1.0.218", features = ["derive"] }
+serde_json = "1.0.140"
 time = { version = "^0.3.37", features = [
   "macros",
   "formatting",
@@ -68,25 +68,25 @@ which = "7.0.2"
 jrsonnet-evaluator = "0.5.0-pre95"
 jrsonnet-cli = "0.5.0-pre95"
 jrsonnet-parser = "0.5.0-pre95"
-thiserror = "2.0.11"
+thiserror = "2.0.12"
 phf = { version = "0.11.3", features = ["macros"] }
-chrono = "0.4.39"
+chrono = "0.4.40"
 tabled = "0.17.0"
 csv = "1.3.1"
 strum = { version = "0.26.3", features = ["derive", "phf"] }
 strum_macros = "0.26.4"
 niffler = { version = "3.0.0", default-features = false, features = ["gz"] }
-flate2 = { version = "1.0.35", default-features = false, features = [
+flate2 = { version = "1.1.0", default-features = false, features = [
   "zlib-ng",
 ] }
-blake3 = { version = "1.5.5", features = ["mmap", "serde"] }
+blake3 = { version = "1.6.1", features = ["mmap", "serde"] }
 regex = { version = "1.11.1", default-features = false, features = [
   "perf",
   "std",
 ] }
-tempfile = "3.16.0"
-ureq = { version = "3.0.5", features = ["json"] }
-af-anndata = { version = "0.3.0", git = "https://github.com/COMBINE-lab/af-anndata" }
+tempfile = "3.17.1"
+ureq = { version = "3.0.8", features = ["json"] }
+af-anndata = { version = "0.3.2", git = "https://github.com/COMBINE-lab/af-anndata" }
 
 [profile.release]
 lto = "thin"
