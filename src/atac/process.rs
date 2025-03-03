@@ -147,7 +147,7 @@ pub(crate) fn check_progs<P: AsRef<Path>>(
 
     match prog_utils::check_version_constraints(
         "alevin-fry",
-        ">=0.11.0, <1.0.0",
+        ">=0.11.2, <1.0.0",
         &af_prog_info.version,
     ) {
         Ok(af_ver) => info!("found alevin-fry version {:#}, proceeding", af_ver),
@@ -391,7 +391,8 @@ fn macs_call_peaks(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()
         .expect("macs program info should be properly set.");
 
     let gpl_dir = opts.output.join("af_process");
-    let bed_input = gpl_dir.join("map.bed");
+    let bedsuf = if opts.compress { ".bed.gz" } else { ".bed" };
+    let bed_input = gpl_dir.join(format!("map{}", bedsuf));
     let peaks_output = gpl_dir.join("macs");
     let mut macs_cmd =
         std::process::Command::new(format!("{}", &macs_prog_info.exe_path.display()));

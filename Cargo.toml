@@ -1,6 +1,6 @@
 [package]
 name = "simpleaf"
-version = "0.19.3"
+version = "0.19.2"
 edition = "2021"
 authors = [
   "Rob Patro <rob@cs.umd.edu>",
@@ -76,9 +76,7 @@ csv = "1.3.1"
 strum = { version = "0.26.3", features = ["derive", "phf"] }
 strum_macros = "0.26.4"
 niffler = { version = "3.0.0", default-features = false, features = ["gz"] }
-flate2 = { version = "1.1.0", default-features = false, features = [
-  "zlib-ng",
-] }
+flate2 = { version = "1.1.0", default-features = false, features = ["zlib-ng"] }
 blake3 = { version = "1.6.1", features = ["mmap", "serde"] }
 regex = { version = "1.11.1", default-features = false, features = [
   "perf",
