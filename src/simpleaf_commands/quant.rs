@@ -739,6 +739,7 @@ being used by simpleaf"#,
     alevin_gpl_cmd.arg("generate-permit-list");
     alevin_gpl_cmd.arg("-i").arg(&map_output);
     alevin_gpl_cmd.arg("-d").arg(ori.as_str());
+    alevin_gpl_cmd.arg("-t").arg(format!("{}", threads));
 
     // add the filter mode
     filter_meth.add_to_args(&mut alevin_gpl_cmd);
