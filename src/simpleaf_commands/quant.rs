@@ -736,10 +736,11 @@ being used by simpleaf"#,
     // alevin-fry generate permit list
     let mut alevin_gpl_cmd = std::process::Command::new(format!("{}", &alevin_fry.display()));
 
+    let gpl_threads = threads.min(8);
     alevin_gpl_cmd.arg("generate-permit-list");
     alevin_gpl_cmd.arg("-i").arg(&map_output);
     alevin_gpl_cmd.arg("-d").arg(ori.as_str());
-    alevin_gpl_cmd.arg("-t").arg(format!("{}", threads));
+    alevin_gpl_cmd.arg("-t").arg(format!("{}", gpl_threads));
 
     // add the filter mode
     filter_meth.add_to_args(&mut alevin_gpl_cmd);
