@@ -36,9 +36,9 @@ categories = ["command-line-utilities", "science"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 cc = "1.2.16"
-seq_geom_parser = { version = "0.3.0" }
-seq_geom_xform = { version = "0.4.0" }
-roers = { version = "0.4.0" }
+seq_geom_parser = { git = "https://github.com/COMBINE-lab/seq_geom_parser", branch = "dev", version = "0.3.0" }
+seq_geom_xform = { git = "https://github.com/COMBINE-lab/seq_geom_xform", branch = "dev", version = "0.4.0" }
+roers = { git = "https://github.com/COMBINE-lab/roers", branch = "main", version = "0.4.0" }
 anyhow = "^1.0"
 clap = { version = "4.5.31", features = [
   "derive",
@@ -84,7 +84,7 @@ regex = { version = "1.11.1", default-features = false, features = [
 ] }
 tempfile = "3.17.1"
 ureq = { version = "3.0.8", features = ["json"] }
-af-anndata = { version = "0.3.2"}
+af-anndata = { version = "0.3.2", git = "https://github.com/COMBINE-lab/af-anndata" }
 
 [profile.release]
 lto = "thin"
