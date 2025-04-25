@@ -764,7 +764,7 @@ being used by simpleaf"#,
         }
     };
     
-    let map_info_path = gpl_output.join("map_info.json");
+    let map_info_path = gpl_output.join("simpleaf_map_info.json");
     let map_info_file = std::fs::File::create(map_info_path)?;
     serde_json::to_writer(map_info_file, &mapping_log)?;
 
