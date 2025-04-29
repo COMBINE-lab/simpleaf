@@ -819,9 +819,9 @@ impl WorkflowLog {
     /// Write log to the output path.
     /// 1. an execution log file includes the whole workflow,
     ///    in which succeffully invoked commands have
-    ///     a negative `step`
+    ///    a negative `step`
     /// 2. an info log file records runtime, workflow name,
-    ///     output path etc.
+    ///    output path etc.
     pub fn write(&self, succeed: bool) -> anyhow::Result<()> {
         // initiate meta_info
         let workflow_meta_info = if let Some(workflow_meta_info) = &self.workflow_meta_info {

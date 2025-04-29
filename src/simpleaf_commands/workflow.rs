@@ -361,8 +361,8 @@ pub fn get_workflow<T: AsRef<Path>>(
 /// Simpleaf Workflow JSON format required fields:
 /// 1. json_type: This field has to exist and have the value "Simpleaf Workflow"
 /// 2. simpleaf_version: This field has to exist and contains the version of simpleaf
-///     used for making the file. If the files are made manually, this value has to be
-///      higher than 0.11.0
+///    used for making the file. If the files are made manually, this value has to be
+///    higher than 0.11.0
 /// 3. index: (Optional): this field records all simpleaf index commands that need to be run.
 /// 4. quant: (Optional): this field records all simpleaf quant commands that need to be run.
 // TODO: add a `skip` argument for skipping steps

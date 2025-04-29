@@ -1,5 +1,6 @@
 use crate::utils::af_utils::*;
 
+use crate::utils::prog_parsing_utils;
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::{CommandVerbosityLevel, ReqProgs};
 
@@ -521,7 +522,7 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
         );
 
         match index_type {
-            IndexType::Piscem(index_base) => {
+            IndexType::Piscem(ref index_base) => {
                 let piscem_prog_info = rp
                     .piscem
                     .as_ref()
@@ -626,7 +627,7 @@ being used by simpleaf"#,
                     bail!("piscem mapping failed with exit status {:?}", cres.status);
                 }
             }
-            IndexType::Salmon(index_base) => {
+            IndexType::Salmon(ref index_base) => {
                 // using a salmon index
                 let mut salmon_quant_cmd = std::process::Command::new(format!(
                     "{}",
@@ -732,6 +733,43 @@ being used by simpleaf"#,
 
     let map_output_string = map_output.display().to_string();
 
+    // make the quant directory
+    let gpl_output = opts.output.join("af_quant");
+
+    std::fs::create_dir_all(&gpl_output).with_context(|| {
+        format!(
+            "Failed to create quantification output directory {}",
+            gpl_output.display()
+        )
+    })?;
+
+    // attempt to get the relevant information from map_info to propagate forward to the
+    // quantification directory
+    //get_mapping_info
+    let mapping_log = match index_type {
+        IndexType::Piscem(_) => {
+            let piscem_map_log_path = map_output.join("map_info.json");
+            prog_parsing_utils::construct_json_from_piscem_log(piscem_map_log_path)?
+        }
+        IndexType::Salmon(_) => {
+            let salmon_log_path = map_output.join("logs").join("salmon_quant.log");
+            prog_parsing_utils::construct_json_from_salmon_log(salmon_log_path)?
+        }
+        IndexType::NoIndex => {
+            serde_json::json!({
+                "mapper" : "pre_mapped",
+                "num_mapped": 0,
+                "num_poisoned": 0,
+                "num_reads": 0,
+                "percent_mapped": 0.
+            })
+        }
+    };
+
+    let map_info_path = gpl_output.join("simpleaf_map_info.json");
+    let map_info_file = std::fs::File::create(map_info_path)?;
+    serde_json::to_writer(map_info_file, &mapping_log)?;
+
     let alevin_fry = rp.alevin_fry.unwrap().exe_path;
     // alevin-fry generate permit list
     let mut alevin_gpl_cmd = std::process::Command::new(format!("{}", &alevin_fry.display()));
@@ -745,7 +783,6 @@ being used by simpleaf"#,
     // add the filter mode
     filter_meth.add_to_args(&mut alevin_gpl_cmd);
 
-    let gpl_output = opts.output.join("af_quant");
     alevin_gpl_cmd.arg("-o").arg(&gpl_output);
 
     info!(
