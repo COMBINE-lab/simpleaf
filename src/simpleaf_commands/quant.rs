@@ -1,8 +1,8 @@
 use crate::utils::af_utils::*;
 
+use crate::utils::prog_parsing_utils;
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::{CommandVerbosityLevel, ReqProgs};
-use crate::utils::prog_parsing_utils;
 
 use anyhow::{bail, Context};
 use serde_json::json;
@@ -626,7 +626,6 @@ being used by simpleaf"#,
                 if !cres.status.success() {
                     bail!("piscem mapping failed with exit status {:?}", cres.status);
                 }
-
             }
             IndexType::Salmon(ref index_base) => {
                 // using a salmon index
@@ -737,33 +736,36 @@ being used by simpleaf"#,
     // make the quant directory
     let gpl_output = opts.output.join("af_quant");
 
-    let _r = std::fs::create_dir_all(&gpl_output).with_context(
-        || format!("Failed to create quantification output directory {}", gpl_output.display())
-    )?;
- 
-    // attempt to get the relevant information from map_info to propagate forward to the 
+    std::fs::create_dir_all(&gpl_output).with_context(|| {
+        format!(
+            "Failed to create quantification output directory {}",
+            gpl_output.display()
+        )
+    })?;
+
+    // attempt to get the relevant information from map_info to propagate forward to the
     // quantification directory
     //get_mapping_info
     let mapping_log = match index_type {
         IndexType::Piscem(_) => {
             let piscem_map_log_path = map_output.join("map_info.json");
             prog_parsing_utils::construct_json_from_piscem_log(piscem_map_log_path)?
-        },
+        }
         IndexType::Salmon(_) => {
             let salmon_log_path = map_output.join("logs").join("salmon_quant.log");
             prog_parsing_utils::construct_json_from_salmon_log(salmon_log_path)?
-        },
+        }
         IndexType::NoIndex => {
             serde_json::json!({
                 "mapper" : "pre_mapped",
                 "num_mapped": 0,
                 "num_poisoned": 0,
                 "num_reads": 0,
-                "percent_mapped": 0. 
+                "percent_mapped": 0.
             })
         }
     };
-    
+
     let map_info_path = gpl_output.join("simpleaf_map_info.json");
     let map_info_file = std::fs::File::create(map_info_path)?;
     serde_json::to_writer(map_info_file, &mapping_log)?;
