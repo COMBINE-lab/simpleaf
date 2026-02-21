@@ -1,3 +1,4 @@
+use crate::core::io::write_json_pretty_atomic;
 use crate::utils::chem_utils::{
     custom_chem_hm_into_json, get_custom_chem_hm, get_single_custom_chem_from_file,
     CustomChemistry, CustomChemistryMap, ExpectedOri, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY,
@@ -10,14 +11,127 @@ use regex::Regex;
 use anyhow::{bail, Context, Result};
 use semver::Version;
 use serde_json::json;
+use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::fs;
-use std::io::{Seek, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 use utils::prog_utils::read_json_from_remote_url;
 use utils::remote::is_remote_url;
+
+fn removable_permit_lists(
+    used_pls: &HashSet<PathBuf>,
+    present_pls: &HashSet<PathBuf>,
+) -> HashSet<PathBuf> {
+    present_pls - used_pls
+}
+
+/// Parse a chemistry version string with additional operation context.
+fn parse_chemistry_version(version: &str, context: &str) -> Result<Version> {
+    Version::parse(version).with_context(|| {
+        format!(
+            "Could not parse version {} while {}. Please follow https://semver.org/ (e.g. 0.1.0).",
+            version, context
+        )
+    })
+}
+
+/// Return `true` if a new chemistry entry should replace an existing one.
+///
+/// Replacement happens when `force` is set or when the incoming version is
+/// strictly newer than the existing version.
+fn should_replace_registry_entry(existing: &Value, incoming: &Value, force: bool) -> Result<bool> {
+    if force {
+        return Ok(true);
+    }
+    let current_version = existing
+        .get("version")
+        .and_then(Value::as_str)
+        .with_context(|| "Chemistry should have a string `version` field.")?;
+    let new_version = incoming
+        .get("version")
+        .and_then(Value::as_str)
+        .with_context(|| "Chemistry should have a string `version` field.")?;
+    Ok(
+        parse_chemistry_version(new_version, "comparing incoming chemistry")?
+            > parse_chemistry_version(current_version, "comparing existing chemistry")?,
+    )
+}
+
+/// Merge incoming registry entries into an existing registry object.
+///
+/// Missing keys are inserted. Existing keys are replaced only when
+/// `should_replace_registry_entry` permits it.
+fn merge_registry_entries(
+    existing: &mut Map<String, Value>,
+    incoming: &Map<String, Value>,
+    force: bool,
+    dry_run_pref: &str,
+) -> Result<()> {
+    for (k, v) in incoming {
+        match existing.get_mut(k) {
+            None => {
+                existing.insert(k.clone(), v.clone());
+            }
+            Some(curr) => {
+                if should_replace_registry_entry(curr, v, force)? {
+                    info!("{}updating {}", dry_run_pref, k);
+                    existing.insert(k.clone(), v.clone());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Merge entries from deprecated `custom_chemistries.json` into the main registry.
+///
+/// Only missing entries are inserted, and only when the deprecated value is a
+/// valid geometry string.
+fn merge_deprecated_registry_entries(
+    existing: &mut Map<String, Value>,
+    deprecated: &Map<String, Value>,
+    dry_run_pref: &str,
+) {
+    for (k, v) in deprecated {
+        if existing.contains_key(k) {
+            warn!(
+                "{}The main registry already contained the chemistry \"{}\"; Ignored the one from the deprecated registry.",
+                dry_run_pref, k
+            );
+        } else if let Value::String(geom) = v {
+            if validate_geometry(geom).is_ok() {
+                let new_ent = json!({
+                    "geometry": geom,
+                    "expected_ori": "both",
+                    "version" : CustomChemistry::default_version(),
+                });
+                existing.insert(k.to_owned(), new_ent);
+                info!(
+                    "{}Successfully inserted chemistry \"{}\" from the deprecated registry into the main registry.",
+                    dry_run_pref, k
+                );
+            } else {
+                warn!(
+                    "{}The chemistry \"{}\" in the deprecated registry is not a valid geometry string; Skipped.",
+                    dry_run_pref, k
+                );
+            }
+        } else {
+            warn!(
+                "{}The chemistry \"{}\" in the deprecated registry is not a string; Skipped.",
+                dry_run_pref, k
+            );
+        }
+    }
+}
+
+/// Persist a JSON value as pretty-printed text to disk.
+fn write_json_pretty(path: &Path, value: &Value) -> Result<()> {
+    write_json_pretty_atomic(path, value)
+        .with_context(|| format!("Could not write {}", path.display()))
+}
 
 /// Attempt to get the chemistry definition from the provided JSON file
 /// Check if the JSON file is local or remote. If remote, fetch the file first.
@@ -160,7 +274,7 @@ pub fn add_chemistry(
     let version = add_opts
         .version
         .unwrap_or(CustomChemistry::default_version());
-    let add_ver = Version::parse(version.as_ref()).with_context(|| format!("Could not parse version {}. Please follow https://semver.org/. A valid example is 0.1.0", version))?;
+    let add_ver = parse_chemistry_version(version.as_ref(), "adding chemistry")?;
 
     let name = add_opts.name;
 
@@ -169,7 +283,10 @@ pub fn add_chemistry(
 
     if let Some(existing_entry) = get_single_custom_chem_from_file(&chem_p, &name)? {
         let existing_ver_str = existing_entry.version();
-        let existing_ver = Version::parse(existing_ver_str).with_context( || format!("Could not parse version {} found in existing chemistries.json file. Please correct this entry", existing_ver_str))?;
+        let existing_ver = parse_chemistry_version(
+            existing_ver_str,
+            "reading existing chemistry version from chemistries.json",
+        )?;
         if add_ver <= existing_ver {
             info!("Attempting to add chemistry with version {:#} which is <= than the existing version ({:#}) for this chemistry; Skipping addition.", add_ver, existing_ver);
             return Ok(());
@@ -302,15 +419,7 @@ pub fn add_chemistry(
 
     // convert the custom chemistry hashmap to json
     let v = custom_chem_hm_into_json(chem_hm)?;
-
-    // write out the new custom chemistry file
-    let mut custom_chem_file = std::fs::File::create(&chem_p)
-        .with_context(|| format!("Could not create {}", chem_p.display()))?;
-    custom_chem_file.rewind()?;
-
-    custom_chem_file
-        .write_all(serde_json::to_string_pretty(&v).unwrap().as_bytes())
-        .with_context(|| format!("Could not write {}", chem_p.display()))?;
+    write_json_pretty(&chem_p, &v)?;
 
     Ok(())
 }
@@ -377,44 +486,8 @@ pub fn refresh_chemistries(
         prog_utils::download_to_file(CHEMISTRIES_URL, &tmp_chem_path)?;
         if let Some(existing_chem) = parse_resource_json_file(&chem_path, None)?.as_object_mut() {
             if let Some(new_chem) = parse_resource_json_file(&tmp_chem_path, None)?.as_object() {
-                for (k, v) in new_chem.iter() {
-                    match existing_chem.get_mut(k) {
-                        None => {
-                            existing_chem.insert(k.clone(), v.clone());
-                        }
-                        Some(ev) => {
-                            let curr_ver = Version::parse(
-                                ev.get("version")
-                                    .expect("Chemistry should have a version field")
-                                    .as_str()
-                                    .expect("Version should be a string"),
-                            )?;
-                            let new_ver = Version::parse(
-                                v.get("version")
-                                    .expect("Chemistry should have a version field")
-                                    .as_str()
-                                    .expect("Version should be a string"),
-                            )?;
-                            if refresh_opts.force || new_ver > curr_ver {
-                                info!("{}updating {}", dry_run_pref, k);
-                                existing_chem.insert(k.clone(), v.clone());
-                            }
-                        }
-                    }
-                }
-
-                // write out the merged chemistry file
-                let mut chem_file = std::fs::File::create(&chem_path)
-                    .with_context(|| format!("could not create {}", chem_path.display()))?;
-                chem_file.rewind()?;
-
-                chem_file
-                    .write_all(
-                        serde_json::to_string_pretty(&existing_chem)
-                            .unwrap()
-                            .as_bytes(),
-                    )
-                    .with_context(|| format!("could not write {}", chem_path.display()))?;
+                merge_registry_entries(existing_chem, new_chem, refresh_opts.force, dry_run_pref)?;
+                write_json_pretty(&chem_path, &Value::Object(existing_chem.clone()))?;
 
                 // remove the temp file
                 std::fs::remove_file(tmp_chem_path)?;
@@ -434,34 +507,8 @@ pub fn refresh_chemistries(
             if let Some(old_custom_chem) =
                 parse_resource_json_file(&custom_chem_file, None)?.as_object()
             {
-                for (k, v) in old_custom_chem.iter() {
-                    if new_chem.contains_key(k) {
-                        warn!("{}The main registry already contained the chemistry \"{}\"; Ignored the one from the deprecated registry.", dry_run_pref, k);
-                    } else if let serde_json::Value::String(v) = v {
-                        if validate_geometry(v).is_ok() {
-                            let new_ent = json!({
-                            "geometry": v,
-                            "expected_ori": "both",
-                            "version" : CustomChemistry::default_version(),
-                            });
-                            new_chem.insert(k.to_owned(), new_ent);
-                            info!("{}Successfully inserted chemistry \"{}\" from the deprecated registry into the main registry.", dry_run_pref, k);
-                        } else {
-                            warn!("{}The chemistry \"{}\" in the deprecated registry is not a valid geometry string; Skipped.", dry_run_pref, k);
-                        }
-                    } else {
-                        warn!("{}The chemistry \"{}\" in the deprecated registry is not a string; Skipped.", dry_run_pref, k);
-                    }
-                }
-
-                // write out the merged chemistry file
-                let mut chem_file = std::fs::File::create(&chem_path)
-                    .with_context(|| format!("could not create {}", chem_path.display()))?;
-                chem_file.rewind()?;
-
-                chem_file
-                    .write_all(serde_json::to_string_pretty(&new_chem).unwrap().as_bytes())
-                    .with_context(|| format!("could not write {}", chem_path.display()))?;
+                merge_deprecated_registry_entries(new_chem, old_custom_chem, dry_run_pref);
+                write_json_pretty(&chem_path, &Value::Object(new_chem.clone()))?;
 
                 let backup = custom_chem_file.with_extension("json.bak");
                 std::fs::rename(custom_chem_file, backup)?;
@@ -531,17 +578,17 @@ pub fn clean_chemistries(
         })
         .collect::<HashSet<PathBuf>>();
 
-    let rem_pls = &present_pls - &used_pls;
+    let rem_pls = removable_permit_lists(&used_pls, &present_pls);
 
     // check if the chemistry already exists and log
     if dry_run {
         if rem_pls.is_empty() {
             info!("[dry_run] : No permit list files in the cache directory are currently unused; Nothing to clean.");
         } else {
-            info!("[dry_run] : The following files in the permit list directory do not match any registered chemistries and would be removed: {:#?}", present_pls);
+            info!("[dry_run] : The following files in the permit list directory do not match any registered chemistries and would be removed: {:#?}", rem_pls);
         }
     } else {
-        for pl in rem_pls {
+        for pl in &rem_pls {
             info!("removing file from {}", pl.display());
             std::fs::remove_file(pl)?;
         }
@@ -593,15 +640,7 @@ pub fn remove_chemistry(
     } else if !remove_opts.dry_run {
         // convert the custom chemistry hashmap to json
         let v = custom_chem_hm_into_json(chem_hm)?;
-
-        // write out the new custom chemistry file
-        let mut custom_chem_file = std::fs::File::create(&chem_p)
-            .with_context(|| format!("Could not create {}", chem_p.display()))?;
-        custom_chem_file.rewind()?;
-
-        custom_chem_file
-            .write_all(serde_json::to_string_pretty(&v).unwrap().as_bytes())
-            .with_context(|| format!("Could not write {}", chem_p.display()))?;
+        write_json_pretty(&chem_p, &v)?;
     }
 
     Ok(())
@@ -759,4 +798,240 @@ pub fn fetch_chemistries(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        add_chemistry, clean_chemistries, merge_deprecated_registry_entries,
+        merge_registry_entries, parse_chemistry_version, removable_permit_lists, remove_chemistry,
+    };
+    use crate::simpleaf_commands::{ChemistryAddOpts, ChemistryCleanOpts, ChemistryRemoveOpts};
+    use crate::utils::constants::CHEMISTRIES_PATH;
+    use serde_json::{json, Map, Value};
+    use std::collections::HashSet;
+    use std::fs;
+    use std::path::PathBuf;
+    use tempfile::tempdir;
+
+    /// Write a JSON value to `<af_home>/chemistries.json` for registry tests.
+    fn write_registry(af_home: &std::path::Path, value: &Value) {
+        fs::write(
+            af_home.join(CHEMISTRIES_PATH),
+            serde_json::to_string_pretty(value).unwrap(),
+        )
+        .unwrap();
+    }
+
+    /// Read `<af_home>/chemistries.json` as JSON.
+    fn read_registry(af_home: &std::path::Path) -> Value {
+        serde_json::from_str(&fs::read_to_string(af_home.join(CHEMISTRIES_PATH)).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn removable_permit_list_set_only_contains_unused_files() {
+        let used = HashSet::from([PathBuf::from("plist/a"), PathBuf::from("plist/b")]);
+        let present = HashSet::from([
+            PathBuf::from("plist/a"),
+            PathBuf::from("plist/b"),
+            PathBuf::from("plist/c"),
+        ]);
+
+        let removable = removable_permit_lists(&used, &present);
+        assert_eq!(removable, HashSet::from([PathBuf::from("plist/c")]));
+    }
+
+    #[test]
+    fn merge_registry_entries_prefers_newer_versions_unless_forced() {
+        let mut existing = Map::new();
+        existing.insert(
+            "chem_a".to_string(),
+            json!({"geometry":"1{b[16]u[12]x:}2{r:}","expected_ori":"both","version":"1.0.0"}),
+        );
+        let mut incoming = Map::new();
+        incoming.insert(
+            "chem_a".to_string(),
+            json!({"geometry":"1{b[16]u[10]x:}2{r:}","expected_ori":"both","version":"0.9.0"}),
+        );
+        incoming.insert(
+            "chem_b".to_string(),
+            json!({"geometry":"1{b[16]u[12]x:}2{r[50]x:}","expected_ori":"both","version":"0.1.0"}),
+        );
+
+        merge_registry_entries(&mut existing, &incoming, false, "").unwrap();
+        assert_eq!(existing["chem_a"]["version"], json!("1.0.0"));
+        assert_eq!(existing["chem_b"]["version"], json!("0.1.0"));
+
+        merge_registry_entries(&mut existing, &incoming, true, "").unwrap();
+        assert_eq!(existing["chem_a"]["version"], json!("0.9.0"));
+    }
+
+    #[test]
+    fn merge_deprecated_registry_entries_inserts_only_valid_missing_entries() {
+        let mut existing = Map::new();
+        existing.insert(
+            "already".to_string(),
+            json!({"geometry":"1{b[16]u[12]x:}2{r:}","expected_ori":"both","version":"1.0.0"}),
+        );
+        let deprecated = Map::from_iter([
+            (
+                "already".to_string(),
+                Value::String("1{b[10]}2{r:}".to_string()),
+            ),
+            (
+                "valid_new".to_string(),
+                Value::String("1{b[16]u[12]x:}2{r:}".to_string()),
+            ),
+            (
+                "invalid_new".to_string(),
+                Value::String("bad-geom".to_string()),
+            ),
+        ]);
+
+        merge_deprecated_registry_entries(&mut existing, &deprecated, "");
+
+        assert!(existing.contains_key("already"));
+        assert!(existing.contains_key("valid_new"));
+        assert!(!existing.contains_key("invalid_new"));
+    }
+
+    #[test]
+    fn add_chemistry_only_updates_when_version_increases() {
+        let tmp = tempdir().unwrap();
+        write_registry(
+            tmp.path(),
+            &json!({
+                "mychem": {
+                    "geometry": "1{b[16]u[12]x:}2{r:}",
+                    "expected_ori": "both",
+                    "version": "1.2.0"
+                }
+            }),
+        );
+
+        add_chemistry(
+            tmp.path().to_path_buf(),
+            ChemistryAddOpts {
+                name: "mychem".to_string(),
+                geometry: Some("1{b[16]u[10]x:}2{r:}".to_string()),
+                expected_ori: Some("both".to_string()),
+                local_url: None,
+                remote_url: None,
+                version: Some("1.1.0".to_string()),
+                from_json: None,
+            },
+        )
+        .unwrap();
+        let registry_after_older = read_registry(tmp.path());
+        assert_eq!(registry_after_older["mychem"]["version"], json!("1.2.0"));
+        assert_eq!(
+            registry_after_older["mychem"]["geometry"],
+            json!("1{b[16]u[12]x:}2{r:}")
+        );
+
+        add_chemistry(
+            tmp.path().to_path_buf(),
+            ChemistryAddOpts {
+                name: "mychem".to_string(),
+                geometry: Some("1{b[16]u[10]x:}2{r:}".to_string()),
+                expected_ori: Some("both".to_string()),
+                local_url: None,
+                remote_url: None,
+                version: Some("1.3.0".to_string()),
+                from_json: None,
+            },
+        )
+        .unwrap();
+        let registry_after_newer = read_registry(tmp.path());
+        assert_eq!(registry_after_newer["mychem"]["version"], json!("1.3.0"));
+        assert_eq!(
+            registry_after_newer["mychem"]["geometry"],
+            json!("1{b[16]u[10]x:}2{r:}")
+        );
+    }
+
+    #[test]
+    fn remove_chemistry_respects_dry_run_and_regex_removal() {
+        let tmp = tempdir().unwrap();
+        write_registry(
+            tmp.path(),
+            &json!({
+                "foo_chem": {"geometry":"1{b[16]u[12]x:}2{r:}","expected_ori":"both","version":"0.1.0"},
+                "bar_chem": {"geometry":"1{b[16]u[12]x:}2{r:}","expected_ori":"both","version":"0.1.0"}
+            }),
+        );
+
+        remove_chemistry(
+            tmp.path().to_path_buf(),
+            ChemistryRemoveOpts {
+                name: "foo_.*".to_string(),
+                dry_run: true,
+            },
+        )
+        .unwrap();
+        let after_dry_run = read_registry(tmp.path());
+        assert!(after_dry_run.get("foo_chem").is_some());
+        assert!(after_dry_run.get("bar_chem").is_some());
+
+        remove_chemistry(
+            tmp.path().to_path_buf(),
+            ChemistryRemoveOpts {
+                name: "foo_.*".to_string(),
+                dry_run: false,
+            },
+        )
+        .unwrap();
+        let after_remove = read_registry(tmp.path());
+        assert!(after_remove.get("foo_chem").is_none());
+        assert!(after_remove.get("bar_chem").is_some());
+    }
+
+    #[test]
+    fn clean_chemistries_dry_run_is_non_destructive_then_removes_unused() {
+        let tmp = tempdir().unwrap();
+        write_registry(
+            tmp.path(),
+            &json!({
+                "chem": {
+                    "geometry":"1{b[16]u[12]x:}2{r:}",
+                    "expected_ori":"both",
+                    "version":"0.1.0",
+                    "plist_name":"keep_pl"
+                }
+            }),
+        );
+
+        let plist_dir = tmp.path().join("plist");
+        fs::create_dir_all(&plist_dir).unwrap();
+        let keep = plist_dir.join("keep_pl");
+        let remove = plist_dir.join("remove_pl");
+        fs::write(&keep, "keep").unwrap();
+        fs::write(&remove, "remove").unwrap();
+
+        clean_chemistries(
+            tmp.path().to_path_buf(),
+            ChemistryCleanOpts { dry_run: true },
+        )
+        .unwrap();
+        assert!(keep.exists());
+        assert!(remove.exists());
+
+        clean_chemistries(
+            tmp.path().to_path_buf(),
+            ChemistryCleanOpts { dry_run: false },
+        )
+        .unwrap();
+        assert!(keep.exists());
+        assert!(!remove.exists());
+    }
+
+    #[test]
+    fn parse_chemistry_version_rejects_invalid_versions() {
+        let err = parse_chemistry_version("not-a-version", "unit test").unwrap_err();
+        assert!(
+            format!("{:#}", err).contains("Could not parse version"),
+            "unexpected error: {:#}",
+            err
+        );
+    }
 }

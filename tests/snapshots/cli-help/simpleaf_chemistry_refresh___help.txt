@@ -1,0 +1,9 @@
+Update the local chemistry registry according to the upstream repository
+
+Usage: simpleaf chemistry refresh [OPTIONS]
+
+Options:
+  -f, --force    overwrite existing chemistries even if the versions aren't newer
+  -d, --dry-run  print the chemistries that will be added or updated without modifying the local
+                 registry
+  -h, --help     Print help

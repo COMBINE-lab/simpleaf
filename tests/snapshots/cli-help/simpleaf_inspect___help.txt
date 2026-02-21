@@ -1,0 +1,7 @@
+inspect the current configuration
+
+Usage: simpleaf inspect
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version

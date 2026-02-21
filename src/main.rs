@@ -2,6 +2,7 @@ use chemistry::{
     add_chemistry, clean_chemistries, fetch_chemistries, lookup_chemistry, refresh_chemistries,
     remove_chemistry,
 };
+use tracing::info;
 use tracing_subscriber::{filter::LevelFilter, fmt, prelude::*, EnvFilter};
 
 use anyhow::bail;
@@ -10,6 +11,7 @@ use clap::{crate_version, Parser};
 use std::env;
 use std::path::PathBuf;
 
+mod core;
 mod defaults;
 mod utils;
 
@@ -109,7 +111,13 @@ fn main() -> anyhow::Result<()> {
             // validate versions
             atac::process::check_progs(&af_home_path, &process_opts)?;
             // first we map the reads
-            atac::process::map_reads(af_home_path.as_path(), &process_opts)?;
+            let map_stage = atac::process::map_reads(af_home_path.as_path(), &process_opts)?;
+            info!(
+                "ATAC map stage complete: output={} duration={:.2}s cmd={}",
+                map_stage.map_output.display(),
+                map_stage.map_duration_secs,
+                map_stage.map_cmd
+            );
             // then we generate the permit list and sort the file
             atac::process::gen_bed(af_home_path.as_path(), &process_opts)
         }

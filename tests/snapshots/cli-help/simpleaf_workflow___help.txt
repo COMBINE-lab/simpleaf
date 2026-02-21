@@ -1,0 +1,18 @@
+simpleaf workflow related command set
+
+Usage: simpleaf workflow
+       simpleaf workflow <COMMAND>
+
+Commands:
+  list     Print a summary of the currently available workflows
+  refresh  Update the local copy of protocol esturary to the latest version
+  get      Get the workflow template and related files of a registered workflow
+  patch    Patch a workflow template or instantiated manifest with a subset of parameters to produce
+           a series of workflow manifests
+  run      Parse and instantiate a workflow template and invoke the workflow commands, or run an
+           instantiated manifest directly
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version

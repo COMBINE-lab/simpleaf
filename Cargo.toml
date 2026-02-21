@@ -15,6 +15,7 @@ homepage = "https://simpleaf.readthedocs.io"
 #documentation = "https://fry.readthedocs.io/en/latest/"
 include = [
   "/src/*.rs",
+  "/src/core/*.rs",
   "/src/utils/*.rs",
   "/src/utils/af_utils/*.rs",
   "/src/atac/*.rs",

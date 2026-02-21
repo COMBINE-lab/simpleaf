@@ -21,6 +21,85 @@ struct WorkflowTemplate {
     version: String,
 }
 
+/// Fully resolved workflow run inputs after parsing either a manifest or template.
+struct ResolvedWorkflowRun {
+    /// Parsed executable manifest.
+    instantiated_manifest: serde_json::Value,
+    /// Source path of the provided manifest/template (for logging context).
+    source_path: std::path::PathBuf,
+    /// Resolved output path extracted from the instantiated manifest.
+    output_path: std::path::PathBuf,
+}
+
+/// Resolve `workflow run` inputs into an instantiated manifest and paths.
+///
+/// This stage is responsible for parse/instantiate + output-path resolution.
+fn resolve_workflow_run_inputs<T: AsRef<Path>>(
+    af_home_path: T,
+    template: Option<std::path::PathBuf>,
+    manifest: Option<std::path::PathBuf>,
+    output_opt: Option<std::path::PathBuf>,
+    jpaths: &Option<Vec<std::path::PathBuf>>,
+    ext_codes: &Option<Vec<String>>,
+) -> anyhow::Result<ResolvedWorkflowRun> {
+    if let Some(manifest) = manifest {
+        info!("Loading and executing manifest.");
+        let instantiated_manifest = workflow_utils::parse_manifest(&manifest)?;
+        let output_path = workflow_utils::get_output_path(&instantiated_manifest)?;
+        return Ok(ResolvedWorkflowRun {
+            instantiated_manifest,
+            source_path: manifest,
+            output_path,
+        });
+    }
+
+    if let Some(template) = template {
+        if !template.exists() || !template.is_file() {
+            bail!("the path of the given workflow template file doesn't exist; Cannot proceed.")
+        }
+
+        info!("Processing simpleaf template to produce and execute manifest.");
+        let workflow_json_string = workflow_utils::instantiate_workflow_template(
+            af_home_path.as_ref(),
+            template.as_path(),
+            output_opt.clone(),
+            jpaths,
+            ext_codes,
+        )?;
+
+        let instantiated_manifest: Value = serde_json::from_str(workflow_json_string.as_str())?;
+        let output_path = workflow_utils::get_output_path(&instantiated_manifest)?;
+
+        // If both command-line and template outputs are set, warn if template wins.
+        if let Some(requested_output_path) = output_opt {
+            if requested_output_path != output_path {
+                warn!(
+                    r#"The output path {} was requested via the command line, but 
+                            the output path {} was resolved from the workflow template.
+                            In this case, since the output variable is not used when instantiating 
+                            the template, the value ({}) present in the template must be used.
+                            Please be aware that {} will not be used for output!"#,
+                    requested_output_path.display(),
+                    output_path.display(),
+                    output_path.display(),
+                    requested_output_path.display()
+                );
+            }
+        }
+
+        return Ok(ResolvedWorkflowRun {
+            instantiated_manifest,
+            source_path: template,
+            output_path,
+        });
+    }
+
+    bail!(concat!(
+        "You must have one of a manifest or template, ",
+        "but provided neither; this shouldn't happen"
+    ));
+}
+
 pub fn refresh_protocol_estuary<T: AsRef<Path>>(af_home_path: T) -> anyhow::Result<()> {
     workflow_utils::get_protocol_estuary(
         af_home_path.as_ref(),
@@ -384,71 +463,17 @@ pub fn run_workflow<T: AsRef<Path>>(
             skip_step,
             ext_codes,
         } => {
-            // designate that output is optional
-            let output_opt = output;
-
-            let instantiated_manifest: serde_json::Value;
-            let source_path: std::path::PathBuf;
-            let output_path: std::path::PathBuf;
-            if let Some(manifest) = manifest {
-                // If the user passed a fully-instantiated
-                // manifest to execute
-                info!("Loading and executing manifest.");
-                // iterate json files and parse records to commands
-                // convert files into json string vector
-                instantiated_manifest = workflow_utils::parse_manifest(&manifest)?;
-                output_path = workflow_utils::get_output_path(&instantiated_manifest)?;
-                source_path = manifest.clone();
-            } else if let Some(template) = template {
-                //  check the validity of the file
-                if !template.exists() || !template.is_file() {
-                    bail!("the path of the given workflow template file doesn't exist; Cannot proceed.")
-                }
-
-                info!("Processing simpleaf template to produce and execute manifest.");
-
-                // iterate json files and parse records to commands
-                // convert files into json string vector
-                let workflow_json_string = workflow_utils::instantiate_workflow_template(
-                    af_home_path.as_ref(),
-                    template.as_path(),
-                    output_opt.clone(),
-                    &jpaths,
-                    &ext_codes,
-                )?;
-
-                // write complete workflow (i.e. the manifest) JSON to output folder
-                instantiated_manifest = serde_json::from_str(workflow_json_string.as_str())?;
-                output_path = workflow_utils::get_output_path(&instantiated_manifest)?;
-
-                // check if the output path we read from the instantiated template matches
-                // the output path requested by the user (if the user passed one in). If
-                // they do not match, issue an obnoxious warning.
-                // @DongzeHe : We should also probably log this warning to the output
-                // log for subsequent inspection.
-                if let Some(requested_output_path) = output_opt {
-                    if requested_output_path != output_path {
-                        warn!(
-                            r#"The output path {} was requested via the command line, but 
-                            the output path {} was resolved from the workflow template.
-                            In this case, since the output variable is not used when instantiating 
-                            the template, the value ({}) present in the template must be used.
-                            Please be aware that {} will not be used for output!"#,
-                            requested_output_path.display(),
-                            output_path.display(),
-                            output_path.display(),
-                            requested_output_path.display()
-                        );
-                    }
-                }
-
-                source_path = template.clone();
-            } else {
-                bail!(concat!(
-                    "You must have one of a manifest or template, ",
-                    "but provided neither; this shouldn't happen"
-                ));
-            }
+            let resolved = resolve_workflow_run_inputs(
+                af_home_path.as_ref(),
+                template,
+                manifest,
+                output,
+                &jpaths,
+                &ext_codes,
+            )?;
+            let instantiated_manifest = resolved.instantiated_manifest;
+            let source_path = resolved.source_path;
+            let output_path = resolved.output_path;
 
             // recursively make the output directory, which at this point
             // has been resolved as the one used in the template or manifest

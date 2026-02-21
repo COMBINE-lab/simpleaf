@@ -1,0 +1,9 @@
+Get the workflow template and related files of a registered workflow
+
+Usage: simpleaf workflow get --name <NAME> --output <OUTPUT>
+
+Options:
+  -o, --output <OUTPUT>  path to dump the folder containing the workflow related files
+  -n, --name <NAME>      name of the queried workflow
+  -h, --help             Print help
+  -V, --version          Print version

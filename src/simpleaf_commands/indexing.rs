@@ -1,12 +1,12 @@
+use crate::core::{context, exec, io, runtime};
 use crate::utils::af_utils::create_dir_if_absent;
 use crate::utils::prog_utils;
-use crate::utils::prog_utils::{CommandVerbosityLevel, ReqProgs};
+use crate::utils::prog_utils::ReqProgs;
 
 use anyhow::{anyhow, bail, Context};
 use roers;
 use serde::Deserialize;
 use serde_json::json;
-use serde_json::Value;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -15,6 +15,100 @@ use std::time::Instant;
 use tracing::{error, info, warn};
 
 use super::{IndexOpts, ReferenceType};
+
+struct ReferenceStageOutput {
+    ref_seq: PathBuf,
+    min_seq_len: Option<u32>,
+    t2g: Option<PathBuf>,
+    gene_id_to_name: Option<PathBuf>,
+    roers_duration: Option<std::time::Duration>,
+    roers_cmd: Option<roers::AugRefOpts>,
+}
+
+struct IndexBuildStageOutput {
+    index_duration: std::time::Duration,
+    index_cmd_string: String,
+}
+
+fn derive_kmer_and_minimizer(
+    min_seq_len: Option<u32>,
+    default_kmer_length: u32,
+    default_minimizer_length: u32,
+) -> anyhow::Result<(u32, u32)> {
+    if let Some(msl) = min_seq_len {
+        if msl < 10 {
+            bail!("The reference sequences are too short for indexing. Please provide sequences with a minimum length of at least 10 bases.");
+        }
+        if (msl / 2) < default_kmer_length && default_kmer_length == 31 {
+            let kmer_length = msl / 2;
+            let minimizer_length = (kmer_length as f32 / 1.8).ceil() as u32 + 1;
+            info!(
+                "Using kmer_length = {} and minimizer_length = {} because the default values are too big for the reference sequences.",
+                kmer_length, minimizer_length
+            );
+            Ok((kmer_length, minimizer_length))
+        } else {
+            Ok((default_kmer_length, default_minimizer_length))
+        }
+    } else {
+        Ok((default_kmer_length, default_minimizer_length))
+    }
+}
+
+fn write_index_log_stage(
+    output: &Path,
+    reference_stage: &ReferenceStageOutput,
+    index_stage: &IndexBuildStageOutput,
+) -> anyhow::Result<()> {
+    let index_log_file = output.join("simpleaf_index_log.json");
+    let index_log_info = if let Some(roers_duration) = reference_stage.roers_duration {
+        json!({
+            "time_info" : {
+                "roers_time" : roers_duration,
+                "index_time" : index_stage.index_duration
+            },
+            "cmd_info" : {
+                "roers_cmd" : reference_stage.roers_cmd,
+                "index_cmd" : index_stage.index_cmd_string,
+            }
+        })
+    } else {
+        json!({
+            "time_info" : {
+                "index_time" : index_stage.index_duration
+            },
+            "cmd_info" : {
+                "index_cmd" : index_stage.index_cmd_string,
+            }
+        })
+    };
+
+    io::write_json_pretty_atomic(&index_log_file, &index_log_info)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::derive_kmer_and_minimizer;
+
+    #[test]
+    fn derive_kmer_and_minimizer_fails_for_short_reference() {
+        let err = derive_kmer_and_minimizer(Some(9), 31, 19)
+            .expect_err("expected short sequence length to fail");
+        assert!(
+            format!("{:#}", err).contains("minimum length of at least 10"),
+            "unexpected error: {:#}",
+            err
+        );
+    }
+
+    #[test]
+    fn derive_kmer_and_minimizer_adjusts_defaults_for_short_sequences() {
+        let (k, m) =
+            derive_kmer_and_minimizer(Some(20), 31, 19).expect("expected adjusted k/m values");
+        assert_eq!(k, 10);
+        assert_eq!(m, 7);
+    }
+}
 
 fn validate_index_type_opts(opts: &IndexOpts) -> anyhow::Result<()> {
     let mut bail = false;
@@ -230,9 +324,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     validate_index_type_opts(&opts)?;
     let mut threads = opts.threads;
     let output = opts.output;
-    let v: Value = prog_utils::inspect_af_home(af_home_path)?;
-    // Read the JSON contents of the file as an instance of `User`.
-    let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+    let rp: ReqProgs = context::load_required_programs(af_home_path)?;
 
     rp.issue_recommended_version_messages();
     // we are building a custom spliced+intronic reference
@@ -435,40 +527,29 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
         // _gene_id_to_name = Some(id_to_name_path);
     }
 
-    std::fs::write(
-        &info_file,
-        serde_json::to_string_pretty(&index_info).unwrap(),
-    )
-    .with_context(|| format!("could not write {}", info_file.display()))?;
+    io::write_json_pretty(&info_file, &index_info)?;
 
-    let ref_seq = reference_sequence.with_context(||
-                "Reference sequence should either be generated from --fasta with reftype spliced+intronic / spliced+unspliced or set with --ref-seq",
-            )?;
+    let ref_seq = reference_sequence.with_context(
+        || {
+            "Reference sequence should either be generated from --fasta with reftype spliced+intronic / spliced+unspliced or set with --ref-seq"
+        },
+    )?;
+    let reference_stage = ReferenceStageOutput {
+        ref_seq: ref_seq.clone(),
+        min_seq_len,
+        t2g,
+        gene_id_to_name,
+        roers_duration,
+        roers_cmd: roers_aug_ref_opt,
+    };
 
-    let input_files = vec![ref_seq.clone()];
+    let input_files = vec![reference_stage.ref_seq.clone()];
     prog_utils::check_files_exist(&input_files)?;
-
-    let kmer_length: u32;
-    let minimizer_length: u32;
-    if let Some(msl) = min_seq_len {
-        if msl < 10 {
-            bail!("The reference sequences are too short for indexing. Please provide sequences with a minimum length of at least 10 bases.");
-        }
-        // only if the value is not the default value
-        if (msl / 2) < opts.kmer_length && opts.kmer_length == 31 {
-            kmer_length = msl / 2;
-            // https://github.com/COMBINE-lab/protocol-estuary/blob/2ecc65f1891ebfafff2a4a17460550e4dd1f4bb6/utils/simpleaf_workflow_utils.libsonnet#L232
-            minimizer_length = (kmer_length as f32 / 1.8).ceil() as u32 + 1;
-
-            info!("Using kmer_length = {} and minimizer_length = {} because the default values are too big for the reference sequences.", kmer_length, minimizer_length);
-        } else {
-            kmer_length = opts.kmer_length;
-            minimizer_length = opts.minimizer_length;
-        };
-    } else {
-        kmer_length = opts.kmer_length;
-        minimizer_length = opts.minimizer_length;
-    }
+    let (kmer_length, minimizer_length) = derive_kmer_and_minimizer(
+        reference_stage.min_seq_len,
+        opts.kmer_length,
+        opts.minimizer_length,
+    )?;
 
     let output_index_dir = output.join("index");
     let index_duration;
@@ -481,10 +562,9 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
                             Please either set a path using the `set-paths` command, or ensure the `PISCEM` environment variable is set properly.");
         }
 
-        let piscem_prog_info = rp
-            .piscem
-            .as_ref()
-            .expect("piscem program info should be properly set.");
+        let piscem_prog_info = rp.piscem.as_ref().context(
+            "The construction of a piscem index was requested, but piscem program info is missing.",
+        )?;
 
         let mut piscem_index_cmd =
             std::process::Command::new(format!("{}", piscem_prog_info.exe_path.display()));
@@ -501,7 +581,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
             .arg("-o")
             .arg(&output_index_stem)
             .arg("-s")
-            .arg(&ref_seq)
+            .arg(&reference_stage.ref_seq)
             .arg("--seed")
             .arg(opts.hash_seed.to_string())
             .arg("-w")
@@ -513,18 +593,15 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
             piscem_index_cmd.arg("--overwrite");
         }
 
-        // if the user requested more threads than can be used
-        if let Ok(max_threads_usize) = std::thread::available_parallelism() {
-            let max_threads = max_threads_usize.get() as u32;
-            if threads > max_threads {
-                warn!(
-                    "The maximum available parallelism is {}, but {} threads were requested.",
-                    max_threads, threads
-                );
-                warn!("setting number of threads to {}", max_threads);
-                threads = max_threads;
-            }
+        let (capped_threads, capped_at) = runtime::cap_threads(threads);
+        if let Some(max_threads) = capped_at {
+            warn!(
+                "The maximum available parallelism is {}, but {} threads were requested.",
+                max_threads, threads
+            );
+            warn!("setting number of threads to {}", max_threads);
         }
+        threads = capped_threads;
 
         piscem_index_cmd
             .arg("--threads")
@@ -561,17 +638,12 @@ simpleaf"#,
         info!("piscem build cmd : {}", index_cmd_string);
 
         let index_start = Instant::now();
-        let cres = prog_utils::execute_command(&mut piscem_index_cmd, CommandVerbosityLevel::Quiet)
-            .expect("failed to invoke piscem index command");
+        let _cres = exec::run_checked(&mut piscem_index_cmd, "piscem index command")?;
         index_duration = index_start.elapsed();
-
-        if !cres.status.success() {
-            bail!("piscem index failed to build succesfully {:?}", cres.status);
-        }
 
         // copy over the t2g file to the index
         let mut t2g_out_path: Option<PathBuf> = None;
-        if let Some(t2g_file) = t2g {
+        if let Some(t2g_file) = reference_stage.t2g.clone() {
             let index_t2g_path = output_index_dir.join("t2g_3col.tsv");
             t2g_out_path = Some(PathBuf::from("t2g_3col.tsv"));
             std::fs::copy(t2g_file, index_t2g_path)?;
@@ -579,7 +651,7 @@ simpleaf"#,
 
         // copy over the gene_id_to_name.tsv file to the index
         let mut gene_id_to_name_out_path: Option<PathBuf> = None;
-        if let Some(gene_id_to_name_file) = gene_id_to_name {
+        if let Some(gene_id_to_name_file) = reference_stage.gene_id_to_name.clone() {
             let index_id2name_path = output_index_dir.join("gene_id_to_name.tsv");
             gene_id_to_name_out_path = Some(PathBuf::from("gene_id_to_name.tsv"));
             std::fs::copy(gene_id_to_name_file, index_id2name_path)?;
@@ -596,14 +668,10 @@ simpleaf"#,
                     "m" : minimizer_length,
                     "overwrite" : opts.overwrite,
                     "threads" : threads,
-                    "ref" : ref_seq
+                    "ref" : reference_stage.ref_seq
                 }
         });
-        std::fs::write(
-            &index_json_file,
-            serde_json::to_string_pretty(&index_json).unwrap(),
-        )
-        .with_context(|| format!("could not write {}", index_json_file.display()))?;
+        io::write_json_pretty_atomic(&index_json_file, &index_json)?;
     } else {
         // ensure we have piscem
         if rp.salmon.is_none() {
@@ -611,8 +679,11 @@ simpleaf"#,
                             Please either set a path using the `simpleaf set-paths` command, or ensure the `SALMON` environment variable is set properly.");
         }
 
+        let salmon_prog_info = rp.salmon.as_ref().context(
+            "The construction of a salmon index was requested, but salmon program info is missing.",
+        )?;
         let mut salmon_index_cmd =
-            std::process::Command::new(format!("{}", rp.salmon.unwrap().exe_path.display()));
+            std::process::Command::new(format!("{}", salmon_prog_info.exe_path.display()));
 
         salmon_index_cmd
             .arg("index")
@@ -621,7 +692,7 @@ simpleaf"#,
             .arg("-i")
             .arg(&output_index_dir)
             .arg("-t")
-            .arg(&ref_seq);
+            .arg(&reference_stage.ref_seq);
 
         // overwrite doesn't do anything special for the salmon index, so mention this to
         // the user.
@@ -640,18 +711,15 @@ simpleaf"#,
             salmon_index_cmd.arg("--keepDuplicates");
         }
 
-        // if the user requested more threads than can be used
-        if let Ok(max_threads_usize) = std::thread::available_parallelism() {
-            let max_threads = max_threads_usize.get() as u32;
-            if threads > max_threads {
-                warn!(
-                    "The maximum available parallelism is {}, but {} threads were requested.",
-                    max_threads, threads
-                );
-                warn!("setting number of threads to {}", max_threads);
-                threads = max_threads;
-            }
+        let (capped_threads, capped_at) = runtime::cap_threads(threads);
+        if let Some(max_threads) = capped_at {
+            warn!(
+                "The maximum available parallelism is {}, but {} threads were requested.",
+                max_threads, threads
+            );
+            warn!("setting number of threads to {}", max_threads);
         }
+        threads = capped_threads;
 
         salmon_index_cmd
             .arg("--threads")
@@ -662,17 +730,12 @@ simpleaf"#,
         info!("salmon index cmd : {}", index_cmd_string);
 
         let index_start = Instant::now();
-        let cres = prog_utils::execute_command(&mut salmon_index_cmd, CommandVerbosityLevel::Quiet)
-            .expect("failed to invoke salmon index command");
+        let _cres = exec::run_checked(&mut salmon_index_cmd, "salmon index command")?;
         index_duration = index_start.elapsed();
-
-        if !cres.status.success() {
-            bail!("salmon index failed to build succesfully {:?}", cres.status);
-        }
 
         // copy over the t2g file to the index
         let mut t2g_out_path: Option<PathBuf> = None;
-        if let Some(t2g_file) = t2g {
+        if let Some(t2g_file) = reference_stage.t2g.clone() {
             let index_t2g_path = output_index_dir.join("t2g_3col.tsv");
             t2g_out_path = Some(PathBuf::from("t2g_3col.tsv"));
             std::fs::copy(t2g_file, index_t2g_path)?;
@@ -680,8 +743,8 @@ simpleaf"#,
 
         // copy over the gene_id_to_name.tsv file to the index
         let mut gene_id_to_name_out_path: Option<PathBuf> = None;
-        info!("{:?}", gene_id_to_name);
-        if let Some(gene_id_to_name_file) = gene_id_to_name {
+        info!("{:?}", reference_stage.gene_id_to_name);
+        if let Some(gene_id_to_name_file) = reference_stage.gene_id_to_name.clone() {
             let index_id2name_path = output_index_dir.join("gene_id_to_name.tsv");
             gene_id_to_name_out_path = Some(PathBuf::from("gene_id_to_name.tsv"));
             std::fs::copy(gene_id_to_name_file, index_id2name_path)?;
@@ -699,43 +762,15 @@ simpleaf"#,
                     "sparse" : opts.sparse,
                     "keep_duplicates" : opts.keep_duplicates,
                     "threads" : threads,
-                    "ref" : ref_seq
+                    "ref" : reference_stage.ref_seq
                 }
         });
-        std::fs::write(
-            &index_json_file,
-            serde_json::to_string_pretty(&index_json).unwrap(),
-        )
-        .with_context(|| format!("could not write {}", index_json_file.display()))?;
+        io::write_json_pretty_atomic(&index_json_file, &index_json)?;
     }
-
-    let index_log_file = output.join("simpleaf_index_log.json");
-    let index_log_info = if let Some(roers_duration) = roers_duration {
-        // if we ran make-splici
-        json!({
-            "time_info" : {
-                "roers_time" : roers_duration,
-                "index_time" : index_duration
-            },
-            "cmd_info" : {
-                "roers_cmd" : roers_aug_ref_opt,
-                "index_cmd" : index_cmd_string,                    }
-        })
-    } else {
-        // if we indexed provided sequences directly
-        json!({
-            "time_info" : {
-                "index_time" : index_duration
-            },
-            "cmd_info" : {
-                "index_cmd" : index_cmd_string,                    }
-        })
+    let index_stage = IndexBuildStageOutput {
+        index_duration,
+        index_cmd_string,
     };
-
-    std::fs::write(
-        &index_log_file,
-        serde_json::to_string_pretty(&index_log_info).unwrap(),
-    )
-    .with_context(|| format!("could not write {}", index_log_file.display()))?;
+    write_index_log_stage(&output, &reference_stage, &index_stage)?;
     Ok(())
 }

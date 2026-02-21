@@ -6,6 +6,7 @@ use anyhow::{anyhow, bail, Context};
 use chrono::{DateTime, Local};
 use clap::Parser;
 // use cmd_lib::run_cmd;
+use crate::core::io::write_json_pretty_atomic;
 use serde_json::{json, Map, Value};
 use std::boxed::Box;
 use std::collections::HashMap;
@@ -31,6 +32,42 @@ const SKIPARG: &[&str] = &["step", "program_name", "active"];
 pub enum WFCommand {
     SimpleafCommand(Box<crate::Commands>),
     ExternalCommand(std::process::Command),
+}
+
+/// Structured errors returned when executing workflow commands.
+#[derive(Debug, thiserror::Error)]
+pub enum WorkflowExecutionError {
+    /// A `simpleaf` command in the workflow failed.
+    #[error("Workflow step {step} ({program}) failed while executing `{command}`: {source}")]
+    SimpleafStepFailed {
+        step: u64,
+        program: String,
+        command: String,
+        #[source]
+        source: anyhow::Error,
+    },
+    /// An external workflow command exited with a non-zero status.
+    #[error(
+        "Workflow step {step} ({program}) failed executing external command `{command}` with exit status {status}. stderr: {stderr}"
+    )]
+    ExternalCommandNonZero {
+        step: u64,
+        program: String,
+        command: String,
+        status: String,
+        stderr: String,
+    },
+    /// An external workflow command could not be launched.
+    #[error(
+        "Workflow step {step} ({program}) could not launch external command `{command}`: {source}"
+    )]
+    ExternalCommandSpawnFailed {
+        step: u64,
+        program: String,
+        command: String,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 #[allow(dead_code)]
@@ -66,7 +103,7 @@ impl PatchCollection {
         self.patches.push(p);
     }
 
-    pub fn iter(&self) -> std::slice::Iter<JsonPatch> {
+    pub fn iter(&self) -> std::slice::Iter<'_, JsonPatch> {
         self.patches.iter()
     }
 }
@@ -285,6 +322,123 @@ be certain you intend to do this.",
     Ok(patches)
 }
 
+/// Validate workflow structure before planning or execution.
+///
+/// This ensures command entries contain both `step` and `program_name`,
+/// verifies expected types for core fields, and rejects unsupported
+/// `simpleaf` command variants with actionable messages.
+pub fn validate_manifest_structure(workflow: &Value) -> anyhow::Result<()> {
+    fn validate_node(node: &Value, path: &str) -> anyhow::Result<()> {
+        match node {
+            Value::Object(obj) => {
+                let has_step = obj.get(SystemFields::Step.as_str()).is_some();
+                let has_program = obj.get(SystemFields::ProgramName.as_str()).is_some();
+                if has_step ^ has_program {
+                    bail!(
+                        "Malformed workflow entry at {}: command records must contain both `step` and `program_name`.",
+                        path
+                    );
+                }
+
+                if has_step {
+                    let step_val = obj.get(SystemFields::Step.as_str()).with_context(|| {
+                        format!(
+                            "Malformed workflow entry at {}: missing `step` value.",
+                            path
+                        )
+                    })?;
+                    let step = step_val.as_u64().with_context(|| {
+                        format!(
+                            "Malformed workflow entry at {}: `step` must be a positive integer, found {:?}.",
+                            path, step_val
+                        )
+                    })?;
+                    if step == 0 {
+                        bail!(
+                            "Malformed workflow entry at {}: `step` must be >= 1, found 0.",
+                            path
+                        );
+                    }
+
+                    if let Some(active_val) = obj.get(SystemFields::Active.as_str()) {
+                        if active_val.as_bool().is_none() {
+                            bail!(
+                                "Malformed workflow entry at {}: `active` must be a boolean, found {:?}.",
+                                path,
+                                active_val
+                            );
+                        }
+                    }
+
+                    let program_name_val = obj
+                        .get(SystemFields::ProgramName.as_str())
+                        .with_context(|| {
+                            format!(
+                                "Malformed workflow entry at {}: missing `program_name` value.",
+                                path
+                            )
+                        })?;
+                    let program_name = program_name_val.as_str().with_context(|| {
+                        format!(
+                            "Malformed workflow entry at {}: `program_name` must be a string, found {:?}.",
+                            path, program_name_val
+                        )
+                    })?;
+
+                    if program_name.starts_with("simpleaf")
+                        && !program_name.ends_with("index")
+                        && !program_name.ends_with("quant")
+                    {
+                        bail!(
+                            "Unsupported workflow command `{}` at {}. Only `simpleaf index` and `simpleaf quant` are currently supported.",
+                            program_name,
+                            path
+                        );
+                    }
+
+                    if !program_name.starts_with("simpleaf") {
+                        let args_val = obj
+                            .get(SystemFields::ExternalArguments.as_str())
+                            .with_context(|| {
+                                format!(
+                                    "Malformed external command at {}: missing `arguments` array.",
+                                    path
+                                )
+                            })?;
+                        if args_val.as_array().is_none() {
+                            bail!(
+                                "Malformed external command at {}: `arguments` must be an array, found {:?}.",
+                                path,
+                                args_val
+                            );
+                        }
+                    }
+                }
+
+                // Recurse to validate nested workflow sections.
+                for (k, v) in obj {
+                    let child_path = if path == "$" {
+                        format!("$.{}", k)
+                    } else {
+                        format!("{}.{}", path, k)
+                    };
+                    validate_node(v, &child_path)?;
+                }
+                Ok(())
+            }
+            Value::Array(arr) => {
+                for (idx, v) in arr.iter().enumerate() {
+                    validate_node(v, &format!("{}[{}]", path, idx))?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    validate_node(workflow, "$")
+}
+
 pub fn get_output_path(manifest: &serde_json::Value) -> anyhow::Result<PathBuf> {
     // we assume that the path we want is /meta_info/output, and it *must* exist
     // as a key!
@@ -366,16 +520,11 @@ pub fn duration_to_dhms(d: chrono::Duration) -> String {
     execution_elapsed_time
 }
 
-/// This function updates the start_at variable
-/// if --resume is provided.\
-/// It finds the workflow_info.json exported by
-/// simpleaf workflow from the previous run and
-/// grab the "Succeed" and "Execution Terminated Step"
-/// fields.\
-/// If the previous run was succeed, then we report an error
-/// saying nothing to resume
-/// If Execution Terminated Step is a negative number, that
-/// means there was no previous execution:
+/// Compute the effective `start_at` for `--resume` runs from a prior workflow log.
+///
+/// This reads `"Succeed"` and `"Latest Run"."Execution Terminated Step"` from the
+/// previous `simpleaf_workflow_log.json` payload and returns the step to resume from.
+/// If the previous run already succeeded, resuming is rejected.
 pub fn update_start_at(v: &Value) -> anyhow::Result<u64> {
     let latest_run = v.get("Latest Run").with_context(|| {
         "Could not get the `Latest Run` field from the `simpleaf_workflow_log.json`; Cannot proceed"
@@ -404,6 +553,9 @@ pub fn update_start_at(v: &Value) -> anyhow::Result<u64> {
     }
 }
 
+/// Load the previous workflow metadata log used by `--resume`.
+///
+/// The expected file is `simpleaf_workflow_log.json` in the provided output directory.
 pub fn get_previous_log<T: AsRef<Path>>(output: T) -> anyhow::Result<Value> {
     // the path to the expected log file
     let exec_log_path = output.as_ref().join("simpleaf_workflow_log.json");
@@ -436,6 +588,10 @@ pub fn get_previous_log<T: AsRef<Path>>(output: T) -> anyhow::Result<Value> {
     }
 }
 
+/// Execute a planned workflow queue and update the workflow log after each successful step.
+///
+/// Commands are run in queue order (already sorted by step during planning).
+/// On the first command failure, this writes a failed log state and returns the error.
 pub fn execute_commands_in_workflow<T: AsRef<Path>>(
     simpleaf_workflow: SimpleafWorkflow,
     af_home_path: T,
@@ -454,6 +610,7 @@ pub fn execute_commands_in_workflow<T: AsRef<Path>>(
 
         match cr.cmd {
             WFCommand::SimpleafCommand(cmd) => {
+                let command_string = pn.to_string();
                 let exec_result = match *cmd {
                     Commands::Index(index_opts) => {
                         crate::indexing::build_ref_and_index(af_home_path.as_ref(), index_opts)
@@ -462,12 +619,23 @@ pub fn execute_commands_in_workflow<T: AsRef<Path>>(
                     Commands::Quant(quant_opts) => {
                         crate::quant::map_and_quant(af_home_path.as_ref(), quant_opts)
                     }
-                    _ => todo!(),
+                    unsupported_cmd => {
+                        bail!(
+                            "Unsupported simpleaf workflow command variant: {:?}. Only `index` and `quant` are currently supported in workflow execution.",
+                            unsupported_cmd
+                        )
+                    }
                 };
                 if let Err(e) = exec_result {
                     workflow_log.write(false)?;
                     info!("Execution terminated at {} command for step {}", pn, step);
-                    return Err(e);
+                    return Err(WorkflowExecutionError::SimpleafStepFailed {
+                        step,
+                        program: pn.to_string(),
+                        command: command_string,
+                        source: e,
+                    }
+                    .into());
                 } else {
                     info!("Successfully ran {} command for step {}", pn, step);
                     workflow_log.update(&cr.field_trajectory_vec[..])?;
@@ -490,23 +658,29 @@ pub fn execute_commands_in_workflow<T: AsRef<Path>>(
                             workflow_log.update(&cr.field_trajectory_vec[..])?;
                         } else {
                             workflow_log.write(false)?;
-                            let cmd_stderr = std::str::from_utf8(&cres.stderr[..])?;
-                            let msg = format!("{} command at step {} failed to exit with code 0 under the shell.\n\
-                            The exit status was: {}.\n\
-                            The stderr of the invocation was: {}.", pn, step, cres.status, cmd_stderr);
-                            warn!(msg);
-                            bail!(msg);
+                            let cmd_stderr =
+                                String::from_utf8_lossy(&cres.stderr).trim().to_string();
+                            let err = WorkflowExecutionError::ExternalCommandNonZero {
+                                step,
+                                program: pn.to_string(),
+                                command: cmd_string,
+                                status: cres.status.to_string(),
+                                stderr: cmd_stderr,
+                            };
+                            warn!("{:#}", err);
+                            return Err(err.into());
                         }
                     }
                     Err(e) => {
                         workflow_log.write(false)?;
-                        let msg = format!(
-                            "{} command at step {} failed to execute under the shell.\n\
-                            The returned error was: {:?}.\n",
-                            pn, step, e
-                        );
-                        warn!(msg);
-                        bail!(msg);
+                        let err = WorkflowExecutionError::ExternalCommandSpawnFailed {
+                            step,
+                            program: pn.to_string(),
+                            command: cmd_string,
+                            source: e,
+                        };
+                        warn!("{:#}", err);
+                        return Err(err.into());
                     } // TODO: use this in the log somewhere.
                 } // invoke external cmd
             }
@@ -527,6 +701,9 @@ pub fn initialize_workflow<T: AsRef<Path>>(
     skip_step: Vec<u64>,
     resume: bool,
 ) -> anyhow::Result<(SimpleafWorkflow, WorkflowLog)> {
+    // Validate manifest shape before planning command execution.
+    validate_manifest_structure(&workflow_json_value)?;
+
     // Instantiate a workflow log struct
     let mut wl = WorkflowLog::new(
         output.as_ref(),
@@ -621,7 +798,7 @@ impl SimpleafWorkflow {
                         .with_context(|| {
                             format!(
                                 "Cannot parse step field value, {:?}, as an integer",
-                                field.get(SystemFields::Step.as_str()).unwrap()
+                                field.get(SystemFields::Step.as_str())
                             )
                         })?;
 
@@ -633,7 +810,7 @@ impl SimpleafWorkflow {
                             v.as_bool().with_context(|| {
                                 format!(
                                     "Cannot parse active field value, {:?}, as a boolean",
-                                    field.get(SystemFields::Active.as_str()).unwrap()
+                                    field.get(SystemFields::Active.as_str())
                                 )
                             })?
                         } else {
@@ -644,37 +821,45 @@ impl SimpleafWorkflow {
                     let cmd_field = workflow_log.get_mut_cmd_field(&curr_field_trajectory_vec)?;
                     cmd_field[SystemFields::Active.as_str()] = json!(active);
 
-                    // The field must contains a program_name
-                    if let Some(program_name) = field.get(SystemFields::ProgramName.as_str()) {
-                        pn = ProgramName::from_str(program_name.as_str().with_context(|| {
+                    // The command record must contain a program_name field.
+                    let program_name = field
+                        .get(SystemFields::ProgramName.as_str())
+                        .with_context(|| {
+                            format!(
+                                "Malformed workflow command at step {}: missing `program_name` field.",
+                                step
+                            )
+                        })?;
+                    pn =
+                        ProgramName::from_str(program_name.as_str().with_context(|| {
                             "Cannot create ProgramName struct from a program name"
                         })?);
-                        // if active, then push to execution queue
-                        if active {
-                            info!("Parsing {} command for step {}", pn, step);
-                            // The `step` will be used for sorting the cmd_queue vector.
-                            // all commands must have a valid `step`.
-                            let cmd = match pn.create_cmd(field) {
-                                Ok(v) => v,
-                                Err(e) => {
-                                    if pn.is_external() {
-                                        bail!("Could not parse external command {} for step {}. The error message was: {}", pn, step, e);
-                                    } else {
-                                        bail!("Could not parse simpleaf command {} for step {}. The error message was: {}", pn, step, e);
-                                    }
+
+                    // if active, then push to execution queue
+                    if active {
+                        info!("Parsing {} command for step {}", pn, step);
+                        // The `step` will be used for sorting the cmd_queue vector.
+                        // all commands must have a valid `step`.
+                        let cmd = match pn.create_cmd(field) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                if pn.is_external() {
+                                    bail!("Could not parse external command {} for step {}. The error message was: {}", pn, step, e);
+                                } else {
+                                    bail!("Could not parse simpleaf command {} for step {}. The error message was: {}", pn, step, e);
                                 }
-                            };
-                            cmd_queue.push(CommandRecord {
-                                step,
-                                active,
-                                program_name: pn,
-                                cmd,
-                                field_trajectory_vec: curr_field_trajectory_vec,
-                            });
-                        } else {
-                            info!("Skipping {} command for step {}", pn, step);
-                        } // if active
-                    } // if have ProgramName
+                            }
+                        };
+                        cmd_queue.push(CommandRecord {
+                            step,
+                            active,
+                            program_name: pn,
+                            cmd,
+                            field_trajectory_vec: curr_field_trajectory_vec,
+                        });
+                    } else {
+                        info!("Skipping {} command for step {}", pn, step);
+                    } // if active
                 } else {
                     // If this is not a command record, we move to the next level
                     // recursively calling this function on the current field.
@@ -729,6 +914,7 @@ pub struct WorkflowLog {
     // this vector records all field names in the complete workflow.
     // This is used for locating the step for each command
     field_id_to_name: Vec<String>,
+    field_name_to_id: HashMap<String, usize>,
     // TODO: the trajectory vector in each CommandRecord can be
     // move here as a long vector, and in each CommandRecord
     // we just need to record the start pos and the length of its trajectory.
@@ -772,12 +958,12 @@ impl WorkflowLog {
         let workflow_name = template
             .as_ref()
             .file_stem()
-            .unwrap_or_else(|| {
-                panic!(
+            .with_context(|| {
+                format!(
                     "Cannot parse file name of file {}",
                     template.as_ref().display()
                 )
-            })
+            })?
             .to_string_lossy()
             .into_owned();
 
@@ -804,6 +990,7 @@ impl WorkflowLog {
             value: workflow_json_value.clone(),
             cmd_runtime_records: Map::new(),
             field_id_to_name: Vec::new(),
+            field_name_to_id: HashMap::new(),
             // cmds_field_id_trajectory: Vec::new()
             previous_log,
         })
@@ -816,13 +1003,8 @@ impl WorkflowLog {
         });
     }
 
-    /// Write log to the output path.
-    /// 1. an execution log file includes the whole workflow,
-    ///    in which succeffully invoked commands have
-    ///    a negative `step`
-    /// 2. an info log file records runtime, workflow name,
-    ///    output path etc.
-    pub fn write(&self, succeed: bool) -> anyhow::Result<()> {
+    /// Build the metadata payload written to `simpleaf_workflow_log.json`.
+    fn build_meta_info_payload(&self, succeed: bool) -> anyhow::Result<Value> {
         // initiate meta_info
         let workflow_meta_info = if let Some(workflow_meta_info) = &self.workflow_meta_info {
             workflow_meta_info.to_owned()
@@ -868,7 +1050,7 @@ impl WorkflowLog {
         let d = Local::now().signed_duration_since(self.workflow_start_time);
         let execution_elapsed_time = duration_to_dhms(d);
 
-        let meta_info = json!(
+        Ok(json!(
             {
                 "Workflow Name": self.workflow_name,
                 "Workflow Meta Info":  workflow_meta_info,
@@ -883,28 +1065,25 @@ impl WorkflowLog {
                     "Command Runtime by Step": Value::from(self.cmd_runtime_records.clone()),
                 },
                 "Previous Runs": previous_runs
-        });
+        }))
+    }
 
-        // execution log
-        std::fs::write(
-            self.meta_info_path.as_path(),
-            serde_json::to_string_pretty(&meta_info)
-                .with_context(|| ("Cannot convert json value to string."))?,
-        )
-        .with_context(|| {
+    /// Write log to the output path.
+    /// 1. an execution log file includes the whole workflow,
+    ///    in which succeffully invoked commands have
+    ///    a negative `step`
+    /// 2. an info log file records runtime, workflow name,
+    ///    output path etc.
+    pub fn write(&self, succeed: bool) -> anyhow::Result<()> {
+        let meta_info = self.build_meta_info_payload(succeed)?;
+        write_json_pretty_atomic(self.meta_info_path.as_path(), &meta_info).with_context(|| {
             format!(
                 "could not write workflow meta info JSON file to {}",
                 self.meta_info_path.display()
             )
         })?;
 
-        // execution log
-        std::fs::write(
-            self.exec_log_path.as_path(),
-            serde_json::to_string_pretty(&self.value)
-                .with_context(|| "Could not convert json value to string.")?,
-        )
-        .with_context(|| {
+        write_json_pretty_atomic(self.exec_log_path.as_path(), &self.value).with_context(|| {
             format!(
                 "could not write complete simpleaf workflow JSON file to {}",
                 self.exec_log_path.display()
@@ -916,11 +1095,13 @@ impl WorkflowLog {
 
     /// Get the index corresponds to the field name in the field_id_to_name vector.
     pub fn get_field_id(&mut self, field_name: &String) -> usize {
-        if let Ok(pos) = self.field_id_to_name.binary_search(field_name) {
-            pos
+        if let Some(pos) = self.field_name_to_id.get(field_name) {
+            *pos
         } else {
+            let pos = self.field_id_to_name.len();
             self.field_id_to_name.push(field_name.to_owned());
-            self.field_id_to_name.len() - 1
+            self.field_name_to_id.insert(field_name.to_owned(), pos);
+            pos
         }
     }
 
@@ -943,7 +1124,7 @@ impl WorkflowLog {
             curr_field_name = self
                 .field_id_to_name
                 .get(*curr_field_id)
-                .expect("Cannot map field ID to name.");
+                .with_context(|| format!("Cannot map field ID {} to name.", curr_field_id))?;
             // let curr_pos = field_trajectory_vec.first().expect("Cannot get the first element");
             curr_field = curr_field
                 .get_mut(curr_field_name)
@@ -1047,6 +1228,13 @@ impl ProgramName {
         matches!(self, &ProgramName::External(_))
     }
 
+    /// Return true if an argument contains shell operators and therefore
+    /// requires shell interpretation.
+    fn has_shell_metachar(arg: &str) -> bool {
+        arg.chars()
+            .any(|c| ['|', '&', ';', '<', '>', '$', '`', '(', ')'].contains(&c))
+    }
+
     /// Create a valid simpleaf command object using the arguments recoreded in the field.
     /// step and program name will be ignored in this procedure
     pub fn create_simpleaf_cmd(&self, value: &Value) -> anyhow::Result<WFCommand> {
@@ -1123,10 +1311,18 @@ impl ProgramName {
                 })?
             );
         }
-        // make Command struct for the command
-        let external_cmd = shell(arg_vec.join(" "));
+        let requires_shell = arg_vec.iter().any(|s| Self::has_shell_metachar(s));
 
-        Ok(WFCommand::ExternalCommand(external_cmd))
+        if requires_shell {
+            // Preserve shell semantics for advanced command forms (e.g. pipes/redirection).
+            let external_cmd = shell(arg_vec.join(" "));
+            Ok(WFCommand::ExternalCommand(external_cmd))
+        } else {
+            // Prefer direct argv invocation for robust argument handling.
+            let mut external_cmd = std::process::Command::new(&arg_vec[0]);
+            external_cmd.args(&arg_vec[1..]);
+            Ok(WFCommand::ExternalCommand(external_cmd))
+        }
     }
 
     pub fn create_cmd(&self, value: &Value) -> anyhow::Result<WFCommand> {
@@ -1367,12 +1563,15 @@ mod tests {
     use crate::{
         utils::{
             prog_utils::{get_cmd_line_string, shell},
-            workflow_utils::{initialize_workflow, WorkflowLog},
+            workflow_utils::{
+                execute_commands_in_workflow, initialize_workflow, validate_manifest_structure,
+                CommandRecord, SimpleafWorkflow, WorkflowLog,
+            },
         },
         Commands,
     };
-    use core::panic;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
+    use tempfile::tempdir;
 
     #[test]
     fn test_workflow_command() {
@@ -1482,69 +1681,70 @@ mod tests {
         )
         .unwrap();
 
-        match &wl {
-            WorkflowLog {
-                meta_info_path,
+        let WorkflowLog {
+            meta_info_path,
+            exec_log_path,
+            workflow_start_time: _,
+            command_runtime,
+            num_succ,
+            start_at,
+            workflow_name,
+            workflow_meta_info,
+            value,
+            cmd_runtime_records,
+            field_id_to_name,
+            field_name_to_id,
+            skip_step,
+            previous_log: _,
+        } = &wl;
+        {
+            // test wl
+            // check JSON log output json
+            assert_eq!(
                 exec_log_path,
-                workflow_start_time: _,
-                command_runtime,
-                num_succ,
-                start_at,
-                workflow_name,
+                &PathBuf::from("output_dir/workflow_execution_log.json")
+            );
+            assert_eq!(
+                meta_info_path,
+                &PathBuf::from("output_dir/simpleaf_workflow_log.json")
+            );
+
+            assert_eq!(workflow_name, &String::from("fake_config"));
+
+            assert_eq!(
                 workflow_meta_info,
-                value,
-                cmd_runtime_records,
-                field_id_to_name,
-                skip_step,
-                previous_log: _,
-            } => {
-                // test wl
-                // check JSON log output json
-                assert_eq!(
-                    exec_log_path,
-                    &PathBuf::from("output_dir/workflow_execution_log.json")
-                );
-                assert_eq!(
-                    meta_info_path,
-                    &PathBuf::from("output_dir/simpleaf_workflow_log.json")
-                );
+                &Some(
+                    workflow_json_value
+                        .get(SystemFields::MetaInfo.as_str())
+                        .unwrap()
+                        .to_owned()
+                )
+            );
 
-                assert_eq!(workflow_name, &String::from("fake_config"));
+            let mut new_value = value.to_owned();
+            new_value["rna"]["simpleaf_index"]["active"] = json!(true);
+            new_value["external-commands"]["HTO ref gunzip"]["active"] = json!(true);
 
-                assert_eq!(
-                    workflow_meta_info,
-                    &Some(
-                        workflow_json_value
-                            .get(SystemFields::MetaInfo.as_str())
-                            .unwrap()
-                            .to_owned()
-                    )
-                );
+            assert_eq!(new_value, workflow_json_value);
 
-                let mut new_value = value.to_owned();
-                new_value["rna"]["simpleaf_index"]["active"] = json!(true);
-                new_value["external-commands"]["HTO ref gunzip"]["active"] = json!(true);
+            assert_eq!(cmd_runtime_records, &Map::new());
 
-                assert_eq!(new_value, workflow_json_value);
+            assert_eq!(start_at, &2u64);
+            assert_eq!(skip_step, &vec![3]);
+            assert!(
+                field_id_to_name.contains(&"rna".to_string())
+                    && field_id_to_name.contains(&"meta_info".to_string())
+                    && field_id_to_name.contains(&"simpleaf_index".to_string())
+                    && field_id_to_name.contains(&"simpleaf_quant".to_string())
+                    && field_id_to_name.contains(&"external-commands".to_string())
+                    && field_id_to_name.contains(&"HTO ref gunzip".to_string())
+                    && field_id_to_name.contains(&"ADT ref gunzip".to_string())
+            );
+            assert_eq!(field_id_to_name.len(), field_name_to_id.len());
 
-                assert_eq!(cmd_runtime_records, &Map::new());
+            assert!(command_runtime.is_none());
 
-                assert_eq!(start_at, &2u64);
-                assert_eq!(skip_step, &vec![3]);
-                assert!(
-                    field_id_to_name.contains(&"rna".to_string())
-                        && field_id_to_name.contains(&"meta_info".to_string())
-                        && field_id_to_name.contains(&"simpleaf_index".to_string())
-                        && field_id_to_name.contains(&"simpleaf_quant".to_string())
-                        && field_id_to_name.contains(&"external-commands".to_string())
-                        && field_id_to_name.contains(&"HTO ref gunzip".to_string())
-                        && field_id_to_name.contains(&"ADT ref gunzip".to_string())
-                );
-
-                assert!(command_runtime.is_none());
-
-                assert_eq!(num_succ, &0);
-            }
+            assert_eq!(num_succ, &0);
         }
 
         // we started at 2, and skipped 3. So there are two commands
@@ -1655,5 +1855,270 @@ mod tests {
             },
             e => panic!("expected SimpleafCommand, found {:?}", e),
         };
+    }
+
+    #[test]
+    fn test_get_field_id_is_stable_for_unsorted_insertions() {
+        let tmp = tempdir().unwrap();
+        let mut wl = WorkflowLog::new(
+            tmp.path(),
+            Path::new("fake_template.jsonnet"),
+            &json!({}),
+            1,
+            vec![],
+            false,
+        )
+        .unwrap();
+
+        let id_z_1 = wl.get_field_id(&"z_field".to_string());
+        let _id_a = wl.get_field_id(&"a_field".to_string());
+        let id_z_2 = wl.get_field_id(&"z_field".to_string());
+
+        assert_eq!(id_z_1, id_z_2);
+    }
+
+    #[test]
+    fn test_execute_commands_unsupported_simpleaf_command_returns_error() {
+        let tmp = tempdir().unwrap();
+        let mut wl = WorkflowLog::new(
+            tmp.path(),
+            Path::new("fake_template.jsonnet"),
+            &json!({}),
+            1,
+            vec![],
+            false,
+        )
+        .unwrap();
+
+        let sw = SimpleafWorkflow {
+            af_home_path: tmp.path().to_path_buf(),
+            cmd_queue: vec![CommandRecord {
+                step: 1,
+                active: true,
+                program_name: ProgramName::Index,
+                cmd: WFCommand::SimpleafCommand(Box::new(Commands::Inspect {})),
+                field_trajectory_vec: vec![],
+            }],
+        };
+
+        let err = execute_commands_in_workflow(sw, tmp.path(), &mut wl).unwrap_err();
+        assert!(
+            format!("{:#}", err).contains("Unsupported simpleaf workflow command variant"),
+            "unexpected error: {:#}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_validate_manifest_structure_rejects_missing_program_name() {
+        let manifest = json!({
+            "external": {
+                "broken": {
+                    "step": 1,
+                    "arguments": ["-l"]
+                }
+            }
+        });
+
+        let err = validate_manifest_structure(&manifest).unwrap_err();
+        assert!(
+            format!("{:#}", err).contains("must contain both `step` and `program_name`"),
+            "unexpected error: {:#}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_validate_manifest_structure_rejects_unsupported_simpleaf_command() {
+        let manifest = json!({
+            "bad_simpleaf": {
+                "step": 1,
+                "program_name": "simpleaf inspect",
+                "arguments": []
+            }
+        });
+
+        let err = validate_manifest_structure(&manifest).unwrap_err();
+        assert!(
+            format!("{:#}", err)
+                .contains("Only `simpleaf index` and `simpleaf quant` are currently supported"),
+            "unexpected error: {:#}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_initialize_workflow_resume_uses_previous_terminated_step() {
+        let tmp = tempdir().unwrap();
+        let previous_log = json!({
+            "Succeed": false,
+            "Latest Run": {
+                "Execution Terminated Step": 2
+            }
+        });
+        std::fs::write(
+            tmp.path().join("simpleaf_workflow_log.json"),
+            serde_json::to_string_pretty(&previous_log).unwrap(),
+        )
+        .unwrap();
+
+        let manifest = json!({
+            "external": {
+                "step1": {
+                    "step": 1,
+                    "program_name": "echo",
+                    "arguments": ["one"]
+                },
+                "step2": {
+                    "step": 2,
+                    "program_name": "echo",
+                    "arguments": ["two"]
+                }
+            }
+        });
+
+        let (sw, wl) = initialize_workflow(
+            tmp.path(),
+            Path::new("resume_template.jsonnet"),
+            tmp.path(),
+            manifest,
+            1,
+            vec![],
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(wl.start_at, 2);
+        assert_eq!(sw.cmd_queue.len(), 1);
+        assert_eq!(sw.cmd_queue[0].step, 2);
+    }
+
+    #[test]
+    fn test_initialize_workflow_skip_step_excludes_skipped_command() {
+        let tmp = tempdir().unwrap();
+        let manifest = json!({
+            "external": {
+                "step1": {
+                    "step": 1,
+                    "program_name": "echo",
+                    "arguments": ["one"]
+                },
+                "step2": {
+                    "step": 2,
+                    "program_name": "echo",
+                    "arguments": ["two"]
+                }
+            }
+        });
+
+        let (sw, wl) = initialize_workflow(
+            tmp.path(),
+            Path::new("skip_template.jsonnet"),
+            tmp.path(),
+            manifest,
+            1,
+            vec![1],
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(wl.skip_step, vec![1]);
+        assert_eq!(sw.cmd_queue.len(), 1);
+        assert_eq!(sw.cmd_queue[0].step, 2);
+    }
+
+    #[test]
+    fn test_external_command_builder_uses_shell_only_when_required() {
+        let direct = ProgramName::from_str("echo")
+            .create_external_cmd(&json!({"arguments": ["hello"]}))
+            .unwrap();
+        let shell_required = ProgramName::from_str("echo")
+            .create_external_cmd(&json!({"arguments": ["hello", ">", "out.txt"]}))
+            .unwrap();
+
+        match direct {
+            WFCommand::ExternalCommand(cmd) => {
+                let cmd_line = get_cmd_line_string(&cmd);
+                assert!(
+                    !cmd_line.contains(" -c "),
+                    "expected direct argv invocation, saw: {}",
+                    cmd_line
+                );
+            }
+            _ => panic!("expected external command for direct argv case"),
+        }
+
+        match shell_required {
+            WFCommand::ExternalCommand(cmd) => {
+                let cmd_line = get_cmd_line_string(&cmd);
+                assert!(
+                    cmd_line.contains(" -c "),
+                    "expected shell invocation for redirection case, saw: {}",
+                    cmd_line
+                );
+            }
+            _ => panic!("expected external command for shell case"),
+        }
+    }
+
+    #[test]
+    fn test_execute_commands_external_failure_reports_status_and_stderr() {
+        let tmp = tempdir().unwrap();
+        let mut wl = WorkflowLog::new(
+            tmp.path(),
+            Path::new("fake_template.jsonnet"),
+            &json!({}),
+            1,
+            vec![],
+            false,
+        )
+        .unwrap();
+
+        let sw = SimpleafWorkflow {
+            af_home_path: tmp.path().to_path_buf(),
+            cmd_queue: vec![CommandRecord {
+                step: 1,
+                active: true,
+                program_name: ProgramName::External("sh".to_string()),
+                cmd: WFCommand::ExternalCommand(shell("echo workflow_phase6_err 1>&2; exit 7")),
+                field_trajectory_vec: vec![],
+            }],
+        };
+
+        let err = execute_commands_in_workflow(sw, tmp.path(), &mut wl).unwrap_err();
+        let rendered = format!("{:#}", err);
+        assert!(
+            rendered.contains("failed executing external command"),
+            "unexpected error: {}",
+            rendered
+        );
+        assert!(
+            rendered.contains("exit status"),
+            "unexpected error: {}",
+            rendered
+        );
+        assert!(
+            rendered.contains("workflow_phase6_err"),
+            "unexpected error: {}",
+            rendered
+        );
+    }
+
+    #[test]
+    fn test_workflow_log_write_creates_both_json_logs() {
+        let tmp = tempdir().unwrap();
+        let wl = WorkflowLog::new(
+            tmp.path(),
+            Path::new("fake_template.jsonnet"),
+            &json!({}),
+            1,
+            vec![],
+            false,
+        )
+        .unwrap();
+
+        wl.write(true).unwrap();
+        assert!(tmp.path().join("simpleaf_workflow_log.json").is_file());
+        assert!(tmp.path().join("workflow_execution_log.json").is_file());
     }
 }

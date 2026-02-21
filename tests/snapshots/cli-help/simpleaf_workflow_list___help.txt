@@ -1,0 +1,7 @@
+Print a summary of the currently available workflows
+
+Usage: simpleaf workflow list
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version

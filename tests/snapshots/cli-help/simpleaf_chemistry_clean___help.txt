@@ -1,0 +1,8 @@
+Remove cached permit list files that do not belong to any registered chemistries
+
+Usage: simpleaf chemistry clean [OPTIONS]
+
+Options:
+  -d, --dry-run  Print the permit list file(s) that will be removed without removing them
+  -h, --help     Print help
+  -V, --version  Print version

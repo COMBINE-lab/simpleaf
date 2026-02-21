@@ -1,0 +1,10 @@
+Remove chemistries from the local chemistry registry
+
+Usage: simpleaf chemistry remove [OPTIONS] --name <NAME>
+
+Options:
+  -n, --name <NAME>  A chemistry name or a regex pattern matching the names of chemistries in the
+                     registry to remove
+  -d, --dry-run      Print the chemistries that would be removed without removing them
+  -h, --help         Print help
+  -V, --version      Print version
