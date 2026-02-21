@@ -6,7 +6,7 @@ use crate::utils::{
     prog_utils::*,
 };
 use anyhow::Result;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::PathBuf;
 use strum::IntoEnumIterator;
 use tracing::warn;

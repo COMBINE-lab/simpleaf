@@ -2,13 +2,12 @@
 // https://github.com/CertainLach/jrsonnet/blob/master/cmds/jrsonnet/src/main.rs
 
 use crate::utils::workflow_utils::JsonPatch;
-use anyhow::{anyhow, bail, Context};
+use anyhow::{Context, anyhow, bail};
 use clap::Parser;
 use jrsonnet_cli::{GcOpts, ManifestOpts, MiscOpts, OutputOpts, StdOpts, TlaOpts, TraceOpts};
 use jrsonnet_evaluator::{
-    apply_tla,
+    State, apply_tla,
     error::{Error as JrError, ErrorKind},
-    State,
 };
 use std::path::{Path, PathBuf};
 
@@ -98,7 +97,9 @@ pub fn parse_jsonnet(
     // get main.jsonnet file path
     let main_jsonnet_file_path = utils_dir.join("main.jsonnet");
     if !main_jsonnet_file_path.exists() {
-        bail!("Could not find main.jsonnet file protocol-asturay; Please update it by invoking `simpleaf workflow refresh`")
+        bail!(
+            "Could not find main.jsonnet file protocol-asturay; Please update it by invoking `simpleaf workflow refresh`"
+        )
     }
     let main_jsonnet_file_str = main_jsonnet_file_path.to_str().with_context(|| {
         format!(
@@ -193,7 +194,8 @@ impl From<ErrorKind> for Error {
 fn main_catch(opts: Opts) -> anyhow::Result<String> {
     let s = State::default();
     let trace = opts.trace.trace_format();
-    match main_real(&s, opts) {
+    let eval_result = main_real(&s, opts);
+    match eval_result {
         Ok(js) => Ok(js),
         Err(e) => {
             if let Error::Evaluation(e) = e {

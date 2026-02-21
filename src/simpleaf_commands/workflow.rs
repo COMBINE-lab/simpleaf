@@ -1,15 +1,15 @@
-use crate::utils::jrsonnet_main::{parse_jsonnet, ParseAction};
+use crate::utils::jrsonnet_main::{ParseAction, parse_jsonnet};
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::ReqProgs;
 use crate::utils::workflow_utils;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use cmd_lib::run_fun;
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 use std::fs;
 use std::path::Path;
-use tabled::{settings::Style, Table, Tabled};
+use tabled::{Table, Tabled, settings::Style};
 use tracing::{info, warn};
 
 use super::WorkflowCommands;
@@ -71,20 +71,20 @@ fn resolve_workflow_run_inputs<T: AsRef<Path>>(
         let output_path = workflow_utils::get_output_path(&instantiated_manifest)?;
 
         // If both command-line and template outputs are set, warn if template wins.
-        if let Some(requested_output_path) = output_opt {
-            if requested_output_path != output_path {
-                warn!(
-                    r#"The output path {} was requested via the command line, but 
+        if let Some(requested_output_path) = output_opt
+            && requested_output_path != output_path
+        {
+            warn!(
+                r#"The output path {} was requested via the command line, but 
                             the output path {} was resolved from the workflow template.
                             In this case, since the output variable is not used when instantiating 
                             the template, the value ({}) present in the template must be used.
                             Please be aware that {} will not be used for output!"#,
-                    requested_output_path.display(),
-                    output_path.display(),
-                    output_path.display(),
-                    requested_output_path.display()
-                );
-            }
+                requested_output_path.display(),
+                output_path.display(),
+                output_path.display(),
+                requested_output_path.display()
+            );
         }
 
         return Ok(ResolvedWorkflowRun {
@@ -203,7 +203,9 @@ pub fn patch_manifest_or_template<T: AsRef<Path>>(
             }
         }
         _ => {
-            bail!("The patch function received a non-patch command. This should not happen. Please report this issue.");
+            bail!(
+                "The patch function received a non-patch command. This should not happen. Please report this issue."
+            );
         }
     }
     Ok(())
@@ -246,7 +248,9 @@ pub fn list_workflows<T: AsRef<Path>>(af_home_path: T) -> anyhow::Result<()> {
     }
     println!("{}", Table::new(workflow_entries).with(Style::rounded()));
     if print_na_cap {
-        println!("* : could not parse uninstantiated template to attempt extracting the version, please see [shorturl.at/gouB1] for further details");
+        println!(
+            "* : could not parse uninstantiated template to attempt extracting the version, please see [shorturl.at/gouB1] for further details"
+        );
     }
     Ok(())
 }
@@ -304,10 +308,14 @@ pub fn get_workflow<T: AsRef<Path>>(
              */
             match version_str.as_ref() {
                 "N/A*" => {
-                    warn!("couldn't evaluate the requested template to fetch the version number, it may be a deprecated version; consider refreshing.");
+                    warn!(
+                        "couldn't evaluate the requested template to fetch the version number, it may be a deprecated version; consider refreshing."
+                    );
                 }
                 "missing" => {
-                    warn!("the template that was requested to be fetched appeared to be missing a version number, but this field should be present; consider refreshing or further investigating the issue.");
+                    warn!(
+                        "the template that was requested to be fetched appeared to be missing a version number, but this field should be present; consider refreshing or further investigating the issue."
+                    );
                 }
                 ver => {
                     const REQ_VER: &str = "0.1.0";
@@ -316,7 +324,10 @@ pub fn get_workflow<T: AsRef<Path>>(
                             info!("getting workflow {} version {}", name, ver);
                         }
                         Err(_) => {
-                            warn!("the version parsed from the workflow you are attempting to get is {}, but it should be at least {}.", version_str, REQ_VER);
+                            warn!(
+                                "the version parsed from the workflow you are attempting to get is {}, but it should be at least {}.",
+                                version_str, REQ_VER
+                            );
                         }
                     }
                 }
@@ -339,7 +350,10 @@ pub fn get_workflow<T: AsRef<Path>>(
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            bail!("Could not copy workflow files to the output folder. The error was: {}", e);
+                            bail!(
+                                "Could not copy workflow files to the output folder. The error was: {}",
+                                e
+                            );
                         }
                     };
                 }

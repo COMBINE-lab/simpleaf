@@ -5,10 +5,10 @@ use crate::utils::prog_parsing_utils;
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::ReqProgs;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use serde_json::json;
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
@@ -17,7 +17,9 @@ use super::MapQuantOpts;
 use crate::utils::chem_utils::ExpectedOri;
 use crate::utils::constants::{CHEMISTRIES_PATH, NUM_SAMPLE_LINES};
 
-fn get_generic_buf_reader(ipath: &PathBuf) -> anyhow::Result<impl BufRead> {
+/// Open a permit-list file with transparent compression handling and return a
+/// buffered reader over the resulting stream.
+fn get_generic_buf_reader(ipath: &Path) -> anyhow::Result<BufReader<Box<dyn Read>>> {
     let (reader, compression) = niffler::from_path(ipath)
         .with_context(|| format!("Could not open requsted file {}", ipath.display()))?;
     match compression {
@@ -42,7 +44,7 @@ impl CBListInfo {
         }
     }
     // we iterate the file to see if it only has cb or with affiliated info (by separator \t).
-    fn init(&mut self, pl_file: &PathBuf, output: &PathBuf) -> anyhow::Result<()> {
+    fn init(&mut self, pl_file: &Path, output: &Path) -> anyhow::Result<()> {
         // open pl_file
         let br = get_generic_buf_reader(pl_file)
             .with_context(|| "failed to successfully open permit-list file.")?;
@@ -61,9 +63,11 @@ impl CBListInfo {
         // if single column, we are good. Otherwise, we need to write the first column to the final file
         let final_file: PathBuf;
         if is_single_column {
-            final_file = pl_file.clone();
+            final_file = pl_file.to_path_buf();
         } else {
-            info!("found multiple columns in the barcode list tsv file, use the first column as the barcodes.");
+            info!(
+                "found multiple columns in the barcode list tsv file, use the first column as the barcodes."
+            );
 
             // create output dir if doesn't exist
             if !output.exists() {
@@ -93,7 +97,7 @@ impl CBListInfo {
             }
         }
 
-        self.init_file = pl_file.clone();
+        self.init_file = pl_file.to_path_buf();
         self.final_file = final_file;
         self.is_single_column = is_single_column;
         Ok(())
@@ -108,7 +112,9 @@ impl CBListInfo {
 
         // if we are here but the init file doesn't exist, then we have a problem
         if !self.init_file.exists() {
-            bail!("The CBListInfo struct was not properly initialized. Please report this issue on GitHub.");
+            bail!(
+                "The CBListInfo struct was not properly initialized. Please report this issue on GitHub."
+            );
         }
 
         // if we cannot find the count matrix column files, then complain
@@ -279,14 +285,14 @@ fn resolve_quant_setup(
     rp.issue_recommended_version_messages();
 
     let index_meta = index_meta::resolve_quant_index(opts.index.clone(), opts.use_piscem)?;
-    if t2g_map.is_none() {
-        if let Some(t2g_loc) = index_meta.inferred_t2g.clone() {
-            info!(
-                "found local t2g file at {}, will attempt to use this since none was provided explicitly",
-                t2g_loc.display()
-            );
-            t2g_map = Some(t2g_loc);
-        }
+    if t2g_map.is_none()
+        && let Some(t2g_loc) = index_meta.inferred_t2g.clone()
+    {
+        info!(
+            "found local t2g file at {}, will attempt to use this since none was provided explicitly",
+            t2g_loc.display()
+        );
+        t2g_map = Some(t2g_loc);
     }
     let index_type = index_meta.index_type;
     let gene_id_to_name_opt = index_meta.inferred_gene_id_to_name;
@@ -300,12 +306,16 @@ fn resolve_quant_setup(
     match index_type {
         IndexType::Piscem(_) => {
             if rp.piscem.is_none() {
-                bail!("A piscem index is being used, but no piscem executable is provided. Please set one with `simpleaf set-paths`.");
+                bail!(
+                    "A piscem index is being used, but no piscem executable is provided. Please set one with `simpleaf set-paths`."
+                );
             }
         }
         IndexType::Salmon(_) => {
             if rp.salmon.is_none() {
-                bail!("A salmon index is being used, but no salmon executable is provided. Please set one with `simpleaf set-paths`.");
+                bail!(
+                    "A salmon index is being used, but no salmon executable is provided. Please set one with `simpleaf set-paths`."
+                );
             }
         }
         IndexType::NoIndex => {}
@@ -439,21 +449,24 @@ fn run_mapping_stage(
                     .arg("-o")
                     .arg(&map_output);
 
-                if let Ok(_piscem_ver) = prog_utils::check_version_constraints(
+                match prog_utils::check_version_constraints(
                     "piscem",
                     ">=0.7.0, <1.0.0",
                     &piscem_prog_info.version,
                 ) {
-                    push_advanced_piscem_options(&mut piscem_quant_cmd, opts)?;
-                } else {
-                    info!(
-                        r#"
+                    Ok(_piscem_ver) => {
+                        push_advanced_piscem_options(&mut piscem_quant_cmd, opts)?;
+                    }
+                    Err(_) => {
+                        info!(
+                            r#"
 Simpleaf is currently using piscem version {}, but you must be using version >= 0.7.0 in order to use the 
 mapping options specific to this, or later versions. If you wish to use these options, please upgrade your 
 piscem version or, if you believe you have a sufficiently new version installed, update the executable 
 being used by simpleaf"#,
-                        &piscem_prog_info.version
-                    );
+                            &piscem_prog_info.version
+                        );
+                    }
                 }
 
                 let frag_lib_xform = add_or_transform_fragment_library(
@@ -466,14 +479,11 @@ being used by simpleaf"#,
 
                 let map_cmd_string = prog_utils::get_cmd_line_string(&piscem_quant_cmd);
                 info!("piscem map-sc cmd : {}", map_cmd_string);
-                let mut input_files = vec![
-                    index_base.with_extension("ctab"),
-                    index_base.with_extension("refinfo"),
-                    index_base.with_extension("sshash"),
-                ];
-                input_files.extend_from_slice(reads1);
-                input_files.extend_from_slice(reads2);
-                prog_utils::check_files_exist(&input_files)?;
+                prog_utils::check_piscem_index_files(index_base.as_path())?;
+                let mut read_inputs = Vec::new();
+                read_inputs.extend_from_slice(reads1);
+                read_inputs.extend_from_slice(reads2);
+                prog_utils::check_files_exist(&read_inputs)?;
 
                 let map_start = Instant::now();
                 exec::run_checked(&mut piscem_quant_cmd, "piscem [mapping phase]")?;
@@ -486,7 +496,13 @@ being used by simpleaf"#,
                                 let failed = xform_stats.failed_parsing;
                                 info!(
                                     "seq_geom_xform : observed {} input fragments. {} ({:.2}%) of them failed to parse and were not transformed",
-                                    total, failed, if total > 0 { (failed as f64) / (total as f64) } else { 0_f64 } * 100_f64
+                                    total,
+                                    failed,
+                                    if total > 0 {
+                                        (failed as f64) / (total as f64)
+                                    } else {
+                                        0_f64
+                                    } * 100_f64
                                 );
                             }
                             Err(e) => {
@@ -557,7 +573,13 @@ being used by simpleaf"#,
                                 let failed = xform_stats.failed_parsing;
                                 info!(
                                     "seq_geom_xform : observed {} input fragments. {} ({:.2}%) of them failed to parse and were not transformed",
-                                    total, failed, if total > 0 { (failed as f64) / (total as f64) } else { 0_f64 } * 100_f64
+                                    total,
+                                    failed,
+                                    if total > 0 {
+                                        (failed as f64) / (total as f64)
+                                    } else {
+                                        0_f64
+                                    } * 100_f64
                                 );
                             }
                             Err(e) => {
@@ -576,7 +598,9 @@ being used by simpleaf"#,
                 })
             }
             IndexType::NoIndex => {
-                bail!("Cannot perform mapping an quantification without known (piscem or salmon) index!");
+                bail!(
+                    "Cannot perform mapping an quantification without known (piscem or salmon) index!"
+                );
             }
         }
     } else {
@@ -689,7 +713,9 @@ fn run_quant_stage(
         let target_path = gpl_output.join("gene_id_to_name.tsv");
         match std::fs::copy(gene_name_path, &target_path) {
             Ok(_) => {
-                info!("successfully copied the gene_name_to_id.tsv file into the quantification directory.");
+                info!(
+                    "successfully copied the gene_name_to_id.tsv file into the quantification directory."
+                );
             }
             Err(err) => {
                 warn!(

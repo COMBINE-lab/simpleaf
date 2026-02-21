@@ -5,12 +5,10 @@ use tempfile::tempdir;
 fn run_simpleaf(args: &[&str]) -> Output {
     let binary = env!("CARGO_BIN_EXE_simpleaf");
     let af_home = tempdir().expect("unable to create temp ALEVIN_FRY_HOME");
-
-    Command::new(binary)
-        .args(args)
-        .env("ALEVIN_FRY_HOME", af_home.path())
-        .output()
-        .expect("failed to execute simpleaf")
+    let mut cmd = Command::new(binary);
+    cmd.args(args);
+    cmd.env("ALEVIN_FRY_HOME", af_home.path());
+    cmd.output().expect("failed to execute simpleaf")
 }
 
 fn assert_parse_error(args: &[&str]) {

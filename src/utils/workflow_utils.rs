@@ -2,12 +2,12 @@
 // allow multiple registry, just like conda envs
 // find a way to pull files from github directly instead of using local copy of protocol estuary
 
-use anyhow::{anyhow, bail, Context};
+use anyhow::{Context, anyhow, bail};
 use chrono::{DateTime, Local};
 use clap::Parser;
 // use cmd_lib::run_cmd;
 use crate::core::io::write_json_pretty_atomic;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::boxed::Box;
 use std::collections::HashMap;
 use std::fs;
@@ -269,44 +269,56 @@ be certain you intend to do this.",
                                                 } else {
                                                     v.insert(json!(rec));
                                                 }
-                                            },
+                                            }
                                             ColumnTypeTag::Number => {
                                                 if let Ok(n) = rec.parse::<i64>() {
                                                     v.insert(json!(n));
                                                 } else if let Ok(n) = rec.parse::<f64>() {
                                                     v.insert(json!(n));
                                                 } else {
-                                                    bail!("could not parse {}, which is expected to be a number, as such", rec);
+                                                    bail!(
+                                                        "could not parse {}, which is expected to be a number, as such",
+                                                        rec
+                                                    );
                                                 }
-                                            },
+                                            }
                                             ColumnTypeTag::Boolean => {
                                                 if let Ok(b) = rec.parse::<bool>() {
                                                     v.insert(json!(b));
                                                 } else {
-                                                    bail!("could not parse {}, which is expected to be boolean, as such", rec);
+                                                    bail!(
+                                                        "could not parse {}, which is expected to be boolean, as such",
+                                                        rec
+                                                    );
                                                 }
-                                            },
+                                            }
                                             ColumnTypeTag::Array => {
                                                 let no_pref = rec.strip_prefix('[').with_context(
                                                     || format!("In record {}, array type must begin with [", rec))?;
                                                 let no_suffix = no_pref.strip_suffix(']').with_context(
                                                     || format!("In record {}, array type must end with ]", rec))?;
                                                 let inner = no_suffix.trim();
-                                                let rdr = csv::ReaderBuilder::new().
-                                                    has_headers(false).from_reader(inner.as_bytes());
+                                                let rdr = csv::ReaderBuilder::new()
+                                                    .has_headers(false)
+                                                    .from_reader(inner.as_bytes());
                                                 let array_elems_result = rdr.into_records().next();
-                                                if let Some(Ok(ok_array_elems)) = array_elems_result {
-                                                    let array_elems = ok_array_elems.into_iter()
-                                                        .map( |s| json!(s)).collect::<Vec<serde_json::Value>>();
+                                                if let Some(Ok(ok_array_elems)) = array_elems_result
+                                                {
+                                                    let array_elems = ok_array_elems
+                                                        .into_iter()
+                                                        .map(|s| json!(s))
+                                                        .collect::<Vec<serde_json::Value>>();
                                                     v.insert(serde_json::Value::Array(array_elems));
                                                 }
-                                            },
-                                            _ => bail!("type not supported")
+                                            }
+                                            _ => bail!("type not supported"),
                                         }
                                     }
                                 }
-                            },
-                            _ => bail!("encountered a path that led to a non-object entry; this shouldn't happen")
+                            }
+                            _ => bail!(
+                                "encountered a path that led to a non-object entry; this shouldn't happen"
+                            ),
                         };
                     } else {
                         bail!("Should never query a non-existent path!");
@@ -360,14 +372,14 @@ pub fn validate_manifest_structure(workflow: &Value) -> anyhow::Result<()> {
                         );
                     }
 
-                    if let Some(active_val) = obj.get(SystemFields::Active.as_str()) {
-                        if active_val.as_bool().is_none() {
-                            bail!(
-                                "Malformed workflow entry at {}: `active` must be a boolean, found {:?}.",
-                                path,
-                                active_val
-                            );
-                        }
+                    if let Some(active_val) = obj.get(SystemFields::Active.as_str())
+                        && active_val.as_bool().is_none()
+                    {
+                        bail!(
+                            "Malformed workflow entry at {}: `active` must be a boolean, found {:?}.",
+                            path,
+                            active_val
+                        );
                     }
 
                     let program_name_val = obj
@@ -446,7 +458,9 @@ pub fn get_output_path(manifest: &serde_json::Value) -> anyhow::Result<PathBuf> 
         match output {
             Value::String(s) => Ok(std::path::PathBuf::from(s)),
             _ => {
-                bail!("/meta_info/output must have JSON string type, int he manifest, but it did not.")
+                bail!(
+                    "/meta_info/output must have JSON string type, int he manifest, but it did not."
+                )
             }
         }
     } else {
@@ -532,17 +546,17 @@ pub fn update_start_at(v: &Value) -> anyhow::Result<u64> {
     // Check if the previous run was succeed. If yes, then no need to resume
     let succeed = v
         .get("Succeed")
-        .with_context(|| {
-            "Could not get `Execution Terminated Step` from the log file; Cannot resume."
-        })?
+        .with_context(
+            || "Could not get `Execution Terminated Step` from the log file; Cannot resume.",
+        )?
         .as_bool()
         .with_context(|| "cannot parse `Succeed` as bool; Cannot resume.")?;
 
     let start_at = latest_run
         .get("Execution Terminated Step")
-        .with_context(|| {
-            "Could not get `Execution Terminated Step` from the log file; Cannot resume."
-        })?
+        .with_context(
+            || "Could not get `Execution Terminated Step` from the log file; Cannot resume.",
+        )?
         .as_u64()
         .with_context(|| "cannot parse `Execution Terminated Step` as str; Cannot resume.")?;
 
@@ -578,9 +592,9 @@ pub fn get_previous_log<T: AsRef<Path>>(output: T) -> anyhow::Result<Value> {
         }
         Ok(false) => {
             bail!(
-                    "Could not find `simpleaf_workflow_log.json` in the output directory {:?}; Cannot resume.",
-                    output.as_ref()
-                )
+                "Could not find `simpleaf_workflow_log.json` in the output directory {:?}; Cannot resume.",
+                output.as_ref()
+            )
         }
         Err(e) => {
             bail!(e)
@@ -831,9 +845,9 @@ impl SimpleafWorkflow {
                             )
                         })?;
                     pn =
-                        ProgramName::from_str(program_name.as_str().with_context(|| {
-                            "Cannot create ProgramName struct from a program name"
-                        })?);
+                        ProgramName::from_str(program_name.as_str().with_context(
+                            || "Cannot create ProgramName struct from a program name",
+                        )?);
 
                     // if active, then push to execution queue
                     if active {
@@ -844,9 +858,19 @@ impl SimpleafWorkflow {
                             Ok(v) => v,
                             Err(e) => {
                                 if pn.is_external() {
-                                    bail!("Could not parse external command {} for step {}. The error message was: {}", pn, step, e);
+                                    bail!(
+                                        "Could not parse external command {} for step {}. The error message was: {}",
+                                        pn,
+                                        step,
+                                        e
+                                    );
                                 } else {
-                                    bail!("Could not parse simpleaf command {} for step {}. The error message was: {}", pn, step, e);
+                                    bail!(
+                                        "Could not parse simpleaf command {} for step {}. The error message was: {}",
+                                        pn,
+                                        step,
+                                        e
+                                    );
                                 }
                             }
                         };
@@ -1268,7 +1292,9 @@ impl ProgramName {
                 }
             }
         } else {
-            warn!("Found an invalid root layer; Ignored. All root layers must represent a valid simpleaf command.");
+            warn!(
+                "Found an invalid root layer; Ignored. All root layers must represent a valid simpleaf command."
+            );
         };
 
         // check if empty
@@ -1556,19 +1582,19 @@ mod tests {
     use super::ProgramName;
     use super::WFCommand;
     use crate::utils::workflow_utils::SystemFields;
-    use serde_json::{json, Map, Value};
+    use serde_json::{Map, Value, json};
     // use crate::Cli;
     // use crate::Commands;
     // use crate::SimpleafCmdRecord;
     use crate::{
+        Commands,
         utils::{
             prog_utils::{get_cmd_line_string, shell},
             workflow_utils::{
-                execute_commands_in_workflow, initialize_workflow, validate_manifest_structure,
-                CommandRecord, SimpleafWorkflow, WorkflowLog,
+                CommandRecord, SimpleafWorkflow, WorkflowLog, execute_commands_in_workflow,
+                initialize_workflow, validate_manifest_structure,
             },
         },
-        Commands,
     };
     use std::path::{Path, PathBuf};
     use tempfile::tempdir;

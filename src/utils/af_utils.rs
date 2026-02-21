@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 // use cmd_lib::run_fun;
 use phf::phf_map;
 use seq_geom_parser::{AppendToCmdArgs, FragmentGeomDesc, PiscemGeomDesc, SalmonSeparateGeomDesc};
@@ -13,10 +13,10 @@ use strum_macros::EnumIter;
 use tracing::{debug, error, info, warn};
 
 use crate::atac::commands::AtacChemistry;
-use crate::utils::chem_utils::{get_single_custom_chem_from_file, CustomChemistry, ExpectedOri};
+use crate::utils::chem_utils::{CustomChemistry, ExpectedOri, get_single_custom_chem_from_file};
 use crate::utils::{self, prog_utils};
 
-use super::chem_utils::{QueryInRegistry, LOCAL_PL_PATH_KEY, REMOTE_PL_URL_KEY};
+use super::chem_utils::{LOCAL_PL_PATH_KEY, QueryInRegistry, REMOTE_PL_URL_KEY};
 
 /// The map from pre-specified chemistry types that salmon knows
 /// to the corresponding command line flag that salmon should be passed
@@ -71,7 +71,9 @@ impl IndexType {
             IndexType::Salmon(_) => KNOWN_CHEM_MAP_SALMON.contains_key(chem),
             IndexType::Piscem(_) => KNOWN_CHEM_MAP_PISCEM.contains_key(chem),
             IndexType::NoIndex => {
-                info!("Since we are dealing with an already-mapped RAD file, the user is responsible for ensuring that a valid chemistry definition was provided during mapping");
+                info!(
+                    "Since we are dealing with an already-mapped RAD file, the user is responsible for ensuring that a valid chemistry definition was provided during mapping"
+                );
                 KNOWN_CHEM_MAP_SALMON.contains_key(chem) || KNOWN_CHEM_MAP_PISCEM.contains_key(chem)
             }
         }
@@ -81,7 +83,9 @@ impl IndexType {
             IndexType::Salmon(_) => KNOWN_CHEM_MAP_PISCEM.contains_key(chem),
             IndexType::Piscem(_) => KNOWN_CHEM_MAP_SALMON.contains_key(chem),
             IndexType::NoIndex => {
-                info!("Since we are dealing with an already-mapped RAD file, the user is responsible for ensuring that a valid chemistry definition was provided during mapping");
+                info!(
+                    "Since we are dealing with an already-mapped RAD file, the user is responsible for ensuring that a valid chemistry definition was provided during mapping"
+                );
                 !self.is_known_chem(chem)
             }
         }
@@ -269,21 +273,29 @@ impl Chemistry {
             "10xv3-5p" => match index_type {
                 IndexType::Piscem(_) => Chemistry::Rna(RnaChemistry::TenxV35P),
                 IndexType::NoIndex => {
-                    info!("The 10xv3-5p chemistry flag is designed only for the piscem index. Please make sure the RAD file you are provided was mapped using piscem; otherwise the fragment orientations may not be treated correctly");
+                    info!(
+                        "The 10xv3-5p chemistry flag is designed only for the piscem index. Please make sure the RAD file you are provided was mapped using piscem; otherwise the fragment orientations may not be treated correctly"
+                    );
                     Chemistry::Rna(RnaChemistry::TenxV35P)
                 }
                 IndexType::Salmon(_) => {
-                    bail!("The 10xv3-5p chemistry flag is not suppored under the salmon mapper. Instead please use the 10xv3 chemistry (which will treat samples as single-end).");
+                    bail!(
+                        "The 10xv3-5p chemistry flag is not suppored under the salmon mapper. Instead please use the 10xv3 chemistry (which will treat samples as single-end)."
+                    );
                 }
             },
             "10xv2-5p" => match index_type {
                 IndexType::Piscem(_) => Chemistry::Rna(RnaChemistry::TenxV25P),
                 IndexType::NoIndex => {
-                    info!("The 10xv2-5p chemistry flag is designed only for the piscem index. Please make sure the RAD file you are provided was mapped using piscem; otherwise the fragment orientations may not be treated correctly");
+                    info!(
+                        "The 10xv2-5p chemistry flag is designed only for the piscem index. Please make sure the RAD file you are provided was mapped using piscem; otherwise the fragment orientations may not be treated correctly"
+                    );
                     Chemistry::Rna(RnaChemistry::TenxV25P)
                 }
                 IndexType::Salmon(_) => {
-                    bail!("The 10xv2-5p chemistry flag is not suppored under the salmon mapper. Instead please use the 10xv2 chemistry (which will treat samples as single-end).");
+                    bail!(
+                        "The 10xv2-5p chemistry flag is not suppored under the salmon mapper. Instead please use the 10xv2 chemistry (which will treat samples as single-end)."
+                    );
                 }
             },
             s => {
@@ -306,7 +318,12 @@ impl Chemistry {
                     // not supported using this mapper (i.e. if it is a piscem-specific chem
                     // and the mapper is salmon or vice versa).
                     if index_type.is_unsupported_known_chem(s) {
-                        bail!("The chemistry {} is not supported by the given mapper {}. Please switch to {}, provide the explicit geometry, or add this chemistry to the registry with the \"chemistry add\" command.", s, index_type.as_str(), index_type.counterpart().as_str());
+                        bail!(
+                            "The chemistry {} is not supported by the given mapper {}. Please switch to {}, provide the explicit geometry, or add this chemistry to the registry with the \"chemistry add\" command.",
+                            s,
+                            index_type.as_str(),
+                            index_type.counterpart().as_str()
+                        );
                     }
                     Chemistry::Custom(CustomChemistry::simple_custom(s).with_context(|| {
                         format!(
@@ -417,7 +434,11 @@ pub fn validate_geometry(geo: &str) -> Result<()> {
         match fg {
             Ok(_fg) => Ok(()),
             Err(e) => {
-                bail!("Could not parse geometry {}. Please ensure that it is a valid geometry definition wrapped by quotes. The error message was: {:?}", geo, e);
+                bail!(
+                    "Could not parse geometry {}. Please ensure that it is a valid geometry definition wrapped by quotes. The error message was: {:?}",
+                    geo,
+                    e
+                );
             }
         }
     }
@@ -429,13 +450,19 @@ pub fn validate_geometry(geo: &str) -> Result<()> {
 /// will return an error (as there is no corresponding `FragmentGeomDesc` in general).
 pub fn extract_geometry(geo: &str) -> Result<FragmentGeomDesc> {
     if let Some(builtin_kwd) = is_builtin(geo) {
-        bail!("The provided geometry is a builtin keyword [{}] (preceeded by \"__\") and so no attempt was made to parse it", builtin_kwd);
+        bail!(
+            "The provided geometry is a builtin keyword [{}] (preceeded by \"__\") and so no attempt was made to parse it",
+            builtin_kwd
+        );
     } else {
         let fg = FragmentGeomDesc::try_from(geo);
         match fg {
             Ok(fg) => Ok(fg),
             Err(e) => {
-                error!("Could not parse geometry {}. Please ensure that it is a valid geometry definition wrapped by quotes. The error message was: {:?}", geo, e);
+                error!(
+                    "Could not parse geometry {}. Please ensure that it is a valid geometry definition wrapped by quotes. The error message was: {:?}",
+                    geo, e
+                );
                 Err(e)
             }
         }
@@ -524,7 +551,10 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
                 // null, then we don't even have a place to put this file
                 // when we download it, so it's an error.
                 None | Some(Value::Null) => {
-                    error!("No permit list is registered for {}, so one cannot be used automatically. You should either provide a permit list directly on the command line, or re-add this chemistry to the registry with a permit list.", chem.registry_key());
+                    error!(
+                        "No permit list is registered for {}, so one cannot be used automatically. You should either provide a permit list directly on the command line, or re-add this chemistry to the registry with a permit list.",
+                        chem.registry_key()
+                    );
                     bail!("No registered permit list available");
                 }
                 Some(Value::String(lpath)) => {
@@ -533,11 +563,17 @@ pub fn get_permit_if_absent(af_home: &Path, chem: &Chemistry) -> Result<PermitLi
                     if expected_file_path.is_file() {
                         return Ok(PermitListResult::AlreadyPresent(expected_file_path));
                     } else {
-                        info!("Expected {} but didn't find it, will try to download it using a remote url.", expected_file_path.display());
+                        info!(
+                            "Expected {} but didn't find it, will try to download it using a remote url.",
+                            expected_file_path.display()
+                        );
                     }
                 }
                 _ => {
-                    error!("Expected a JSON string associated with the {} key, but didn't find one; cannot proceed.", LOCAL_PL_PATH_KEY);
+                    error!(
+                        "Expected a JSON string associated with the {} key, but didn't find one; cannot proceed.",
+                        LOCAL_PL_PATH_KEY
+                    );
                     bail!("Wrong JSON type");
                 }
             }
@@ -568,12 +604,21 @@ Please consider removing and re-adding this chemistry with a valid permit list."
                         .to_str()
                         .ok_or(anyhow!("cannot convert expected filename to proper string"))?;
                     if hash.to_string() != expected_hash {
-                        warn!("The permit list file for {}, obtained from the provided remote url {}, does not match the expected hash {} (the observed hash was {})", chem.registry_key(), rpath, expected_hash, hash.to_string());
+                        warn!(
+                            "The permit list file for {}, obtained from the provided remote url {}, does not match the expected hash {} (the observed hash was {})",
+                            chem.registry_key(),
+                            rpath,
+                            expected_hash,
+                            hash.to_string()
+                        );
                     }
                     Ok(PermitListResult::DownloadSuccessful(expected_file_path))
                 }
                 _ => {
-                    error!("Expected a JSON string associated with the {} key, but didn't find one; cannot proceed.", REMOTE_PL_URL_KEY);
+                    error!(
+                        "Expected a JSON string associated with the {} key, but didn't find one; cannot proceed.",
+                        REMOTE_PL_URL_KEY
+                    );
                     bail!("Wrong JSON type");
                 }
             }
@@ -620,7 +665,9 @@ pub fn add_or_transform_fragment_library(
 ) -> Result<FragmentTransformationType> {
     let known_chem = match mapper_type {
         MapperType::MappedRadFile => {
-            bail!("Cannot add_or_transform_fragment library when dealing with an already-mapped RAD file.");
+            bail!(
+                "Cannot add_or_transform_fragment library when dealing with an already-mapped RAD file."
+            );
         }
         MapperType::Piscem => KNOWN_CHEM_MAP_PISCEM.contains_key(fragment_geometry_str),
         MapperType::Salmon => KNOWN_CHEM_MAP_SALMON.contains_key(fragment_geometry_str),

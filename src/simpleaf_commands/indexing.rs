@@ -3,7 +3,7 @@ use crate::utils::af_utils::create_dir_if_absent;
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::ReqProgs;
 
-use anyhow::{anyhow, bail, Context};
+use anyhow::{Context, anyhow, bail};
 use roers;
 use serde::Deserialize;
 use serde_json::json;
@@ -37,7 +37,9 @@ fn derive_kmer_and_minimizer(
 ) -> anyhow::Result<(u32, u32)> {
     if let Some(msl) = min_seq_len {
         if msl < 10 {
-            bail!("The reference sequences are too short for indexing. Please provide sequences with a minimum length of at least 10 bases.");
+            bail!(
+                "The reference sequences are too short for indexing. Please provide sequences with a minimum length of at least 10 bases."
+            );
         }
         if (msl / 2) < default_kmer_length && default_kmer_length == 31 {
             let kmer_length = msl / 2;
@@ -452,7 +454,9 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
 
             CsvReader::Feature(rdr)
         } else {
-            bail!("No reference sequence provided. It should not happen, please report this issue on GitHub.");
+            bail!(
+                "No reference sequence provided. It should not happen, please report this issue on GitHub."
+            );
         };
 
         // determine the format of t2g file
@@ -558,8 +562,10 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     if opts.use_piscem {
         // ensure we have piscem
         if rp.piscem.is_none() {
-            bail!("The construction of a piscem index was requested, but a valid piscem executable was not available. \n\
-                            Please either set a path using the `set-paths` command, or ensure the `PISCEM` environment variable is set properly.");
+            bail!(
+                "The construction of a piscem index was requested, but a valid piscem executable was not available. \n\
+                            Please either set a path using the `set-paths` command, or ensure the `PISCEM` environment variable is set properly."
+            );
         }
 
         let piscem_prog_info = rp.piscem.as_ref().context(
@@ -610,26 +616,29 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
         // if the user is requesting a poison k-mer table, ensure the
         // piscem version is at least 0.7.0
         if let Some(decoy_paths) = opts.decoy_paths {
-            if let Ok(_piscem_ver) = prog_utils::check_version_constraints(
+            match prog_utils::check_version_constraints(
                 "piscem",
                 ">=0.7.0, <1.0.0",
                 &piscem_prog_info.version,
             ) {
-                let path_args = decoy_paths
-                    .into_iter()
-                    .map(|x| x.to_string_lossy().into_owned())
-                    .collect::<Vec<String>>()
-                    .join(",");
-                piscem_index_cmd.arg("--decoy-paths").arg(path_args);
-            } else {
-                warn!(
-                    r#"
+                Ok(_piscem_ver) => {
+                    let path_args = decoy_paths
+                        .into_iter()
+                        .map(|x| x.to_string_lossy().into_owned())
+                        .collect::<Vec<String>>()
+                        .join(",");
+                    piscem_index_cmd.arg("--decoy-paths").arg(path_args);
+                }
+                Err(_) => {
+                    warn!(
+                        r#"
 You requested to build a poison k-mer table with {:?}, but you must be using piscem version >= 0.7.0 
 to use this feature. Simpleaf is currently using version {}. Please upgrade your piscem version or, 
 if you believe you have a sufficiently new version installed, update the executable being used by 
 simpleaf"#,
-                    decoy_paths, &piscem_prog_info.version
-                );
+                        decoy_paths, &piscem_prog_info.version
+                    );
+                }
             }
         }
 
@@ -675,8 +684,10 @@ simpleaf"#,
     } else {
         // ensure we have piscem
         if rp.salmon.is_none() {
-            bail!("The construction of a salmon index was requested, but a valid salmon executable was not available. \n\
-                            Please either set a path using the `simpleaf set-paths` command, or ensure the `SALMON` environment variable is set properly.");
+            bail!(
+                "The construction of a salmon index was requested, but a valid salmon executable was not available. \n\
+                            Please either set a path using the `simpleaf set-paths` command, or ensure the `SALMON` environment variable is set properly."
+            );
         }
 
         let salmon_prog_info = rp.salmon.as_ref().context(
@@ -697,8 +708,10 @@ simpleaf"#,
         // overwrite doesn't do anything special for the salmon index, so mention this to
         // the user.
         if opts.overwrite {
-            info!("As the default salmon behavior is to overwrite an existing index if the same directory is provided, \n\
-                        the --overwrite flag will have no additional effect.");
+            info!(
+                "As the default salmon behavior is to overwrite an existing index if the same directory is provided, \n\
+                        the --overwrite flag will have no additional effect."
+            );
         }
 
         // if the user requested a sparse index.

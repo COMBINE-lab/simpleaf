@@ -8,10 +8,10 @@ pub fn cap_threads(requested: u32) -> (u32, Option<u32>) {
 }
 
 fn cap_threads_with_limit(requested: u32, limit: Option<u32>) -> (u32, Option<u32>) {
-    if let Some(max_threads) = limit {
-        if requested > max_threads {
-            return (max_threads, Some(max_threads));
-        }
+    if let Some(max_threads) = limit
+        && requested > max_threads
+    {
+        return (max_threads, Some(max_threads));
     }
     (requested, None)
 }

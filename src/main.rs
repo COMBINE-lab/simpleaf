@@ -3,10 +3,10 @@ use chemistry::{
     remove_chemistry,
 };
 use tracing::info;
-use tracing_subscriber::{filter::LevelFilter, fmt, prelude::*, EnvFilter};
+use tracing_subscriber::{EnvFilter, filter::LevelFilter, fmt, prelude::*};
 
 use anyhow::bail;
-use clap::{crate_version, Parser};
+use clap::{Parser, crate_version};
 
 use std::env;
 use std::path::PathBuf;

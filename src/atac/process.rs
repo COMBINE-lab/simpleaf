@@ -1,12 +1,12 @@
 use crate::atac::commands::ProcessOpts;
 use crate::core::{context, exec, index_meta, io, runtime};
-use crate::utils::chem_utils::get_single_custom_chem_from_file;
 use crate::utils::chem_utils::ExpectedOri;
 use crate::utils::chem_utils::QueryInRegistry;
+use crate::utils::chem_utils::get_single_custom_chem_from_file;
 use crate::utils::constants::CHEMISTRIES_PATH;
 use crate::utils::{prog_utils, prog_utils::ReqProgs};
 use anyhow;
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use serde_json::json;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -216,13 +216,7 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
         .context("piscem program info is missing; please run `simpleaf set-paths`.")?;
 
     let index_base = index_meta::resolve_atac_piscem_index_base(opts.index.clone())?;
-
-    let input_files = vec![
-        index_base.with_extension("ctab"),
-        index_base.with_extension("refinfo"),
-        index_base.with_extension("sshash"),
-    ];
-    prog_utils::check_files_exist(&input_files)?;
+    prog_utils::check_piscem_index_files(index_base.as_path())?;
 
     // using a piscem index
     let mut piscem_map_cmd =
@@ -262,21 +256,24 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
 
     // if the user is requesting a mapping option that required
     // piscem version >= 0.7.0, ensure we have that
-    if let Ok(_piscem_ver) = prog_utils::check_version_constraints(
+    match prog_utils::check_version_constraints(
         "piscem",
         ">=0.11.0, <1.0.0",
         &piscem_prog_info.version,
     ) {
-        push_advanced_piscem_options(&mut piscem_map_cmd, opts)?;
-    } else {
-        info!(
-            r#"
+        Ok(_piscem_ver) => {
+            push_advanced_piscem_options(&mut piscem_map_cmd, opts)?;
+        }
+        Err(_) => {
+            info!(
+                r#"
 Simpleaf is currently using piscem version {}, but you must be using version >= 0.11.0 in order to use the 
 mapping options specific to this, or later versions. If you wish to use these options, please upgrade your 
 piscem version or, if you believe you have a sufficiently new version installed, update the executable 
 being used by simpleaf"#,
-            &piscem_prog_info.version
-        );
+                &piscem_prog_info.version
+            );
+        }
     }
 
     let map_cmd_string = prog_utils::get_cmd_line_string(&piscem_map_cmd);
@@ -566,15 +563,22 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<GplStageOut
                             warn!("barcode_ori \"{}\" is unknown; assuming forward.", s);
                         }
                         None => {
-                            warn!("couldn't interpret value associated with \"barcode_ori\" as a string; assuming forward.");
+                            warn!(
+                                "couldn't interpret value associated with \"barcode_ori\" as a string; assuming forward."
+                            );
                         }
                     }
                 } else {
-                    warn!("No meta field present for the chemistry so can't check if barcodes should be reverse complemented.");
+                    warn!(
+                        "No meta field present for the chemistry so can't check if barcodes should be reverse complemented."
+                    );
                 }
             }
         } else {
-            warn!("Couldn't find expected chemistry registry {} so can't check if barcodes should be reverse complemented.", custom_chem_p.display());
+            warn!(
+                "Couldn't find expected chemistry registry {} so can't check if barcodes should be reverse complemented.",
+                custom_chem_p.display()
+            );
         }
         pbco
     };
