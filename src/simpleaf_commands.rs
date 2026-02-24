@@ -24,7 +24,7 @@ pub use self::workflow::{
 pub use crate::atac::commands::AtacCommand;
 pub use crate::defaults::{DefaultMappingParams, DefaultParams};
 
-use clap::{builder::ArgPredicate, ArgAction, ArgGroup, Args, Subcommand};
+use clap::{ArgAction, ArgGroup, Args, Subcommand, builder::ArgPredicate};
 use std::path::PathBuf;
 
 /// The type of references we might create

@@ -1,0 +1,28 @@
+Add a new or update an existing chemistry in the local registry
+
+Usage: simpleaf chemistry add [OPTIONS] --name <NAME>
+
+Options:
+  -n, --name <NAME>                  The name to give to the chemistry
+  -g, --geometry <GEOMETRY>          A quoted string representing the geometry to which the
+                                     chemistry maps
+  -e, --expected-ori <EXPECTED_ORI>  The direction of the first (most upstream) mappable biological
+                                     sequence [possible values: fw, rc, both]
+      --local-url <LOCAL_URL>        The (fully-qualified) path to a local permit list file that
+                                     will be copied into the ALEVIN_FRY_HOME directory for future
+                                     use
+      --remote-url <REMOTE_URL>      The url of a remote file that will be downloaded (on demand) to
+                                     provide a permit list for use with this chemistry. This file
+                                     should be obtainable with the equivalent of `wget <local-url>`.
+                                     The file will only be downloaded the first time it is needed
+                                     and will be locally cached in ALEVIN_FRY_HOME after that
+      --version <VERSION>            A semver format version tag, e.g., `0.1.0`, indicating the
+                                     version of the chemistry definition. To update a registered
+                                     chemistry, please provide a higher version number, e.g.,
+                                     `0.2.0` [default: 0.0.0]
+      --from-json <FROM_JSON>        Instead of providing the chemistry directly on the command
+                                     line, use the chemistry definition provided in the provided
+                                     JSON file. This JSON file can be local or remote, but it must
+                                     contain a valid JSON object with the provided `--name` as the
+                                     key of the chemistry you wish to add
+  -h, --help                         Print help

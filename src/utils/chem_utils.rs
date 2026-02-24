@@ -1,6 +1,6 @@
 use crate::utils::af_utils::{extract_geometry, parse_resource_json_file, validate_geometry};
 use crate::utils::constants::*;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -162,14 +162,14 @@ impl fmt::Display for CustomChemistry {
             writeln!(f, "{}\t: {}", REMOTE_PL_URL_KEY, remote_pl_url)?;
         }
 
-        if let Some(serde_json::Value::Object(meta)) = self.meta() {
-            if !meta.is_empty() {
-                writeln!(f, "meta\t: {{")?;
-                for (k, v) in meta.iter() {
-                    writeln!(f, "  {}\t: {:#}", k, v)?;
-                }
-                writeln!(f, "}}")?;
+        if let Some(serde_json::Value::Object(meta)) = self.meta()
+            && !meta.is_empty()
+        {
+            writeln!(f, "meta\t: {{")?;
+            for (k, v) in meta.iter() {
+                writeln!(f, "  {}\t: {:#}", k, v)?;
             }
+            writeln!(f, "}}")?;
         }
         Ok(())
     }

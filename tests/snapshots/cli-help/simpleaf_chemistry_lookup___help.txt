@@ -1,0 +1,9 @@
+Look up chemistries in the local registry and print the details
+
+Usage: simpleaf chemistry lookup --name <NAME>
+
+Options:
+  -n, --name <NAME>  The name of a registered chemistry, or a regex pattern for matching registered
+                     chemistries' names
+  -h, --help         Print help
+  -V, --version      Print version

@@ -1,7 +1,7 @@
 use crate::utils::prog_utils::*;
 
 use anyhow::Context;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::PathBuf;
 
 pub fn refresh_prog_info(af_home_path: PathBuf) -> anyhow::Result<()> {

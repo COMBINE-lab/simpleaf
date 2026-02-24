@@ -1,0 +1,86 @@
+process a scATAC-seq sample by performing mapping, barcode correction, and sorted (deduplicated) BED
+file generation
+
+Usage: simpleaf atac process [OPTIONS] --index <INDEX> --barcode-reads <BARCODE_READS> --chemistry <CHEMISTRY> --output <OUTPUT>
+
+Options:
+  -c, --chemistry <CHEMISTRY>  chemistry [possible values: 10x-v1, 10x-v2, 10x-multi]
+  -t, --threads <THREADS>      number of threads to use when running [default: 16]
+      --output <OUTPUT>        
+      --call-peaks             do peak calling after generating the bed file
+  -h, --help                   Print help
+  -V, --version                Print version
+
+Mapping Options:
+  -i, --index <INDEX>
+          path to index
+  -1, --reads1 <READS1>
+          comma-separated list of paths to read 1 files
+  -2, --reads2 <READS2>
+          comma-separated list of paths to read 2 files
+  -r, --reads <READS>
+          path to the read files containing single-end reads
+  -b, --barcode-reads <BARCODE_READS>
+          path to the read files containing the cell barcodes
+      --barcode-length <BARCODE_LENGTH>
+          the length of the barcode read from which to extract the barcode (usually this is the
+          length of the entire read, and reads shorter than this will be discarded) [default: 16]
+
+Permit List Generation Options:
+      --permit-barcode-ori <PERMIT_BARCODE_ORI>
+          The expected orientation of the barcodes in the permit list relative to the barcodes
+          extracted from the reads. If this is "fw", it is expected that the sequences will match
+          directly, if "rc" it is expected the reverse complement of the permit-list sequence will
+          match the reads' barcodes. If provided, this value will be used, if not provided, simpleaf
+          will attempt to look up the appropriate orientation in the chemistry registry
+  -u, --unfiltered-pl <UNFILTERED_PL>
+          Use the provided file as the unfiltered permit list (i.e. whitelist). This argument only
+          needs to be provided if you are providing the permit list explicitly, overriding the
+          default permit list for the provided chemistry
+      --min-reads <MIN_READS>
+          minimum read count threshold for a cell to be retained/processed; only used with
+          --unfiltered-pl [default: 10]
+
+Advanced Options:
+      --compress
+          compress the output mapping bed file
+      --ignore-ambig-hits
+          skip checking of the equivalence classes of k-mers that were too ambiguous to be otherwise
+          considered (passing this flag can speed up mapping slightly, but may reduce specificity)
+      --no-poison
+          do not consider poison k-mers, even if the underlying index contains them. In this case,
+          the mapping results will be identical to those obtained as if no poison table was added to
+          the index
+      --use-chr
+          use chromosomes as color
+      --thr <THR>
+          threshold to be considered for pseudoalignment [default: 0.7]
+      --bin-size <BIN_SIZE>
+          size of virtual color intervals [default: 1000]
+      --bin-overlap <BIN_OVERLAP>
+          size for virtual color interval overlap [default: 300]
+      --no-tn5-shift
+          do not apply Tn5 shift to mapped positions
+      --check-kmer-orphan
+          Check if any mapping kmer exist for a mate which is not mapped, but there exists mapping
+          for the other read. If set to true and a mapping kmer exists, then the pair would not be
+          mapped
+      --max-ec-card <MAX_EC_CARD>
+          determines the maximum cardinality equivalence class (number of (txp, orientation status)
+          pairs) to examine (cannot be used with --ignore-ambig-hits) [default: 4096]
+      --max-hit-occ <MAX_HIT_OCC>
+          in the first pass, consider only k-mers having <= --max-hit-occ hits [default: 256]
+      --max-hit-occ-recover <MAX_HIT_OCC_RECOVER>
+          if all k-mers have > --max-hit-occ hits, then make a second pass and consider k-mers
+          having <= --max-hit-occ-recover hits [default: 1024]
+      --max-read-occ <MAX_READ_OCC>
+          reads with more than this number of mappings will not have their mappings reported
+          [default: 2500]
+
+Peak Caller Options:
+      --gsize <GSIZE>      The value to be passed to the `macs3` `--gsize` (genome size) option.
+                           Possible values are "hs", "mm", "ce", "dm" or an unsigned integer
+                           [default: hs]
+      --qvalue <QVALUE>    The value to be passed to the `macs3` `--qvalue` (minimum FDR cutoff)
+                           option [default: 0.1]
+      --extsize <EXTSIZE>  The value to be passed to the `macs3` `--extsize` option [default: 50]

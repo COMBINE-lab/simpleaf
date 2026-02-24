@@ -1,6 +1,6 @@
 use crate::utils::prog_utils::*;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
@@ -30,7 +30,9 @@ pub fn set_paths(af_home_path: PathBuf, set_path_args: SetPathOpts) -> anyhow::R
 
     let have_mapper = rp.salmon.is_some() || rp.piscem.is_some();
     if !have_mapper {
-        bail!("Suitable executable for piscem or salmon not found — at least one of these must be available.");
+        bail!(
+            "Suitable executable for piscem or salmon not found — at least one of these must be available."
+        );
     }
     if rp.alevin_fry.is_none() {
         bail!("Suitable alevin_fry executable not found.");
