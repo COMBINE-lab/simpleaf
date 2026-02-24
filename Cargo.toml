@@ -1,6 +1,6 @@
 [package]
 name = "simpleaf"
-version = "0.19.5"
+version = "0.20.0"
 edition = "2024"
 authors = [
   "Rob Patro <rob@cs.umd.edu>",
