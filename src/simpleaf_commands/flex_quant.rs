@@ -188,7 +188,7 @@ pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result
     info!("Mapping reads with piscem...");
     let mut piscem_cmd = std::process::Command::new(&piscem_info.exe_path);
     piscem_cmd
-        .arg("map-scrna")
+        .arg("map-sc")
         .arg("-i").arg(&index_path)
         .arg("-g").arg(chem.geometry())
         .arg("-o").arg(&map_output)
@@ -209,7 +209,7 @@ pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result
     let map_cmd_str = prog_utils::get_cmd_line_string(&piscem_cmd);
     info!("piscem map-scrna cmd: {}", map_cmd_str);
     let map_start = Instant::now();
-    exec::run_checked(&mut piscem_cmd, "[piscem map-scrna]")?;
+    exec::run_checked(&mut piscem_cmd, "[piscem map-sc]")?;
     let map_duration = map_start.elapsed();
     info!("Mapping complete in {:.1}s", map_duration.as_secs_f64());
 
@@ -232,13 +232,6 @@ pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result
     let gpl_start = Instant::now();
     exec::run_checked(&mut gpl_cmd, "[generate permit list]")?;
     let gpl_duration = gpl_start.elapsed();
-
-    // Create empty unmapped BC file (multi-barcode collate expects this)
-    {
-        let unmapped_path = quant_output.join("unmapped_bc_count_collated.bin");
-        let mut f = std::fs::File::create(&unmapped_path)?;
-        f.write_all(&0u64.to_le_bytes())?;
-    }
 
     // === Step 6: Collate ===
     info!("Collating...");

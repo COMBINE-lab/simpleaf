@@ -175,7 +175,7 @@ pub struct CustomChemistry {
     pub version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plist_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "remote_url")]
     pub remote_pl_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meta: Option<Value>,
