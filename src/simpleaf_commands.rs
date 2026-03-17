@@ -15,6 +15,8 @@ pub use self::indexing::build_ref_and_index;
 pub mod quant;
 pub use self::quant::map_and_quant;
 
+pub mod flex_quant;
+
 pub mod workflow;
 pub use self::workflow::{
     get_workflow, list_workflows, patch_manifest_or_template, refresh_protocol_estuary,
@@ -578,6 +580,85 @@ pub struct SetPathOpts {
     macs: Option<PathBuf>,
 }
 
+/// Options for the `flex-quant` subcommand — 10x Flex GEX quantification.
+///
+/// This command handles the complete Flex pipeline: probe index building,
+/// mapping, barcode correction (cell + sample), collation, and quantification.
+#[derive(Args, Clone, Debug)]
+#[command(arg_required_else_help = true)]
+pub struct FlexQuantOpts {
+    /// Chemistry name: 10x-flexv1-gex-3p or 10x-flexv2-gex-3p
+    #[arg(short, long)]
+    pub chemistry: String,
+
+    /// Target organism for automatic probe set selection
+    #[arg(long, value_enum)]
+    pub organism: crate::utils::chem_utils::Organism,
+
+    /// Path to output directory
+    #[arg(short, long)]
+    pub output: PathBuf,
+
+    /// Number of threads to use
+    #[arg(short, long, default_value_t = 16)]
+    pub threads: u32,
+
+    /// Path to pre-built probe index (overrides auto-build)
+    #[arg(short = 'i', long, help_heading = "Mapping Options")]
+    pub index: Option<PathBuf>,
+
+    /// Path to probe set CSV or FASTA (overrides auto-download).
+    /// If a CSV is provided, it is converted to FASTA and a t2g map
+    /// is generated automatically.
+    #[arg(long, help_heading = "Probe Set Options")]
+    pub probe_set: Option<PathBuf>,
+
+    /// Path to sample/probe barcode file with rotation mapping
+    /// (overrides auto-download). 3-column TSV: observed, canonical, sample_name.
+    #[arg(long, help_heading = "Probe Set Options")]
+    pub sample_bc_list: Option<PathBuf>,
+
+    /// Comma-separated list of R1 FASTQ files
+    #[arg(short = '1', long, value_delimiter = ',', help_heading = "Mapping Options")]
+    pub reads1: Vec<PathBuf>,
+
+    /// Comma-separated list of R2 FASTQ files
+    #[arg(short = '2', long, value_delimiter = ',', help_heading = "Mapping Options")]
+    pub reads2: Vec<PathBuf>,
+
+    /// UMI resolution mode
+    #[arg(short, long, default_value = "cr-like",
+        help_heading = "Quantification Options",
+        value_parser = clap::builder::PossibleValuesParser::new([
+            "cr-like", "cr-like-em", "parsimony", "parsimony-em",
+            "parsimony-gene", "parsimony-gene-em"
+        ]))]
+    pub resolution: String,
+
+    /// k-mer length for probe index building
+    #[arg(long, default_value_t = 23, help_heading = "Probe Set Options")]
+    pub kmer_length: usize,
+
+    /// The skipping strategy to use for k-mer collection
+    #[arg(long,
+        default_value = "permissive",
+        value_parser = clap::builder::PossibleValuesParser::new(["permissive", "strict"]),
+        help_heading = "Piscem Mapping Options")]
+    pub skipping_strategy: String,
+
+    /// If piscem >= 0.7.0, enable structural constraints
+    #[arg(long, help_heading = "Piscem Mapping Options")]
+    pub struct_constraints: bool,
+
+    /// Maximum cardinality equivalence class to examine
+    #[arg(long, default_value_t = DefaultParams::MAX_EC_CARD, help_heading = "Piscem Mapping Options")]
+    pub max_ec_card: u32,
+
+    /// Minimum read count threshold for unfiltered permit list
+    #[arg(long, default_value_t = 10, help_heading = "Permit List Options")]
+    pub min_reads: usize,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     /// build the (expanded) reference index
@@ -589,6 +670,8 @@ pub enum Commands {
     Inspect {},
     /// quantify a sample
     Quant(MapQuantOpts),
+    /// quantify a 10x Flex GEX sample (probe-based, multiplexed)
+    FlexQuant(FlexQuantOpts),
     /// set paths to the programs that simpleaf will use
     SetPaths(SetPathOpts),
     /// refreshes version information associated with programs used by simpleaf
