@@ -1,19 +1,38 @@
 use crate::atac::commands::ProcessOpts;
-use crate::utils::chem_utils::get_single_custom_chem_from_file;
+use crate::core::{context, exec, index_meta, io, runtime};
 use crate::utils::chem_utils::ExpectedOri;
 use crate::utils::chem_utils::QueryInRegistry;
+use crate::utils::chem_utils::get_single_custom_chem_from_file;
 use crate::utils::constants::CHEMISTRIES_PATH;
-use crate::utils::{
-    prog_utils,
-    prog_utils::{CommandVerbosityLevel, ReqProgs},
-};
+use crate::utils::{prog_utils, prog_utils::ReqProgs};
 use anyhow;
-use anyhow::{bail, Context};
-use serde_json::{json, Value};
+use anyhow::{Context, bail};
+use serde_json::json;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tracing::{info, warn};
+
+pub(crate) struct MapStageOutput {
+    pub map_output: PathBuf,
+    pub map_duration_secs: f64,
+    pub map_cmd: String,
+}
+
+struct GplStageOutput {
+    gpl_duration_secs: f64,
+    gpl_cmd: String,
+}
+
+struct SortStageOutput {
+    sort_duration_secs: f64,
+    sort_cmd: String,
+}
+
+struct MacsStageOutput {
+    macs_duration_secs: f64,
+    macs_cmd: String,
+}
 
 fn push_advanced_piscem_options(
     piscem_map_cmd: &mut std::process::Command,
@@ -63,7 +82,7 @@ fn add_read_args(map_cmd: &mut std::process::Command, opts: &ProcessOpts) -> any
         let reads2 = opts
             .reads2
             .as_ref()
-            .expect("since reads1 files is given, read2 files must be provided.");
+            .context("read2 files must be provided when read1 files are provided.")?;
         let barcode_reads: &Vec<PathBuf> = &opts.barcode_reads;
         if reads1.len() != reads2.len() || reads1.len() != barcode_reads.len() {
             bail!(
@@ -99,9 +118,9 @@ fn add_read_args(map_cmd: &mut std::process::Command, opts: &ProcessOpts) -> any
             .join(",");
         map_cmd.arg("--barcode").arg(bc_str);
     } else {
-        let reads = opts.reads.as_ref().expect(
-            "since reads1 and reads2 are not provided, the single-end reads must be provided.",
-        );
+        let reads = opts.reads.as_ref().context(
+            "single-end reads must be provided when read1/read2 files are not provided.",
+        )?;
         let barcode_reads: &Vec<PathBuf> = &opts.barcode_reads;
         if reads.len() != barcode_reads.len() {
             bail!(
@@ -136,14 +155,12 @@ pub(crate) fn check_progs<P: AsRef<Path>>(
     opts: &ProcessOpts,
 ) -> anyhow::Result<()> {
     let af_home_path = af_home_path.as_ref();
-    // Read the JSON contents of the file as an instance of `User`.
-    let v: Value = prog_utils::inspect_af_home(af_home_path)?;
-    let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+    let rp: ReqProgs = context::load_required_programs(af_home_path)?;
 
     let af_prog_info = rp
         .alevin_fry
         .as_ref()
-        .expect("alevin-fry program info should be properly set.");
+        .context("alevin-fry program info is missing; please run `simpleaf set-paths`.")?;
 
     match prog_utils::check_version_constraints(
         "alevin-fry",
@@ -157,7 +174,7 @@ pub(crate) fn check_progs<P: AsRef<Path>>(
     let piscem_prog_info = rp
         .piscem
         .as_ref()
-        .expect("piscem program info should be properly set.");
+        .context("piscem program info is missing; please run `simpleaf set-paths`.")?;
 
     match prog_utils::check_version_constraints(
         "piscem",
@@ -172,7 +189,9 @@ pub(crate) fn check_progs<P: AsRef<Path>>(
         let macs_prog_info = rp
             .macs
             .as_ref()
-            .expect("macs3 program should be properly set if using the `--call-peaks` option");
+            .context(
+                "macs3 program info is missing; please run `simpleaf set-paths` before using `--call-peaks`.",
+            )?;
         match prog_utils::check_version_constraints(
             "macs3",
             ">=3.0.2, <4.0.0",
@@ -188,93 +207,16 @@ pub(crate) fn check_progs<P: AsRef<Path>>(
 
 // NOTE: we assume that check_progs has already been called and so version constraints have
 // already been checked.
-pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
-    // Read the JSON contents of the file as an instance of `User`.
-    let v: Value = prog_utils::inspect_af_home(af_home_path)?;
-    let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<MapStageOutput> {
+    let rp: ReqProgs = context::load_required_programs(af_home_path)?;
 
     let piscem_prog_info = rp
         .piscem
         .as_ref()
-        .expect("piscem program info should be properly set.");
+        .context("piscem program info is missing; please run `simpleaf set-paths`.")?;
 
-    // figure out what type of index we expect
-    let index_base;
-
-    let mut index = opts.index.clone();
-    // If the user built the index using simpleaf, there are
-    // 2 possibilities here:
-    //  1. They are passing in the directory containing the index
-    //  2. They are passing in the prefix stem of the index files
-    // The code below is to check, in both cases, if we can automatically
-    // detect if the index was constructed with simpleaf.
-
-    // If we are in case 1., the passed in path is a directory and
-    // we can check for the simpleaf_index.json file directly,
-    // Otherwise if the path is not a directory, we check if it
-    // ends in piscem_idx (the suffix that simpleaf uses when
-    // making a piscem index). Then we test the directory we
-    // get after stripping off this suffix.
-    let removed_piscem_idx_suffix = if !index.is_dir() && index.ends_with("piscem_idx") {
-        // remove the piscem_idx part
-        index.pop();
-        true
-    } else {
-        false
-    };
-
-    let index_json_path = index.join("simpleaf_index.json");
-    match index_json_path.try_exists() {
-        Ok(true) => {
-            // we have the simpleaf_index.json file, so parse it.
-            let index_json_file = std::fs::File::open(&index_json_path).with_context({
-                || format!("Could not open file {}", index_json_path.display())
-            })?;
-
-            let index_json_reader = BufReader::new(&index_json_file);
-            let v: Value = serde_json::from_reader(index_json_reader)?;
-
-            let index_type_str: String = serde_json::from_value(v["index_type"].clone())?;
-
-            // here, set the index type based on what we found as the
-            // value for the `index_type` key.
-            match index_type_str.as_ref() {
-                "piscem" => {
-                    // here, either the user has provided us with just
-                    // the directory containing the piscem index, or
-                    // we have "popped" off the "piscem_idx" suffix, so
-                    // add it (back).
-                    index_base = index.join("piscem_idx");
-                }
-                _ => {
-                    bail!(
-                        "unknown index type {} present in simpleaf_index.json",
-                        index_type_str,
-                    );
-                }
-            }
-        }
-        Ok(false) => {
-            // at this point, we have inferred that simpleaf wasn't
-            // used to construct the index, so fall back to what the user
-            // requested directly.
-            // if we have previously removed the piscem_idx suffix, add it back
-            if removed_piscem_idx_suffix {
-                index.push("piscem_idx");
-            }
-            index_base = index;
-        }
-        Err(e) => {
-            bail!(e);
-        }
-    }
-
-    let input_files = vec![
-        index_base.with_extension("ctab"),
-        index_base.with_extension("refinfo"),
-        index_base.with_extension("sshash"),
-    ];
-    prog_utils::check_files_exist(&input_files)?;
+    let index_base = index_meta::resolve_atac_piscem_index_base(opts.index.clone())?;
+    prog_utils::check_piscem_index_files(index_base.as_path())?;
 
     // using a piscem index
     let mut piscem_map_cmd =
@@ -292,17 +234,13 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
         .arg(opts.bin_overlap.to_string());
 
     // if the user requested more threads than can be used
-    let mut threads = opts.threads;
-    if let Ok(max_threads_usize) = std::thread::available_parallelism() {
-        let max_threads = max_threads_usize.get() as u32;
-        if threads > max_threads {
-            warn!(
-                "The maximum available parallelism is {}, but {} threads were requested.",
-                max_threads, threads
-            );
-            warn!("setting number of threads to {}", max_threads);
-            threads = max_threads;
-        }
+    let (threads, capped_at) = runtime::cap_threads(opts.threads);
+    if let Some(max_threads) = capped_at {
+        warn!(
+            "The maximum available parallelism is {}, but {} threads were requested.",
+            max_threads, opts.threads
+        );
+        warn!("setting number of threads to {}", max_threads);
     }
 
     // location of output directory, number of threads
@@ -318,40 +256,33 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
 
     // if the user is requesting a mapping option that required
     // piscem version >= 0.7.0, ensure we have that
-    if let Ok(_piscem_ver) = prog_utils::check_version_constraints(
+    match prog_utils::check_version_constraints(
         "piscem",
         ">=0.11.0, <1.0.0",
         &piscem_prog_info.version,
     ) {
-        push_advanced_piscem_options(&mut piscem_map_cmd, opts)?;
-    } else {
-        info!(
-            r#"
+        Ok(_piscem_ver) => {
+            push_advanced_piscem_options(&mut piscem_map_cmd, opts)?;
+        }
+        Err(_) => {
+            info!(
+                r#"
 Simpleaf is currently using piscem version {}, but you must be using version >= 0.11.0 in order to use the 
 mapping options specific to this, or later versions. If you wish to use these options, please upgrade your 
 piscem version or, if you believe you have a sufficiently new version installed, update the executable 
 being used by simpleaf"#,
-            &piscem_prog_info.version
-        );
+                &piscem_prog_info.version
+            );
+        }
     }
 
     let map_cmd_string = prog_utils::get_cmd_line_string(&piscem_map_cmd);
     info!("map command : {}", map_cmd_string);
 
     let map_start = Instant::now();
-    let map_proc_out =
-        prog_utils::execute_command(&mut piscem_map_cmd, CommandVerbosityLevel::Quiet)
-            .expect("could not execute [atac::map]");
+    exec::run_checked(&mut piscem_map_cmd, "[atac::map]")?;
     let map_duration = map_start.elapsed();
-
-    if !map_proc_out.status.success() {
-        bail!(
-            "atac::map failed with exit status {:?}",
-            map_proc_out.status
-        );
-    } else {
-        info!("mapping completed successfully in {:#?}", map_duration);
-    }
+    info!("mapping completed successfully in {:#?}", map_duration);
 
     let af_process_info_file = opts.output.join("simpleaf_process_log.json");
     let af_process_info = json!({
@@ -370,25 +301,23 @@ being used by simpleaf"#,
 
     // write the relevant info about
     // our run to file.
-    std::fs::write(
-        &af_process_info_file,
-        serde_json::to_string_pretty(&af_process_info).unwrap(),
-    )
-    .with_context(|| format!("could not write {}", af_process_info_file.display()))?;
+    io::write_json_pretty_atomic(&af_process_info_file, &af_process_info)?;
 
     info!("successfully mapped reads and generated output RAD file.");
-    Ok(())
+    Ok(MapStageOutput {
+        map_output,
+        map_duration_secs: map_duration.as_secs_f64(),
+        map_cmd: map_cmd_string,
+    })
 }
 
-fn macs_call_peaks(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
-    // Read the JSON contents of the file as an instance of `User`.
-    let v: Value = prog_utils::inspect_af_home(af_home_path)?;
-    let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+fn macs_call_peaks(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<MacsStageOutput> {
+    let rp: ReqProgs = context::load_required_programs(af_home_path)?;
 
     let macs_prog_info = rp
         .macs
         .as_ref()
-        .expect("macs program info should be properly set.");
+        .context("macs program info is missing; please run `simpleaf set-paths`.")?;
 
     let gpl_dir = opts.output.join("af_process");
     let bedsuf = if opts.compress { ".bed.gz" } else { ".bed" };
@@ -418,18 +347,9 @@ fn macs_call_peaks(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()
     info!("macs3 command : {}", macs_cmd_string);
 
     let macs_start = Instant::now();
-    let macs_proc_out = prog_utils::execute_command(&mut macs_cmd, CommandVerbosityLevel::Quiet)
-        .expect("could not execute [atac::macs]");
+    exec::run_checked(&mut macs_cmd, "[atac::macs]")?;
     let macs_duration = macs_start.elapsed();
-
-    if !macs_proc_out.status.success() {
-        bail!(
-            "atac::macs failed with exit status {:?}",
-            macs_proc_out.status
-        );
-    } else {
-        info!("macs completed successfully in {:#?}", macs_duration);
-    }
+    info!("macs completed successfully in {:#?}", macs_duration);
 
     let af_process_info_file = opts.output.join("simpleaf_process_log.json");
     let json_file = std::fs::File::open(af_process_info_file.clone())
@@ -448,35 +368,40 @@ fn macs_call_peaks(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()
 
     // write the relevant info about
     // our run to file.
-    std::fs::write(
-        &af_process_info_file,
-        serde_json::to_string_pretty(&af_process_info).unwrap(),
-    )
-    .with_context(|| format!("could not write {}", af_process_info_file.display()))?;
+    io::write_json_pretty_atomic(&af_process_info_file, &af_process_info)?;
 
     info!("successfully called peaks using macs3.");
 
-    Ok(())
+    Ok(MacsStageOutput {
+        macs_duration_secs: macs_duration.as_secs_f64(),
+        macs_cmd: macs_cmd_string,
+    })
 }
 
 pub(crate) fn gen_bed(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
-    af_gpl(af_home_path, opts)?;
-    af_sort(af_home_path, opts)?;
-    macs_call_peaks(af_home_path, opts)?;
+    let gpl = af_gpl(af_home_path, opts)?;
+    let sort = af_sort(af_home_path, opts)?;
+    let macs = macs_call_peaks(af_home_path, opts)?;
+    info!(
+        "ATAC downstream stages completed (gpl: {:.2}s, sort: {:.2}s, macs: {:.2}s).",
+        gpl.gpl_duration_secs, sort.sort_duration_secs, macs.macs_duration_secs
+    );
+    info!(
+        "ATAC commands: gpl=`{}`, sort=`{}`, macs=`{}`",
+        gpl.gpl_cmd, sort.sort_cmd, macs.macs_cmd
+    );
     Ok(())
 }
 
 // NOTE: we assume that check_progs has already been called and so version constraints have
 // already been checked.
-fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
-    // Read the JSON contents of the file as an instance of `User`.
-    let v: Value = prog_utils::inspect_af_home(af_home_path)?;
-    let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<SortStageOutput> {
+    let rp: ReqProgs = context::load_required_programs(af_home_path)?;
 
     let af_prog_info = rp
         .alevin_fry
         .as_ref()
-        .expect("alevin-fry program info should be properly set.");
+        .context("alevin-fry program info is missing; please run `simpleaf set-paths`.")?;
 
     let gpl_dir = opts.output.join("af_process");
     let rad_dir = opts.output.join("af_map");
@@ -490,17 +415,13 @@ fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
         .arg(rad_dir);
 
     // if the user requested more threads than can be used
-    let mut threads = opts.threads;
-    if let Ok(max_threads_usize) = std::thread::available_parallelism() {
-        let max_threads = max_threads_usize.get() as u32;
-        if threads > max_threads {
-            warn!(
-                "The maximum available parallelism is {}, but {} threads were requested.",
-                max_threads, threads
-            );
-            warn!("setting number of threads to {}", max_threads);
-            threads = max_threads;
-        }
+    let (threads, capped_at) = runtime::cap_threads(opts.threads);
+    if let Some(max_threads) = capped_at {
+        warn!(
+            "The maximum available parallelism is {}, but {} threads were requested.",
+            max_threads, opts.threads
+        );
+        warn!("setting number of threads to {}", max_threads);
     }
     af_sort.arg("--threads").arg(threads.to_string());
 
@@ -512,18 +433,9 @@ fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
     info!("sort command : {}", sort_cmd_string);
 
     let af_sort_start = Instant::now();
-    let af_sort_proc_out = prog_utils::execute_command(&mut af_sort, CommandVerbosityLevel::Quiet)
-        .expect("could not execute [atac::af_sort]");
+    exec::run_checked(&mut af_sort, "[atac::af_sort]")?;
     let af_sort_duration = af_sort_start.elapsed();
-
-    if !af_sort_proc_out.status.success() {
-        bail!(
-            "atac::sort failed with exit status {:?}",
-            af_sort_proc_out.status
-        );
-    } else {
-        info!("sort completed successfully in {:#?}", af_sort_duration);
-    }
+    info!("sort completed successfully in {:#?}", af_sort_duration);
 
     let af_process_info_file = opts.output.join("simpleaf_process_log.json");
     let json_file = std::fs::File::open(af_process_info_file.clone())
@@ -542,27 +454,24 @@ fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
 
     // write the relevant info about
     // our run to file.
-    std::fs::write(
-        &af_process_info_file,
-        serde_json::to_string_pretty(&af_process_info).unwrap(),
-    )
-    .with_context(|| format!("could not write {}", af_process_info_file.display()))?;
+    io::write_json_pretty_atomic(&af_process_info_file, &af_process_info)?;
 
     info!("successfully sorted and deduplicated records and created the output BED file.");
-    Ok(())
+    Ok(SortStageOutput {
+        sort_duration_secs: af_sort_duration.as_secs_f64(),
+        sort_cmd: sort_cmd_string,
+    })
 }
 
 // NOTE: we assume that check_progs has already been called and so version constraints have
 // already been checked.
-fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
-    // Read the JSON contents of the file as an instance of `User`.
-    let v: Value = prog_utils::inspect_af_home(af_home_path)?;
-    let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<GplStageOutput> {
+    let rp: ReqProgs = context::load_required_programs(af_home_path)?;
 
     let af_prog_info = rp
         .alevin_fry
         .as_ref()
-        .expect("alevin-fry program info should be properly set.");
+        .context("alevin-fry program info is missing; please run `simpleaf set-paths`.")?;
 
     let filter_meth_opt;
 
@@ -654,15 +563,22 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
                             warn!("barcode_ori \"{}\" is unknown; assuming forward.", s);
                         }
                         None => {
-                            warn!("couldn't interpret value associated with \"barcode_ori\" as a string; assuming forward.");
+                            warn!(
+                                "couldn't interpret value associated with \"barcode_ori\" as a string; assuming forward."
+                            );
                         }
                     }
                 } else {
-                    warn!("No meta field present for the chemistry so can't check if barcodes should be reverse complemented.");
+                    warn!(
+                        "No meta field present for the chemistry so can't check if barcodes should be reverse complemented."
+                    );
                 }
             }
         } else {
-            warn!("Couldn't find expected chemistry registry {} so can't check if barcodes should be reverse complemented.", custom_chem_p.display());
+            warn!(
+                "Couldn't find expected chemistry registry {} so can't check if barcodes should be reverse complemented.",
+                custom_chem_p.display()
+            );
         }
         pbco
     };
@@ -693,17 +609,13 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
     }
 
     // if the user requested more threads than can be used
-    let mut threads = opts.threads;
-    if let Ok(max_threads_usize) = std::thread::available_parallelism() {
-        let max_threads = max_threads_usize.get() as u32;
-        if threads > max_threads {
-            warn!(
-                "The maximum available parallelism is {}, but {} threads were requested.",
-                max_threads, threads
-            );
-            warn!("setting number of threads to {}", max_threads);
-            threads = max_threads;
-        }
+    let (threads, capped_at) = runtime::cap_threads(opts.threads);
+    if let Some(max_threads) = capped_at {
+        warn!(
+            "The maximum available parallelism is {}, but {} threads were requested.",
+            max_threads, opts.threads
+        );
+        warn!("setting number of threads to {}", max_threads);
     }
     af_gpl.arg("--threads").arg(format!("{}", threads));
 
@@ -711,21 +623,12 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
     info!("gpl command : {}", gpl_cmd_string);
 
     let af_gpl_start = Instant::now();
-    let af_gpl_proc_out = prog_utils::execute_command(&mut af_gpl, CommandVerbosityLevel::Quiet)
-        .expect("could not execute [atac::af_gpl]");
+    exec::run_checked(&mut af_gpl, "[atac::af_gpl]")?;
     let af_gpl_duration = af_gpl_start.elapsed();
-
-    if !af_gpl_proc_out.status.success() {
-        bail!(
-            "atac::gpl failed with exit status {:?}",
-            af_gpl_proc_out.status
-        );
-    } else {
-        info!(
-            "permit list generation completed successfully in {:#?}",
-            af_gpl_duration
-        );
-    }
+    info!(
+        "permit list generation completed successfully in {:#?}",
+        af_gpl_duration
+    );
 
     let af_process_info_file = opts.output.join("simpleaf_process_log.json");
     let json_file = std::fs::File::open(af_process_info_file.clone())
@@ -744,12 +647,99 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
 
     // write the relevant info about
     // our run to file.
-    std::fs::write(
-        &af_process_info_file,
-        serde_json::to_string_pretty(&af_process_info).unwrap(),
-    )
-    .with_context(|| format!("could not write {}", af_process_info_file.display()))?;
+    io::write_json_pretty_atomic(&af_process_info_file, &af_process_info)?;
 
     info!("successfully performed cell barcode detection and correction.");
-    Ok(())
+    Ok(GplStageOutput {
+        gpl_duration_secs: af_gpl_duration.as_secs_f64(),
+        gpl_cmd: gpl_cmd_string,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use crate::atac::commands::{AtacChemistry, Macs3GenomeSize};
+
+    use super::*;
+
+    fn base_process_opts() -> ProcessOpts {
+        ProcessOpts {
+            index: PathBuf::from("/tmp/index"),
+            reads1: None,
+            reads2: None,
+            reads: None,
+            barcode_reads: vec![],
+            chemistry: AtacChemistry::TenxV2,
+            barcode_length: 16,
+            output: PathBuf::from("/tmp/out"),
+            threads: 1,
+            call_peaks: false,
+            permit_barcode_ori: None,
+            unfiltered_pl: None,
+            min_reads: 10,
+            compress: false,
+            ignore_ambig_hits: false,
+            no_poison: false,
+            use_chr: false,
+            thr: 0.8,
+            bin_size: 50,
+            bin_overlap: 2,
+            no_tn5_shift: false,
+            check_kmer_orphan: false,
+            max_ec_card: 4096,
+            max_hit_occ: 64,
+            max_hit_occ_recover: 1024,
+            max_read_occ: 250,
+            gsize: Macs3GenomeSize::KnownOpt("hs"),
+            qvalue: 0.1,
+            extsize: 50,
+        }
+    }
+
+    #[test]
+    fn add_read_args_succeeds_for_paired_end_inputs() {
+        let td = tempfile::tempdir().expect("failed to create tempdir");
+        let r1 = td.path().join("r1.fastq");
+        let r2 = td.path().join("r2.fastq");
+        let bc = td.path().join("bc.fastq");
+        fs::write(&r1, "").expect("failed to write r1");
+        fs::write(&r2, "").expect("failed to write r2");
+        fs::write(&bc, "").expect("failed to write bc");
+
+        let mut opts = base_process_opts();
+        opts.reads1 = Some(vec![r1]);
+        opts.reads2 = Some(vec![r2]);
+        opts.barcode_reads = vec![bc];
+
+        let mut cmd = std::process::Command::new("echo");
+        add_read_args(&mut cmd, &opts).expect("expected add_read_args to succeed");
+    }
+
+    #[test]
+    fn add_read_args_fails_for_mismatched_read_counts() {
+        let td = tempfile::tempdir().expect("failed to create tempdir");
+        let r1 = td.path().join("r1.fastq");
+        let r2a = td.path().join("r2a.fastq");
+        let r2b = td.path().join("r2b.fastq");
+        let bc = td.path().join("bc.fastq");
+        fs::write(&r1, "").expect("failed to write r1");
+        fs::write(&r2a, "").expect("failed to write r2a");
+        fs::write(&r2b, "").expect("failed to write r2b");
+        fs::write(&bc, "").expect("failed to write bc");
+
+        let mut opts = base_process_opts();
+        opts.reads1 = Some(vec![r1]);
+        opts.reads2 = Some(vec![r2a, r2b]);
+        opts.barcode_reads = vec![bc];
+
+        let mut cmd = std::process::Command::new("echo");
+        let err = add_read_args(&mut cmd, &opts).expect_err("expected mismatch to fail");
+        assert!(
+            format!("{:#}", err).contains("Cannot proceed"),
+            "unexpected error: {:#}",
+            err
+        );
+    }
 }

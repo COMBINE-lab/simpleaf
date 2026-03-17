@@ -1,25 +1,21 @@
 use crate::atac::commands::IndexOpts;
-use crate::utils::{
-    prog_utils,
-    prog_utils::{CommandVerbosityLevel, ReqProgs},
-};
+use crate::core::{context, exec, io, runtime};
+use crate::utils::{prog_utils, prog_utils::ReqProgs};
 use anyhow;
-use anyhow::{bail, Context};
+use anyhow::Context;
 use cmd_lib::run_fun;
-use serde_json::{json, Value};
+use serde_json::json;
 use std::path::Path;
 use std::time::Instant;
 use tracing::{info, warn};
 
 pub(crate) fn piscem_index(af_home_path: &Path, opts: &IndexOpts) -> anyhow::Result<()> {
-    // Read the JSON contents of the file as an instance of `User`.
-    let v: Value = prog_utils::inspect_af_home(af_home_path)?;
-    let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
+    let rp: ReqProgs = context::load_required_programs(af_home_path)?;
 
     let piscem_prog_info = rp
         .piscem
         .as_ref()
-        .expect("piscem program info should be properly set.");
+        .context("piscem program info is missing; please run `simpleaf set-paths`.")?;
 
     match prog_utils::check_version_constraints(
         "piscem",
@@ -60,18 +56,13 @@ pub(crate) fn piscem_index(af_home_path: &Path, opts: &IndexOpts) -> anyhow::Res
         piscem_index_cmd.arg("--overwrite");
     }
 
-    let mut threads = opts.threads;
-    // if the user requested more threads than can be used
-    if let Ok(max_threads_usize) = std::thread::available_parallelism() {
-        let max_threads = max_threads_usize.get() as u32;
-        if threads > max_threads {
-            warn!(
-                "The maximum available parallelism is {}, but {} threads were requested.",
-                max_threads, threads
-            );
-            warn!("setting number of threads to {}", max_threads);
-            threads = max_threads;
-        }
+    let (threads, capped_at) = runtime::cap_threads(opts.threads);
+    if let Some(max_threads) = capped_at {
+        warn!(
+            "The maximum available parallelism is {}, but {} threads were requested.",
+            max_threads, opts.threads
+        );
+        warn!("setting number of threads to {}", max_threads);
     }
 
     piscem_index_cmd
@@ -94,13 +85,8 @@ pub(crate) fn piscem_index(af_home_path: &Path, opts: &IndexOpts) -> anyhow::Res
     info!("piscem build cmd : {}", index_cmd_string);
 
     let index_start = Instant::now();
-    let cres = prog_utils::execute_command(&mut piscem_index_cmd, CommandVerbosityLevel::Quiet)
-        .expect("failed to invoke piscem index command");
+    exec::run_checked(&mut piscem_index_cmd, "atac piscem index command")?;
     let index_duration = index_start.elapsed();
-
-    if !cres.status.success() {
-        bail!("piscem index failed to build succesfully {:?}", cres.status);
-    }
 
     let index_json_file = output_index_dir.join("simpleaf_index.json");
     let index_json = json!({
@@ -117,11 +103,7 @@ pub(crate) fn piscem_index(af_home_path: &Path, opts: &IndexOpts) -> anyhow::Res
                 "ref" : &opts.input
             }
     });
-    std::fs::write(
-        &index_json_file,
-        serde_json::to_string_pretty(&index_json).unwrap(),
-    )
-    .with_context(|| format!("could not write {}", index_json_file.display()))?;
+    io::write_json_pretty_atomic(&index_json_file, &index_json)?;
 
     Ok(())
 }

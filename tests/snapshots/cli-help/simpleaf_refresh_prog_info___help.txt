@@ -1,0 +1,7 @@
+refreshes version information associated with programs used by simpleaf
+
+Usage: simpleaf refresh-prog-info
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version

@@ -22,3 +22,6 @@ TEST_REF
 TEST_REF_CLAPV4
 TEST_REF_ROERS
 blarg
+
+# macOS Finder metadata
+**/.DS_Store

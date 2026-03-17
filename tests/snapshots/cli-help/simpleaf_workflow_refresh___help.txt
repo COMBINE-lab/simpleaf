@@ -1,0 +1,7 @@
+Update the local copy of protocol esturary to the latest version
+
+Usage: simpleaf workflow refresh
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version

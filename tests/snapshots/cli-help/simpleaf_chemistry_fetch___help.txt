@@ -1,0 +1,11 @@
+Download the permit list files for registered chemistries
+
+Usage: simpleaf chemistry fetch [OPTIONS] --name <NAME>
+
+Options:
+  -n, --name <NAME>  A comma-separated list of chemistry names to fetch (or a *single* regex pattern
+                     for matching multiple chemistries). Use '.*' to fetch for all registered
+                     chemistries
+  -d, --dry-run      Print the permit list file(s) that will be downloaded without downloading them
+  -h, --help         Print help
+  -V, --version      Print version

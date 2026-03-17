@@ -2,8 +2,8 @@ use crate::atac::defaults::{AtacIndexParams, DefaultAtacParams};
 use crate::defaults::{DefaultMappingParams, DefaultParams};
 use crate::utils::chem_utils::{ExpectedOri, QueryInRegistry};
 use clap::{
-    builder::{ArgPredicate, PossibleValue},
     Args, Subcommand, ValueEnum,
+    builder::{ArgPredicate, PossibleValue},
 };
 use std::fmt;
 use std::path::PathBuf;

@@ -1,7 +1,8 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use cmd_lib::run_fun;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -10,6 +11,8 @@ use std::sync::LazyLock;
 use tracing::{debug, error, info, warn};
 use ureq::ResponseExt;
 use which::which;
+
+use file_requirements::{FileRequirementBuildError, FileRequirementBuilder};
 
 // The below functions are taken from the [`execute`](https://crates.io/crates/execute)
 // crate.
@@ -235,9 +238,12 @@ impl ReqProgs {
             if desired_ver.matches(&current_ver) {
                 // nothing to do here
             } else {
-                warn!("It is recommended to use piscem version {}, but currently version {} is being used. \
+                warn!(
+                    "It is recommended to use piscem version {}, but currently version {} is being used. \
                        Please consider installing the latest version of piscem and setting simpleaf to use this \
-                       new version by running the `refresh-prog-info` command.", &desired_ver, &current_ver);
+                       new version by running the `refresh-prog-info` command.",
+                    &desired_ver, &current_ver
+                );
             }
         }
     }
@@ -279,7 +285,10 @@ pub fn check_version_constraints_from_output<S1: AsRef<str>>(
             let x = vs.split_whitespace();
             if let Some(version) = x.last() {
                 let ver = if version.split(".").count() > 3 {
-                    warn!("version info {} is not a valid semver (more than 3 dotted version parts; looking only at the major, minor & patch versions).", version);
+                    warn!(
+                        "version info {} is not a valid semver (more than 3 dotted version parts; looking only at the major, minor & patch versions).",
+                        version
+                    );
                     version
                         .split(".")
                         .take(3)
@@ -373,20 +382,20 @@ pub fn get_required_progs_from_paths(
 
     let opt_salmon = match salmon_exe {
         Some(p) => Some(p),
-        None => {
-            match get_which_executable("salmon") {
-                Ok(p) => Some(p),
-                Err(e) => match &opt_piscem {
-                    None => {
-                        return Err(e);
-                    }
-                    Some(_) => {
-                        info!("could not find salmon executable, only piscem will be usable as a mapper.");
-                        None
-                    }
-                },
-            }
-        }
+        None => match get_which_executable("salmon") {
+            Ok(p) => Some(p),
+            Err(e) => match &opt_piscem {
+                None => {
+                    return Err(e);
+                }
+                Some(_) => {
+                    info!(
+                        "could not find salmon executable, only piscem will be usable as a mapper."
+                    );
+                    None
+                }
+            },
+        },
     };
 
     // We should only get to this point if we have at least one of piscem and salmon, sanity
@@ -408,15 +417,15 @@ pub fn get_required_progs_from_paths(
 
     let opt_macs = match macs_exe {
         Some(p) => Some(p),
-        None => {
-            match get_which_executable("macs3") {
-                Ok(p) => Some(p),
-                Err(_e) => {
-                    info!("Could not find macs3 executable, peak calling cannot be peformed by simpleaf");
-                    None
-                }
+        None => match get_which_executable("macs3") {
+            Ok(p) => Some(p),
+            Err(_e) => {
+                info!(
+                    "Could not find macs3 executable, peak calling cannot be peformed by simpleaf"
+                );
+                None
             }
-        }
+        },
     };
 
     if let Some(piscem) = opt_piscem {
@@ -472,34 +481,67 @@ pub fn get_required_progs() -> Result<ReqProgs> {
     get_required_progs_from_paths(salmon_exe, piscem_exe, alevin_fry_exe, macs_exe)
 }
 
+/// Check that all files in `file_vec` exist.
+///
+/// This maintains backwards compatibility for existing call sites by expressing
+/// the check as a conjunction of file terms in the generic file-requirement
+/// engine.
 pub fn check_files_exist(file_vec: &[PathBuf]) -> Result<()> {
-    let mut all_valid = true;
+    let mut builder = FileRequirementBuilder::new();
+    let mut seen = HashSet::new();
     for fb in file_vec {
-        let er = fb.as_path().try_exists();
-        match er {
-            Ok(true) => {
-                // do nothing
-            }
-            Ok(false) => {
-                error!(
-                    "Required input file at path {} was not found.",
-                    fb.display()
-                );
-                all_valid = false;
-            }
-            Err(e) => {
-                error!("{:#?}", e);
-                all_valid = false;
-            }
+        if !seen.insert(fb.clone()) {
+            continue;
         }
+        builder
+            .require_file(fb)
+            .map_err(map_file_requirement_build_err)?;
     }
+    builder
+        .build()
+        .check()
+        .map_err(|e| anyhow!("Required input files were missing; cannot proceed! {}", e))
+}
 
-    if !all_valid {
-        return Err(anyhow!(
-            "Required input files were missing; cannot proceed!"
-        ));
-    }
-    Ok(())
+/// Check that a piscem index base contains all required files for either supported
+/// on-disk layout:
+///
+/// 1. C++ layout: includes `<base>.sshash`
+/// 2. Rust layout: includes both `<base>.ssi` and `<base>.ssi.mphf`
+///
+/// In both cases the common files must exist (`.ctab` and `.refinfo`).
+pub fn check_piscem_index_files(index_base: &Path) -> Result<()> {
+    let mut builder = FileRequirementBuilder::new();
+    builder
+        .require_all(|all| {
+            all.require_file(index_base.with_extension("ctab"))?;
+            all.require_file(index_base.with_extension("refinfo"))?;
+            Ok(())
+        })
+        .map_err(map_file_requirement_build_err)?;
+    builder
+        .require_any(|any| {
+            any.require_file(index_base.with_extension("sshash"))?;
+            any.require_all(|rust_all| {
+                rust_all.require_file(index_base.with_extension("ssi"))?;
+                rust_all.require_file(index_base.with_extension("ssi.mphf"))?;
+                Ok(())
+            })?;
+            Ok(())
+        })
+        .map_err(map_file_requirement_build_err)?;
+
+    builder.build().check().map_err(|e| {
+        anyhow!(
+            "Required piscem index files were missing or incomplete for base {}. {}",
+            index_base.display(),
+            e
+        )
+    })
+}
+
+fn map_file_requirement_build_err(err: FileRequirementBuildError) -> anyhow::Error {
+    anyhow!("Invalid file requirement expression: {}", err)
 }
 
 pub fn read_json(json_path: &Path) -> anyhow::Result<serde_json::Value> {
@@ -523,5 +565,58 @@ pub fn inspect_af_home(af_home_path: &Path) -> anyhow::Result<serde_json::Value>
             "{} Please run the `simpleaf set-paths` command before using `index` or `quant`.",
             e
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{check_files_exist, check_piscem_index_files};
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn check_files_exist_ignores_duplicate_entries() {
+        let td = tempdir().expect("failed to create tempdir");
+        let file = td.path().join("a.txt");
+        fs::write(&file, "").expect("failed to write test file");
+        let files = vec![file.clone(), file];
+        check_files_exist(&files).expect("duplicate terms should not fail legacy file checks");
+    }
+
+    #[test]
+    fn check_piscem_index_files_accepts_cpp_layout() {
+        let td = tempdir().expect("failed to create tempdir");
+        let base = td.path().join("piscem_idx");
+        fs::write(base.with_extension("ctab"), "").expect("failed to write ctab");
+        fs::write(base.with_extension("refinfo"), "").expect("failed to write refinfo");
+        fs::write(base.with_extension("sshash"), "").expect("failed to write sshash");
+        check_piscem_index_files(base.as_path()).expect("cpp index layout should be accepted");
+    }
+
+    #[test]
+    fn check_piscem_index_files_accepts_rust_layout() {
+        let td = tempdir().expect("failed to create tempdir");
+        let base = td.path().join("piscem_idx");
+        fs::write(base.with_extension("ctab"), "").expect("failed to write ctab");
+        fs::write(base.with_extension("refinfo"), "").expect("failed to write refinfo");
+        fs::write(base.with_extension("ssi"), "").expect("failed to write ssi");
+        fs::write(base.with_extension("ssi.mphf"), "").expect("failed to write ssi.mphf");
+        check_piscem_index_files(base.as_path()).expect("rust index layout should be accepted");
+    }
+
+    #[test]
+    fn check_piscem_index_files_rejects_partial_layout() {
+        let td = tempdir().expect("failed to create tempdir");
+        let base = td.path().join("piscem_idx");
+        fs::write(base.with_extension("ctab"), "").expect("failed to write ctab");
+        fs::write(base.with_extension("refinfo"), "").expect("failed to write refinfo");
+        fs::write(base.with_extension("ssi"), "").expect("failed to write ssi");
+        let err =
+            check_piscem_index_files(base.as_path()).expect_err("partial rust layout must fail");
+        assert!(
+            format!("{:#}", err).contains("Required piscem index files were missing or incomplete"),
+            "unexpected error: {:#}",
+            err
+        );
     }
 }

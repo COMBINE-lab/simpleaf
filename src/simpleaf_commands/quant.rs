@@ -1,14 +1,14 @@
 use crate::utils::af_utils::*;
 
+use crate::core::{context, exec, index_meta, io, runtime};
 use crate::utils::prog_parsing_utils;
 use crate::utils::prog_utils;
-use crate::utils::prog_utils::{CommandVerbosityLevel, ReqProgs};
+use crate::utils::prog_utils::ReqProgs;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use serde_json::json;
-use serde_json::Value;
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
@@ -17,7 +17,9 @@ use super::MapQuantOpts;
 use crate::utils::chem_utils::ExpectedOri;
 use crate::utils::constants::{CHEMISTRIES_PATH, NUM_SAMPLE_LINES};
 
-fn get_generic_buf_reader(ipath: &PathBuf) -> anyhow::Result<impl BufRead> {
+/// Open a permit-list file with transparent compression handling and return a
+/// buffered reader over the resulting stream.
+fn get_generic_buf_reader(ipath: &Path) -> anyhow::Result<BufReader<Box<dyn Read>>> {
     let (reader, compression) = niffler::from_path(ipath)
         .with_context(|| format!("Could not open requsted file {}", ipath.display()))?;
     match compression {
@@ -42,7 +44,7 @@ impl CBListInfo {
         }
     }
     // we iterate the file to see if it only has cb or with affiliated info (by separator \t).
-    fn init(&mut self, pl_file: &PathBuf, output: &PathBuf) -> anyhow::Result<()> {
+    fn init(&mut self, pl_file: &Path, output: &Path) -> anyhow::Result<()> {
         // open pl_file
         let br = get_generic_buf_reader(pl_file)
             .with_context(|| "failed to successfully open permit-list file.")?;
@@ -52,16 +54,20 @@ impl CBListInfo {
             .lines()
             .take(NUM_SAMPLE_LINES) // don't read the whole file in the single-coumn case
             .map(|l| {
-                l.unwrap_or_else(|_| panic!("Could not open permitlist file {}", pl_file.display()))
+                l.with_context(|| format!("Could not open permitlist file {}", pl_file.display()))
             })
+            .collect::<anyhow::Result<Vec<_>>>()?
+            .into_iter()
             .any(|l| !l.contains('\t'));
 
         // if single column, we are good. Otherwise, we need to write the first column to the final file
         let final_file: PathBuf;
         if is_single_column {
-            final_file = pl_file.clone();
+            final_file = pl_file.to_path_buf();
         } else {
-            info!("found multiple columns in the barcode list tsv file, use the first column as the barcodes.");
+            info!(
+                "found multiple columns in the barcode list tsv file, use the first column as the barcodes."
+            );
 
             // create output dir if doesn't exist
             if !output.exists() {
@@ -91,7 +97,7 @@ impl CBListInfo {
             }
         }
 
-        self.init_file = pl_file.clone();
+        self.init_file = pl_file.to_path_buf();
         self.final_file = final_file;
         self.is_single_column = is_single_column;
         Ok(())
@@ -106,7 +112,9 @@ impl CBListInfo {
 
         // if we are here but the init file doesn't exist, then we have a problem
         if !self.init_file.exists() {
-            bail!("The CBListInfo struct was not properly initialized. Please report this issue on GitHub.");
+            bail!(
+                "The CBListInfo struct was not properly initialized. Please report this issue on GitHub."
+            );
         }
 
         // if we cannot find the count matrix column files, then complain
@@ -236,196 +244,106 @@ fn validate_map_and_quant_opts(opts: &MapQuantOpts) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<()> {
-    validate_map_and_quant_opts(&opts)?;
+#[derive(Debug)]
+struct QuantSetup {
+    rp: ReqProgs,
+    index_type: IndexType,
+    t2g_map_file: PathBuf,
+    gene_id_to_name_opt: Option<PathBuf>,
+    chem: Chemistry,
+    ori: ExpectedOri,
+    filter_meth: CellFilterMethod,
+    threads: u32,
+}
 
+#[derive(Debug)]
+struct MappingStageOutput {
+    sc_mapper: String,
+    map_cmd_string: String,
+    map_output: PathBuf,
+    map_duration: Duration,
+}
+
+#[derive(Debug)]
+struct QuantStageOutput {
+    gpl_output: PathBuf,
+    gpl_cmd_string: String,
+    collate_cmd_string: String,
+    quant_cmd_string: String,
+    gpl_duration: Duration,
+    collate_duration: Duration,
+    quant_duration: Duration,
+}
+
+fn resolve_quant_setup(
+    af_home_path: &Path,
+    opts: &MapQuantOpts,
+) -> anyhow::Result<(QuantSetup, CBListInfo)> {
     let mut t2g_map = opts.t2g_map.clone();
-    // Read the JSON contents of the file as an instance of `User`.
-    let v: Value = prog_utils::inspect_af_home(af_home_path)?;
-    let rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
-
+    let ctx = context::load_runtime_context(af_home_path)?;
+    let rp: ReqProgs = ctx.progs;
     rp.issue_recommended_version_messages();
 
-    let mut gene_id_to_name_opt: Option<PathBuf> = None;
-
-    // figure out what type of index we expect
-    let index_type;
-
-    if let Some(mut index) = opts.index.clone() {
-        // If the user built the index using simpleaf, and they are using
-        // piscem, then they are not required to pass the --use-piscem flag
-        // to the quant step (though they *can* pass it if they wish).
-        // Thus, if they built the piscem index using simpleaf, there are
-        // 2 possibilities here:
-        //  1. They are passing in the directory containing the index
-        //  2. They are passing in the prefix stem of the index files
-        // The code below is to check, in both cases, if we can automatically
-        // detect if the index was constructed with simpleaf, so that we can
-        // then automatically infer other files, like the t2g files.
-
-        // If we are in case 1., the passed in path is a directory and
-        // we can check for the simpleaf_index.json file directly,
-        // Otherwise if the path is not a directory, we check if it
-        // ends in piscem_idx (the suffix that simpleaf uses when
-        // making a piscem index). Then we test the directory we
-        // get after stripping off this suffix.
-        let removed_piscem_idx_suffix = if !index.is_dir() && index.ends_with("piscem_idx") {
-            // remove the piscem_idx part
-            index.pop();
-            true
-        } else {
-            false
-        };
-
-        let index_json_path = index.join("simpleaf_index.json");
-        match index_json_path.try_exists() {
-            Ok(true) => {
-                // we have the simpleaf_index.json file, so parse it.
-                let index_json_file = std::fs::File::open(&index_json_path).with_context({
-                    || format!("Could not open file {}", index_json_path.display())
-                })?;
-
-                let index_json_reader = BufReader::new(&index_json_file);
-                let v: Value = serde_json::from_reader(index_json_reader)?;
-
-                let index_type_str: String = serde_json::from_value(v["index_type"].clone())?;
-
-                // here, set the index type based on what we found as the
-                // value for the `index_type` key.
-                match index_type_str.as_ref() {
-                    "salmon" => {
-                        index_type = IndexType::Salmon(index.clone());
-                    }
-                    "piscem" => {
-                        // here, either the user has provided us with just
-                        // the directory containing the piscem index, or
-                        // we have "popped" off the "piscem_idx" suffix, so
-                        // add it (back).
-                        index_type = IndexType::Piscem(index.join("piscem_idx"));
-                    }
-                    _ => {
-                        bail!(
-                            "unknown index type {} present in simpleaf_index.json",
-                            index_type_str,
-                        );
-                    }
-                }
-                // if the user didn't pass in a t2g_map, try and populate it
-                // automatically here
-                if t2g_map.is_none() {
-                    let t2g_opt: Option<PathBuf> = serde_json::from_value(v["t2g_file"].clone())?;
-                    if let Some(t2g_val) = t2g_opt {
-                        let t2g_loc = index.join(t2g_val);
-                        info!("found local t2g file at {}, will attempt to use this since none was provided explicitly", t2g_loc.display());
-                        t2g_map = Some(t2g_loc);
-                    }
-                }
-
-                // if the user used simpleaf for index construction, then we also built the
-                // reference and populated the gene_id_to_name.tsv file.  See if we can grab
-                // that as well.
-                if index.join("gene_id_to_name.tsv").exists() {
-                    gene_id_to_name_opt = Some(index.join("gene_id_to_name.tsv"));
-                } else if let Some(index_parent) = index.parent() {
-                    // we are doing index_dir/../ref/gene_id_to_name.tsv
-                    let gene_name_path = index_parent.join("ref").join("gene_id_to_name.tsv");
-                    if gene_name_path.exists() && gene_name_path.is_file() {
-                        gene_id_to_name_opt = Some(gene_name_path);
-                    }
-                }
-            }
-            Ok(false) => {
-                // at this point, we have inferred that simpleaf wasn't
-                // used to construct the index, so fall back to what the user
-                // requested directly.
-                // if we have previously removed the piscem_idx suffix, add it back
-                if removed_piscem_idx_suffix {
-                    index.push("piscem_idx");
-                }
-                if opts.use_piscem {
-                    // the user passed the use-piscem flag, so treat the provided
-                    // path as the *prefix stem* to the piscem index
-                    index_type = IndexType::Piscem(index);
-                } else {
-                    // if the user didn't pass use-piscem and there
-                    // is no simpleaf index json file to check, then
-                    // it's assumed they are using a salmon index.
-                    index_type = IndexType::Salmon(index);
-                }
-            }
-            Err(e) => {
-                bail!(e);
-            }
-        }
-    } else {
-        index_type = IndexType::NoIndex;
+    let index_meta = index_meta::resolve_quant_index(opts.index.clone(), opts.use_piscem)?;
+    if t2g_map.is_none()
+        && let Some(t2g_loc) = index_meta.inferred_t2g.clone()
+    {
+        info!(
+            "found local t2g file at {}, will attempt to use this since none was provided explicitly",
+            t2g_loc.display()
+        );
+        t2g_map = Some(t2g_loc);
     }
+    let index_type = index_meta.index_type;
+    let gene_id_to_name_opt = index_meta.inferred_gene_id_to_name;
 
-    // at this point make sure we have a t2g value
     let t2g_map_file = t2g_map.context(
         "A transcript-to-gene map (t2g) file was not provided via `--t2g-map`|`-m` and could \
         not be inferred from the index. Please provide a t2g map explicitly to the quant command.",
     )?;
-    prog_utils::check_files_exist(&[t2g_map_file.clone()])?;
+    prog_utils::check_files_exist(std::slice::from_ref(&t2g_map_file))?;
 
-    // make sure we have an program matching the
-    // appropriate index type
     match index_type {
         IndexType::Piscem(_) => {
             if rp.piscem.is_none() {
-                bail!("A piscem index is being used, but no piscem executable is provided. Please set one with `simpleaf set-paths`.");
+                bail!(
+                    "A piscem index is being used, but no piscem executable is provided. Please set one with `simpleaf set-paths`."
+                );
             }
         }
         IndexType::Salmon(_) => {
             if rp.salmon.is_none() {
-                bail!("A salmon index is being used, but no piscem executable is provided. Please set one with `simpleaf set-paths`.");
+                bail!(
+                    "A salmon index is being used, but no salmon executable is provided. Please set one with `simpleaf set-paths`."
+                );
             }
         }
         IndexType::NoIndex => {}
     }
 
-    // the chemistries file
     let custom_chem_p = af_home_path.join(CHEMISTRIES_PATH);
-
     let chem = Chemistry::from_str(&index_type, &custom_chem_p, &opts.chemistry)?;
-
-    let ori: ExpectedOri;
-    // if the user set the orientation, then
-    // use that explicitly
-    if let Some(o) = &opts.expected_ori {
-        ori = ExpectedOri::from_str(o).with_context(|| {
+    let ori = if let Some(o) = &opts.expected_ori {
+        ExpectedOri::from_str(o).with_context(|| {
             format!(
                 "Could not parse orientation {}. It must be one of the following: {:?}",
                 o,
                 ExpectedOri::all_to_str().join(", ")
             )
-        })?;
+        })?
     } else {
-        ori = chem.expected_ori();
-    }
+        chem.expected_ori()
+    };
 
     let mut filter_meth_opt = None;
     let mut pl_info = CBListInfo::new();
-
-    // based on the filtering method
     if let Some(ref pl_file) = opts.unfiltered_pl {
-        // NOTE: unfiltered_pl is of type Option<Option<PathBuf>> so being in here
-        // tells us nothing about the inner option.  We handle that now.
-
-        // if the -u flag is passed and some file is provided, then the inner
-        // Option is Some(PathBuf)
         if let Some(pl_file) = pl_file {
-            // the user has explicily passed a file along, so try
-            // to use that
             if pl_file.is_file() {
-                // we read the file to see if there is additional columns separated by \t.
-                // unwrap is safe here cuz we defined it above
                 pl_info.init(pl_file, &opts.output)?;
-
-                let min_cells = opts.min_reads;
                 filter_meth_opt = Some(CellFilterMethod::UnfilteredExternalList(
                     pl_info.final_file.to_string_lossy().into_owned(),
-                    min_cells,
+                    opts.min_reads,
                 ));
             } else {
                 bail!(
@@ -434,20 +352,13 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
                 );
             }
         } else {
-            // here, the -u flag is provided
-            // but no file is provided, then the
-            // inner option is None and we will try to get the permit list automatically if
-            // using 10xv2, 10xv3, or 10xv4
-
-            // check the chemistry
             let pl_res = get_permit_if_absent(af_home_path, &chem)?;
-            let min_cells = opts.min_reads;
             match pl_res {
                 PermitListResult::DownloadSuccessful(p) | PermitListResult::AlreadyPresent(p) => {
                     pl_info.init(&p, &opts.output)?;
                     filter_meth_opt = Some(CellFilterMethod::UnfilteredExternalList(
                         pl_info.final_file.to_string_lossy().into_owned(),
-                        min_cells,
+                        opts.min_reads,
                     ));
                 }
                 PermitListResult::UnregisteredChemistry => {
@@ -472,63 +383,57 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
             filter_meth_opt = Some(CellFilterMethod::ExpectCells(*num_expected));
         };
     }
-    // otherwise it must have been knee;
     if opts.knee {
         filter_meth_opt = Some(CellFilterMethod::KneeFinding);
     }
 
-    if filter_meth_opt.is_none() {
-        bail!("No valid filtering strategy was provided!");
-    }
-
-    // if the user requested more threads than can be used
-    let mut threads = opts.threads;
-    if let Ok(max_threads_usize) = std::thread::available_parallelism() {
-        let max_threads = max_threads_usize.get() as u32;
-        if threads > max_threads {
-            warn!(
-                "The maximum available parallelism is {}, but {} threads were requested.",
-                max_threads, threads
-            );
-            warn!("setting number of threads to {}", max_threads);
-            threads = max_threads;
-        }
-    }
-
-    // here we must be safe to unwrap
-    let filter_meth = filter_meth_opt.unwrap();
-
-    let sc_mapper: String;
-    let map_cmd_string: String;
-    let map_output: PathBuf;
-    let map_duration: Duration;
-
-    // if we are mapping against an index
-    if let Some(index) = opts.index.clone() {
-        let reads1 = opts
-            .reads1
-            .as_ref()
-            .expect("since mapping against an index is requested, read1 files must be provided.");
-        let reads2 = opts
-            .reads2
-            .as_ref()
-            .expect("since mapping against an index is requested, read2 files must be provided.");
-        assert_eq!(
-            reads1.len(),
-            reads2.len(),
-            "{} read1 files and {} read2 files were given; Cannot proceed!",
-            reads1.len(),
-            reads2.len()
+    let (threads, capped_at) = runtime::cap_threads(opts.threads);
+    if let Some(max_threads) = capped_at {
+        warn!(
+            "The maximum available parallelism is {}, but {} threads were requested.",
+            max_threads, opts.threads
         );
+        warn!("setting number of threads to {}", max_threads);
+    }
 
-        match index_type {
-            IndexType::Piscem(ref index_base) => {
-                let piscem_prog_info = rp
-                    .piscem
-                    .as_ref()
-                    .expect("piscem program info should be properly set.");
+    let setup = QuantSetup {
+        rp,
+        index_type,
+        t2g_map_file,
+        gene_id_to_name_opt,
+        chem,
+        ori,
+        filter_meth: filter_meth_opt.context("No valid filtering strategy was provided!")?,
+        threads,
+    };
+    Ok((setup, pl_info))
+}
 
-                // using a piscem index
+fn run_mapping_stage(
+    opts: &MapQuantOpts,
+    setup: &QuantSetup,
+) -> anyhow::Result<MappingStageOutput> {
+    if let Some(index) = opts.index.clone() {
+        let reads1 = opts.reads1.as_ref().context(
+            "Mapping against an index was requested, but read1 files were not provided.",
+        )?;
+        let reads2 = opts.reads2.as_ref().context(
+            "Mapping against an index was requested, but read2 files were not provided.",
+        )?;
+        if reads1.len() != reads2.len() {
+            bail!(
+                "{} read1 files and {} read2 files were given; Cannot proceed!",
+                reads1.len(),
+                reads2.len()
+            );
+        }
+
+        match &setup.index_type {
+            IndexType::Piscem(index_base) => {
+                let piscem_prog_info =
+                    setup.rp.piscem.as_ref().context(
+                        "A piscem index is being used, but piscem program info is missing.",
+                    )?;
                 let mut piscem_quant_cmd =
                     std::process::Command::new(format!("{}", &piscem_prog_info.exe_path.display()));
                 let index_path = format!("{}", index_base.display());
@@ -537,70 +442,53 @@ pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<
                     .arg("--index")
                     .arg(index_path);
 
-                // location of output directory, number of threads
-                map_output = opts.output.join("af_map");
+                let map_output = opts.output.join("af_map");
                 piscem_quant_cmd
                     .arg("--threads")
-                    .arg(format!("{}", threads))
+                    .arg(format!("{}", setup.threads))
                     .arg("-o")
                     .arg(&map_output);
 
-                // if the user is requesting a mapping option that required
-                // piscem version >= 0.7.0, ensure we have that
-                if let Ok(_piscem_ver) = prog_utils::check_version_constraints(
+                match prog_utils::check_version_constraints(
                     "piscem",
                     ">=0.7.0, <1.0.0",
                     &piscem_prog_info.version,
                 ) {
-                    push_advanced_piscem_options(&mut piscem_quant_cmd, &opts)?;
-                } else {
-                    info!(
-                        r#"
+                    Ok(_piscem_ver) => {
+                        push_advanced_piscem_options(&mut piscem_quant_cmd, opts)?;
+                    }
+                    Err(_) => {
+                        info!(
+                            r#"
 Simpleaf is currently using piscem version {}, but you must be using version >= 0.7.0 in order to use the 
 mapping options specific to this, or later versions. If you wish to use these options, please upgrade your 
 piscem version or, if you believe you have a sufficiently new version installed, update the executable 
 being used by simpleaf"#,
-                        &piscem_prog_info.version
-                    );
+                            &piscem_prog_info.version
+                        );
+                    }
                 }
 
-                // we get the final geometry we want to pass to piscem
-                // check if we can parse the geometry directly, or if we are dealing with a
-                // "complex" geometry.
                 let frag_lib_xform = add_or_transform_fragment_library(
                     MapperType::Piscem,
-                    chem.fragment_geometry_str(),
+                    setup.chem.fragment_geometry_str(),
                     reads1,
                     reads2,
                     &mut piscem_quant_cmd,
                 )?;
 
-                map_cmd_string = prog_utils::get_cmd_line_string(&piscem_quant_cmd);
+                let map_cmd_string = prog_utils::get_cmd_line_string(&piscem_quant_cmd);
                 info!("piscem map-sc cmd : {}", map_cmd_string);
-                sc_mapper = String::from("piscem");
-
-                let mut input_files = vec![
-                    index_base.with_extension("ctab"),
-                    index_base.with_extension("refinfo"),
-                    index_base.with_extension("sshash"),
-                ];
-                input_files.extend_from_slice(reads1);
-                input_files.extend_from_slice(reads2);
-
-                prog_utils::check_files_exist(&input_files)?;
+                prog_utils::check_piscem_index_files(index_base.as_path())?;
+                let mut read_inputs = Vec::new();
+                read_inputs.extend_from_slice(reads1);
+                read_inputs.extend_from_slice(reads2);
+                prog_utils::check_files_exist(&read_inputs)?;
 
                 let map_start = Instant::now();
-                let cres = prog_utils::execute_command(
-                    &mut piscem_quant_cmd,
-                    CommandVerbosityLevel::Quiet,
-                )
-                .expect("failed to execute piscem [mapping phase]");
-
-                // if we had to filter the reads through a fifo
-                // wait for the thread feeding the fifo to finish
+                exec::run_checked(&mut piscem_quant_cmd, "piscem [mapping phase]")?;
                 match frag_lib_xform {
                     FragmentTransformationType::TransformedIntoFifo(xform_data) => {
-                        // wait for it to join
                         match xform_data.join_handle.join() {
                             Ok(join_res) => {
                                 let xform_stats = join_res?;
@@ -608,7 +496,13 @@ being used by simpleaf"#,
                                 let failed = xform_stats.failed_parsing;
                                 info!(
                                     "seq_geom_xform : observed {} input fragments. {} ({:.2}%) of them failed to parse and were not transformed",
-                                    total, failed, if total > 0 { (failed as f64) / (total as f64) } else { 0_f64 } * 100_f64
+                                    total,
+                                    failed,
+                                    if total > 0 {
+                                        (failed as f64) / (total as f64)
+                                    } else {
+                                        0_f64
+                                    } * 100_f64
                                 );
                             }
                             Err(e) => {
@@ -616,25 +510,23 @@ being used by simpleaf"#,
                             }
                         }
                     }
-                    FragmentTransformationType::Identity => {
-                        // nothing to do.
-                    }
+                    FragmentTransformationType::Identity => {}
                 }
 
-                map_duration = map_start.elapsed();
-
-                if !cres.status.success() {
-                    bail!("piscem mapping failed with exit status {:?}", cres.status);
-                }
+                Ok(MappingStageOutput {
+                    sc_mapper: String::from("piscem"),
+                    map_cmd_string,
+                    map_output,
+                    map_duration: map_start.elapsed(),
+                })
             }
-            IndexType::Salmon(ref index_base) => {
-                // using a salmon index
-                let mut salmon_quant_cmd = std::process::Command::new(format!(
-                    "{}",
-                    rp.salmon.unwrap().exe_path.display()
-                ));
-
-                // set the input index and library type
+            IndexType::Salmon(index_base) => {
+                let salmon_prog_info =
+                    setup.rp.salmon.as_ref().context(
+                        "A salmon index is being used, but salmon program info is missing.",
+                    )?;
+                let mut salmon_quant_cmd =
+                    std::process::Command::new(format!("{}", salmon_prog_info.exe_path.display()));
                 let index_path = format!("{}", index_base.display());
                 salmon_quant_cmd
                     .arg("alevin")
@@ -643,55 +535,37 @@ being used by simpleaf"#,
                     .arg("-l")
                     .arg("A");
 
-                // check if we can parse the geometry directly, or if we are dealing with a
-                // "complex" geometry.
                 let frag_lib_xform = add_or_transform_fragment_library(
                     MapperType::Salmon,
-                    chem.fragment_geometry_str(),
+                    setup.chem.fragment_geometry_str(),
                     reads1,
                     reads2,
                     &mut salmon_quant_cmd,
                 )?;
 
-                // location of output directory, number of threads
-                map_output = opts.output.join("af_map");
+                let map_output = opts.output.join("af_map");
                 salmon_quant_cmd
                     .arg("--threads")
-                    .arg(format!("{}", threads))
+                    .arg(format!("{}", setup.threads))
                     .arg("-o")
                     .arg(&map_output);
-
-                // if the user explicitly requested to use selective-alignment
-                // then enable that
                 if opts.use_selective_alignment {
                     salmon_quant_cmd.arg("--rad");
                 } else {
-                    // otherwise default to sketch mode
                     salmon_quant_cmd.arg("--sketch");
                 }
 
-                map_cmd_string = prog_utils::get_cmd_line_string(&salmon_quant_cmd);
+                let map_cmd_string = prog_utils::get_cmd_line_string(&salmon_quant_cmd);
                 info!("salmon alevin cmd : {}", map_cmd_string);
-                sc_mapper = String::from("salmon");
-
                 let mut input_files = vec![index];
                 input_files.extend_from_slice(reads1);
                 input_files.extend_from_slice(reads2);
-
                 prog_utils::check_files_exist(&input_files)?;
 
                 let map_start = Instant::now();
-                let cres = prog_utils::execute_command(
-                    &mut salmon_quant_cmd,
-                    CommandVerbosityLevel::Quiet,
-                )
-                .expect("failed to execute salmon [mapping phase]");
-
-                // if we had to filter the reads through a fifo
-                // wait for the thread feeding the fifo to finish
+                exec::run_checked(&mut salmon_quant_cmd, "salmon [mapping phase]")?;
                 match frag_lib_xform {
                     FragmentTransformationType::TransformedIntoFifo(xform_data) => {
-                        // wait for it to join
                         match xform_data.join_handle.join() {
                             Ok(join_res) => {
                                 let xform_stats = join_res?;
@@ -699,7 +573,13 @@ being used by simpleaf"#,
                                 let failed = xform_stats.failed_parsing;
                                 info!(
                                     "seq_geom_xform : observed {} input fragments. {} ({:.2}%) of them failed to parse and were not transformed",
-                                    total, failed, if total > 0 { (failed as f64) / (total as f64) } else { 0_f64 } * 100_f64
+                                    total,
+                                    failed,
+                                    if total > 0 {
+                                        (failed as f64) / (total as f64)
+                                    } else {
+                                        0_f64
+                                    } * 100_f64
                                 );
                             }
                             Err(e) => {
@@ -707,35 +587,42 @@ being used by simpleaf"#,
                             }
                         }
                     }
-                    FragmentTransformationType::Identity => {
-                        // nothing to do.
-                    }
+                    FragmentTransformationType::Identity => {}
                 }
 
-                map_duration = map_start.elapsed();
-
-                if !cres.status.success() {
-                    bail!("salmon mapping failed with exit status {:?}", cres.status);
-                }
+                Ok(MappingStageOutput {
+                    sc_mapper: String::from("salmon"),
+                    map_cmd_string,
+                    map_output,
+                    map_duration: map_start.elapsed(),
+                })
             }
             IndexType::NoIndex => {
-                bail!("Cannot perform mapping an quantification without known (piscem or salmon) index!");
+                bail!(
+                    "Cannot perform mapping an quantification without known (piscem or salmon) index!"
+                );
             }
         }
     } else {
-        map_cmd_string = String::from("");
-        sc_mapper = String::from("");
-        map_output = opts
-            .map_dir
-            .expect("map-dir must be provided, since index, read1 and read2 were not.");
-        map_duration = Duration::new(0, 0);
+        Ok(MappingStageOutput {
+            sc_mapper: String::new(),
+            map_cmd_string: String::new(),
+            map_output: opts
+                .map_dir
+                .clone()
+                .context("map-dir must be provided, since index, read1 and read2 were not.")?,
+            map_duration: Duration::new(0, 0),
+        })
     }
+}
 
-    let map_output_string = map_output.display().to_string();
-
-    // make the quant directory
+fn run_quant_stage(
+    opts: &MapQuantOpts,
+    setup: &QuantSetup,
+    mapping: &MappingStageOutput,
+    pl_info: &mut CBListInfo,
+) -> anyhow::Result<QuantStageOutput> {
     let gpl_output = opts.output.join("af_quant");
-
     std::fs::create_dir_all(&gpl_output).with_context(|| {
         format!(
             "Failed to create quantification output directory {}",
@@ -743,16 +630,13 @@ being used by simpleaf"#,
         )
     })?;
 
-    // attempt to get the relevant information from map_info to propagate forward to the
-    // quantification directory
-    //get_mapping_info
-    let mapping_log = match index_type {
+    let mapping_log = match &setup.index_type {
         IndexType::Piscem(_) => {
-            let piscem_map_log_path = map_output.join("map_info.json");
+            let piscem_map_log_path = mapping.map_output.join("map_info.json");
             prog_parsing_utils::construct_json_from_piscem_log(piscem_map_log_path)?
         }
         IndexType::Salmon(_) => {
-            let salmon_log_path = map_output.join("logs").join("salmon_quant.log");
+            let salmon_log_path = mapping.map_output.join("logs").join("salmon_quant.log");
             prog_parsing_utils::construct_json_from_salmon_log(salmon_log_path)?
         }
         IndexType::NoIndex => {
@@ -765,152 +649,121 @@ being used by simpleaf"#,
             })
         }
     };
-
     let map_info_path = gpl_output.join("simpleaf_map_info.json");
     let map_info_file = std::fs::File::create(map_info_path)?;
     serde_json::to_writer(map_info_file, &mapping_log)?;
 
-    let alevin_fry = rp.alevin_fry.unwrap().exe_path;
-    // alevin-fry generate permit list
+    let alevin_fry = setup
+        .rp
+        .alevin_fry
+        .as_ref()
+        .context("Alevin-fry program info is missing; please run `simpleaf set-paths`.")?
+        .exe_path
+        .clone();
     let mut alevin_gpl_cmd = std::process::Command::new(format!("{}", &alevin_fry.display()));
-
+    let gpl_threads = setup.threads.min(8);
     alevin_gpl_cmd.arg("generate-permit-list");
-    alevin_gpl_cmd.arg("-i").arg(&map_output);
-    alevin_gpl_cmd.arg("-d").arg(ori.as_str());
-    alevin_gpl_cmd.arg("-t").arg(format!("{}", threads));
-
-    // add the filter mode
-    filter_meth.add_to_args(&mut alevin_gpl_cmd);
-
+    alevin_gpl_cmd.arg("-i").arg(&mapping.map_output);
+    alevin_gpl_cmd.arg("-d").arg(setup.ori.as_str());
+    alevin_gpl_cmd.arg("-t").arg(format!("{}", gpl_threads));
+    setup.filter_meth.add_to_args(&mut alevin_gpl_cmd);
     alevin_gpl_cmd.arg("-o").arg(&gpl_output);
-
-    info!(
-        "alevin-fry generate-permit-list cmd : {}",
-        prog_utils::get_cmd_line_string(&alevin_gpl_cmd)
-    );
-    let input_files = vec![map_output.clone()];
+    let gpl_cmd_string = prog_utils::get_cmd_line_string(&alevin_gpl_cmd);
+    info!("alevin-fry generate-permit-list cmd : {}", gpl_cmd_string);
+    let input_files = vec![mapping.map_output.clone()];
     prog_utils::check_files_exist(&input_files)?;
-
     let gpl_start = Instant::now();
-    let gpl_proc_out =
-        prog_utils::execute_command(&mut alevin_gpl_cmd, CommandVerbosityLevel::Quiet)
-            .expect("could not execute [generate permit list]");
+    exec::run_checked(&mut alevin_gpl_cmd, "[generate permit list]")?;
     let gpl_duration = gpl_start.elapsed();
 
-    if !gpl_proc_out.status.success() {
-        bail!(
-            "alevin-fry generate-permit-list failed with exit status {:?}",
-            gpl_proc_out.status
-        );
-    }
-
-    //
-    // collate
-    //
     let mut alevin_collate_cmd = std::process::Command::new(format!("{}", &alevin_fry.display()));
-
     alevin_collate_cmd.arg("collate");
     alevin_collate_cmd.arg("-i").arg(&gpl_output);
-    alevin_collate_cmd.arg("-r").arg(&map_output);
-    alevin_collate_cmd.arg("-t").arg(format!("{}", threads));
-
-    info!(
-        "alevin-fry collate cmd : {}",
-        prog_utils::get_cmd_line_string(&alevin_collate_cmd)
-    );
-    let input_files = vec![gpl_output.clone(), map_output];
+    alevin_collate_cmd.arg("-r").arg(&mapping.map_output);
+    alevin_collate_cmd
+        .arg("-t")
+        .arg(format!("{}", setup.threads));
+    let collate_cmd_string = prog_utils::get_cmd_line_string(&alevin_collate_cmd);
+    info!("alevin-fry collate cmd : {}", collate_cmd_string);
+    let input_files = vec![gpl_output.clone(), mapping.map_output.clone()];
     prog_utils::check_files_exist(&input_files)?;
-
     let collate_start = Instant::now();
-    let collate_proc_out =
-        prog_utils::execute_command(&mut alevin_collate_cmd, CommandVerbosityLevel::Quiet)
-            .expect("could not execute [collate]");
+    exec::run_checked(&mut alevin_collate_cmd, "[collate]")?;
     let collate_duration = collate_start.elapsed();
 
-    if !collate_proc_out.status.success() {
-        bail!(
-            "alevin-fry collate failed with exit status {:?}",
-            collate_proc_out.status
-        );
-    }
-
-    //
-    // quant
-    //
     let mut alevin_quant_cmd = std::process::Command::new(format!("{}", &alevin_fry.display()));
-
     alevin_quant_cmd
         .arg("quant")
         .arg("-i")
         .arg(&gpl_output)
         .arg("-o")
         .arg(&gpl_output);
-    alevin_quant_cmd.arg("-t").arg(format!("{}", threads));
-    alevin_quant_cmd.arg("-m").arg(t2g_map_file.clone());
-    alevin_quant_cmd.arg("-r").arg(opts.resolution);
-
+    alevin_quant_cmd.arg("-t").arg(format!("{}", setup.threads));
+    alevin_quant_cmd.arg("-m").arg(setup.t2g_map_file.clone());
+    alevin_quant_cmd.arg("-r").arg(&opts.resolution);
+    let quant_cmd_string = prog_utils::get_cmd_line_string(&alevin_quant_cmd);
     info!("cmd : {:?}", alevin_quant_cmd);
-
-    let input_files = vec![gpl_output.clone(), t2g_map_file];
+    let input_files = vec![gpl_output.clone(), setup.t2g_map_file.clone()];
     prog_utils::check_files_exist(&input_files)?;
-
     let quant_start = Instant::now();
-    let quant_proc_out =
-        prog_utils::execute_command(&mut alevin_quant_cmd, CommandVerbosityLevel::Quiet)
-            .expect("could not execute [quant]");
+    exec::run_checked(&mut alevin_quant_cmd, "[quant]")?;
     let quant_duration = quant_start.elapsed();
 
-    if !quant_proc_out.status.success() {
-        bail!("quant failed with exit status {:?}", quant_proc_out.status);
-    }
-
-    // If we had a gene_id_to_name.tsv file handy, copy it over into the
-    // quantification directory.
-    if let Some(gene_name_path) = gene_id_to_name_opt {
+    if let Some(gene_name_path) = &setup.gene_id_to_name_opt {
         let target_path = gpl_output.join("gene_id_to_name.tsv");
-        match std::fs::copy(&gene_name_path, &target_path) {
+        match std::fs::copy(gene_name_path, &target_path) {
             Ok(_) => {
-                info!("successfully copied the gene_name_to_id.tsv file into the quantification directory.");
+                info!(
+                    "successfully copied the gene_name_to_id.tsv file into the quantification directory."
+                );
             }
             Err(err) => {
-                warn!("could not successfully copy gene_id_to_name file from {:?} to {:?} because of {:?}",
-                gene_name_path, target_path, err
-            );
+                warn!(
+                    "could not successfully copy gene_id_to_name file from {:?} to {:?} because of {:?}",
+                    gene_name_path, target_path, err
+                );
             }
         }
     }
 
-    // If a permit/explit list with auxilary info was provided,
-    // we add the auxilary info to the barcodes.tsv file.
     let quants_mat_rows_p = gpl_output.join("alevin").join("quants_mat_rows.txt");
     pl_info.update_af_quant_barcodes_tsv(&quants_mat_rows_p)?;
 
-    let mut convert_duration = None;
-    if opts.anndata_out {
-        let convert_start = Instant::now();
-        let opath = gpl_output.join("alevin").join("quants.h5ad");
-        af_anndata::convert_csr_to_anndata(&gpl_output, &opath)?;
-        convert_duration = Some(convert_start.elapsed());
-    }
+    Ok(QuantStageOutput {
+        gpl_output,
+        gpl_cmd_string,
+        collate_cmd_string,
+        quant_cmd_string,
+        gpl_duration,
+        collate_duration,
+        quant_duration,
+    })
+}
 
+fn write_quant_log(
+    opts: &MapQuantOpts,
+    mapping: &MappingStageOutput,
+    quant_stage: &QuantStageOutput,
+    convert_duration: Option<Duration>,
+) -> anyhow::Result<()> {
     let af_quant_info_file = opts.output.join("simpleaf_quant_log.json");
     let mut af_quant_info = json!({
         "time_info" : {
-        "map_time" : map_duration,
-        "gpl_time" : gpl_duration,
-        "collate_time" : collate_duration,
-        "quant_time" : quant_duration
+        "map_time" : mapping.map_duration,
+        "gpl_time" : quant_stage.gpl_duration,
+        "collate_time" : quant_stage.collate_duration,
+        "quant_time" : quant_stage.quant_duration
     },
         "cmd_info" : {
-        "map_cmd" : map_cmd_string,
-        "gpl_cmd" : prog_utils::get_cmd_line_string(&alevin_gpl_cmd),
-        "collate_cmd" : prog_utils::get_cmd_line_string(&alevin_collate_cmd),
-        "quant_cmd" : prog_utils::get_cmd_line_string(&alevin_quant_cmd)
+        "map_cmd" : mapping.map_cmd_string,
+        "gpl_cmd" : quant_stage.gpl_cmd_string,
+        "collate_cmd" : quant_stage.collate_cmd_string,
+        "quant_cmd" : quant_stage.quant_cmd_string
     },
         "map_info" : {
-        "mapper" : sc_mapper,
-        "map_cmd" : map_cmd_string,
-        "map_outdir": map_output_string
+        "mapper" : mapping.sc_mapper,
+        "map_cmd" : mapping.map_cmd_string,
+        "map_outdir": mapping.map_output.display().to_string()
     }
     });
 
@@ -918,12 +771,106 @@ being used by simpleaf"#,
         af_quant_info["time_info"]["conversion_time"] = json!(ctime);
     }
 
-    // write the relevant info about
-    // our run to file.
-    std::fs::write(
-        &af_quant_info_file,
-        serde_json::to_string_pretty(&af_quant_info).unwrap(),
-    )
-    .with_context(|| format!("could not write {}", af_quant_info_file.display()))?;
+    io::write_json_pretty_atomic(&af_quant_info_file, &af_quant_info)?;
     Ok(())
+}
+
+pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<()> {
+    validate_map_and_quant_opts(&opts)?;
+    let (setup, mut pl_info) = resolve_quant_setup(af_home_path, &opts)?;
+    let mapping = run_mapping_stage(&opts, &setup)?;
+    let quant_stage = run_quant_stage(&opts, &setup, &mapping, &mut pl_info)?;
+
+    let mut convert_duration = None;
+    if opts.anndata_out {
+        let convert_start = Instant::now();
+        let opath = quant_stage.gpl_output.join("alevin").join("quants.h5ad");
+        af_anndata::convert_csr_to_anndata(&quant_stage.gpl_output, &opath)?;
+        convert_duration = Some(convert_start.elapsed());
+    }
+
+    write_quant_log(&opts, &mapping, &quant_stage, convert_duration)
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use crate::utils::af_utils::RnaChemistry;
+    use crate::{Cli, Commands};
+
+    use super::*;
+
+    fn parse_quant_opts(args: &[&str]) -> MapQuantOpts {
+        let mut cli_args = vec!["simpleaf"];
+        cli_args.extend_from_slice(args);
+        match Cli::parse_from(cli_args).command {
+            Commands::Quant(opts) => opts,
+            cmd => panic!("expected quant command, found {:?}", cmd),
+        }
+    }
+
+    fn minimal_no_index_setup() -> QuantSetup {
+        QuantSetup {
+            rp: ReqProgs {
+                salmon: None,
+                piscem: None,
+                alevin_fry: None,
+                macs: None,
+            },
+            index_type: IndexType::NoIndex,
+            t2g_map_file: PathBuf::from("/tmp/t2g.tsv"),
+            gene_id_to_name_opt: None,
+            chem: Chemistry::Rna(RnaChemistry::TenxV3),
+            ori: ExpectedOri::Forward,
+            filter_meth: CellFilterMethod::KneeFinding,
+            threads: 1,
+        }
+    }
+
+    #[test]
+    fn mapping_stage_no_index_uses_map_dir() {
+        let opts = parse_quant_opts(&[
+            "quant",
+            "-c",
+            "10xv3",
+            "-o",
+            "/tmp/out",
+            "-r",
+            "cr-like",
+            "--knee",
+            "--map-dir",
+            "/tmp/mapped",
+        ]);
+        let setup = minimal_no_index_setup();
+        let stage = run_mapping_stage(&opts, &setup).expect("mapping stage should succeed");
+        assert_eq!(stage.map_output, PathBuf::from("/tmp/mapped"));
+        assert_eq!(stage.sc_mapper, "");
+    }
+
+    #[test]
+    fn mapping_stage_no_index_fails_without_map_dir() {
+        let mut opts = parse_quant_opts(&[
+            "quant",
+            "-c",
+            "10xv3",
+            "-o",
+            "/tmp/out",
+            "-r",
+            "cr-like",
+            "--knee",
+            "--map-dir",
+            "/tmp/mapped",
+        ]);
+        opts.map_dir = None;
+        opts.index = None;
+
+        let setup = minimal_no_index_setup();
+        let err = run_mapping_stage(&opts, &setup).expect_err("expected missing map-dir to fail");
+        assert!(
+            format!("{:#}", err).contains("map-dir must be provided"),
+            "unexpected error: {:#}",
+            err
+        );
+    }
 }
