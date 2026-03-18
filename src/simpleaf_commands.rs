@@ -646,10 +646,6 @@ pub struct FlexQuantOpts {
         help_heading = "Piscem Mapping Options")]
     pub skipping_strategy: String,
 
-    /// If piscem >= 0.7.0, enable structural constraints
-    #[arg(long, help_heading = "Piscem Mapping Options")]
-    pub struct_constraints: bool,
-
     /// Maximum cardinality equivalence class to examine
     #[arg(long, default_value_t = DefaultParams::MAX_EC_CARD, help_heading = "Piscem Mapping Options")]
     pub max_ec_card: u32,

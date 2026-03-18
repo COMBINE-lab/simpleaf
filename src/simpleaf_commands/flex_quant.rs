@@ -198,9 +198,6 @@ pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result
         .arg("-o").arg(&map_output)
         .arg("-t").arg(format!("{}", opts.threads));
 
-    if opts.struct_constraints {
-        piscem_cmd.arg("--struct-constraints");
-    }
     piscem_cmd
         .arg("--skipping-strategy").arg(&opts.skipping_strategy)
         .arg("--max-ec-card").arg(format!("{}", opts.max_ec_card));
