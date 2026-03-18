@@ -417,6 +417,27 @@ fn is_builtin(s: &str) -> Option<&str> {
     }
 }
 
+/// Returns true if the geometry string contains piscem-extended tags
+/// that seq_geom_parser doesn't understand: `s[N]` (sample barcode)
+/// or numbered barcodes like `b0[N]`, `b1[N]`.
+fn has_piscem_extended_tags(geo: &str) -> bool {
+    // Match s[<digits>] — sample barcode tag
+    // Match b<digit>[<digits>] — numbered barcode tag (b0[16], b1[8], etc.)
+    let bytes = geo.as_bytes();
+    for i in 0..bytes.len() {
+        if bytes[i] == b's' && bytes.get(i + 1) == Some(&b'[') {
+            return true;
+        }
+        if bytes[i] == b'b'
+            && bytes.get(i + 1).is_some_and(|c| c.is_ascii_digit())
+            && bytes.get(i + 2) == Some(&b'[')
+        {
+            return true;
+        }
+    }
+    false
+}
+
 /// determines if a given geometry string is valid; if so
 /// it returns `Ok(())`, otherwise it returns an `anyhow::Error` describing
 /// why parsing failed.
@@ -429,6 +450,15 @@ pub fn validate_geometry(geo: &str) -> Result<()> {
             builtin_kwd
         );
         Ok(()) //bail!("The provided geometry is a builtin keyword [{}] (preceeded by \"__\") and so no attempt was made to parse it", builtin_kwd);
+    } else if has_piscem_extended_tags(geo) {
+        // Geometries with piscem-only extensions (e.g. s[N] for sample
+        // barcodes, bN[L] for numbered barcodes) cannot be parsed by
+        // seq_geom_parser. These are validated by piscem at mapping time.
+        debug!(
+            "geometry string contains piscem-extended tags (s[]/b<N>[]), skipping seq_geom_parser validation: {}",
+            geo
+        );
+        Ok(())
     } else {
         let fg = FragmentGeomDesc::try_from(geo);
         match fg {
