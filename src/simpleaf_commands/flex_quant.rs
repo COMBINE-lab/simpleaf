@@ -76,13 +76,17 @@ pub fn convert_probe_csv_to_fasta(
         num_probes += 1;
         if included {
             num_included += 1;
-            writeln!(fasta_writer, ">{}", probe_id)?;
-            writeln!(fasta_writer, "{}", probe_seq)?;
-            writeln!(t2g_writer, "{}\t{}", probe_id, gene_id)?;
-            genes.insert(gene_id.to_string());
         } else {
             num_excluded += 1;
         }
+        // All probes (included and excluded) go into the FASTA and t2g map.
+        // The index contains all probes, so quant needs a t2g entry for every
+        // reference. Excluded probes still map to their gene — they simply
+        // won't contribute meaningful counts in practice.
+        writeln!(fasta_writer, ">{}", probe_id)?;
+        writeln!(fasta_writer, "{}", probe_seq)?;
+        writeln!(t2g_writer, "{}\t{}", probe_id, gene_id)?;
+        genes.insert(gene_id.to_string());
     }
 
     fasta_writer.flush()?;
@@ -188,7 +192,7 @@ pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result
     info!("Mapping reads with piscem...");
     let mut piscem_cmd = std::process::Command::new(&piscem_info.exe_path);
     piscem_cmd
-        .arg("map-sc")
+        .arg("map-scrna")
         .arg("-i").arg(&index_path)
         .arg("-g").arg(chem.geometry())
         .arg("-o").arg(&map_output)
