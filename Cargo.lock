@@ -1069,7 +1069,8 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 [[package]]
 name = "grangers"
 version = "0.5.0"
-source = "git+https://github.com/COMBINE-lab/grangers.git?branch=dev#89af5b9d6a5b7419b7d23b071086cd7e0eba0e99"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "032cdf7200789c1293dcf73bd77c36cc6c24269f457fe8915ec9af8d28e89e61"
 dependencies = [
  "anyhow",
  "flate2",
@@ -3245,7 +3246,8 @@ dependencies = [
 [[package]]
 name = "roers"
 version = "0.4.0"
-source = "git+https://github.com/COMBINE-lab/roers?branch=main#8431884d0dd050fdfe282662875a091a30e9536c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "375fe06c99be7bec21cb20b07789495344e44dd15de91d33b19a9e1d7a626ddf"
 dependencies = [
  "anyhow",
  "clap",
@@ -3369,7 +3371,8 @@ checksum = "d767eb0aabc880b29956c35734170f26ed551a859dbd361d140cdbeca61ab1e2"
 [[package]]
 name = "seq_geom_parser"
 version = "0.3.0"
-source = "git+https://github.com/COMBINE-lab/seq_geom_parser?branch=dev#f5f3f9f7e367f8ca695f9cb6f05ec08908d83f12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23e45cc50b1659c474bd9c66fdfe2fcfd6162d019c55583a292f4f5f81a1a374"
 dependencies = [
  "anyhow",
  "pest",
@@ -3379,7 +3382,8 @@ dependencies = [
 [[package]]
 name = "seq_geom_xform"
 version = "0.4.0"
-source = "git+https://github.com/COMBINE-lab/seq_geom_xform?branch=dev#445dab7154708e8d6dd36d6bb3b3fd953b7d5767"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de4d8eae4667ef48679dadb64cf961a8ab6a69b85a16e35cdfdb4e9207377cfd"
 dependencies = [
  "anyhow",
  "clap",
