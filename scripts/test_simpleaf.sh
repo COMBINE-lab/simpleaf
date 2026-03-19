@@ -29,7 +29,7 @@ function cleanup {
 
 # implementation of script starts here
 echo "  - Downloading the toy read-reference set"
-wget https://umd.box.com/shared/static/lx2xownlrhz3us8496tyu9c4dgade814.gz  -O  ${WORK_DIR}/toy_read_ref_set.tar.gz -q
+wget https://umd.box.com/shared/static/z8d0v1xqi1jznlx1o8u1o2hxs1n4z1fl  -O  ${WORK_DIR}/toy_read_ref_set.tar.gz -q
 tar -xf ${WORK_DIR}/toy_read_ref_set.tar.gz -C ${WORK_DIR}
 
 echo "  - Testing simpleaf set-paths"

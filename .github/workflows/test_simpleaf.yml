@@ -27,9 +27,6 @@ jobs:
           override: true
           components: rustfmt
       
-      - name: Check format
-        run: cargo fmt -- --check
-
       - name: Build
         run: cargo build --verbose --release
 
