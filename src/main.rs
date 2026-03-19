@@ -101,6 +101,11 @@ fn main() -> anyhow::Result<()> {
         // if we are running mapping and quantification
         Commands::Quant(map_quant_opts) => map_and_quant(af_home_path.as_path(), map_quant_opts),
 
+        // if we are running Flex GEX quantification
+        Commands::FlexQuant(flex_opts) => {
+            flex_quant::flex_map_and_quant(af_home_path.as_path(), flex_opts)
+        }
+
         // indexing for ATAC-seq data
         Commands::Atac(AtacCommand::Index(index_opts)) => {
             atac::index::piscem_index(af_home_path.as_path(), &index_opts)
