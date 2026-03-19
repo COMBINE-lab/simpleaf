@@ -33,6 +33,18 @@ run() {
     "$@"
 }
 
+collect_git_dependencies() {
+    awk '
+        /^\[dependencies\]/ { in_deps=1; next }
+        in_deps && /^\[/ { in_deps=0 }
+        in_deps && /^[[:space:]]*[A-Za-z0-9_.-]+[[:space:]]*=/ && /git[[:space:]]*=/ {
+            sub(/[[:space:]]*=.*/, "", $0)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0)
+            print $0
+        }
+    ' "$ROOT_CARGO"
+}
+
 is_valid_semver() {
     local version="$1"
     local semver_regex='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$'
@@ -306,10 +318,19 @@ echo
 
 echo "Preflight checks before changing version"
 cargo check -q
-TMP_TARGET_DIR="$(mktemp -d "${TMPDIR:-/tmp}/simpleaf-release-check.XXXXXX")"
-CARGO_TARGET_DIR="$TMP_TARGET_DIR" cargo package --offline --allow-dirty --no-verify >/dev/null
-rm -rf "$TMP_TARGET_DIR"
-TMP_TARGET_DIR=""
+if [[ "$PUBLISH" == true ]]; then
+    mapfile -t git_dependencies < <(collect_git_dependencies)
+    if ((${#git_dependencies[@]} > 0)); then
+        die "crates.io publish is currently blocked by git dependencies in $ROOT_CARGO: ${git_dependencies[*]}"
+    fi
+
+    TMP_TARGET_DIR="$(mktemp -d "${TMPDIR:-/tmp}/simpleaf-release-check.XXXXXX")"
+    CARGO_TARGET_DIR="$TMP_TARGET_DIR" cargo package --allow-dirty --no-verify >/dev/null
+    rm -rf "$TMP_TARGET_DIR"
+    TMP_TARGET_DIR=""
+else
+    echo "Skipping cargo package preflight; re-run with --publish to validate crates.io packaging"
+fi
 
 echo "Updating $ROOT_CARGO"
 echo "  version: $CURRENT_VERSION -> $VERSION"
@@ -358,13 +379,19 @@ fi
 echo
 echo "Post-bump validation"
 if [[ "$DRY_RUN" == true ]]; then
-    echo "Dry-run: would run cargo check and cargo package against the bumped version"
+    if [[ "$PUBLISH" == true ]]; then
+        echo "Dry-run: would run cargo check and cargo package against the bumped version"
+    else
+        echo "Dry-run: would run cargo check against the bumped version"
+    fi
 else
     cargo check -q
-    TMP_TARGET_DIR="$(mktemp -d "${TMPDIR:-/tmp}/simpleaf-release-check.XXXXXX")"
-    CARGO_TARGET_DIR="$TMP_TARGET_DIR" cargo package --offline --allow-dirty --no-verify >/dev/null
-    rm -rf "$TMP_TARGET_DIR"
-    TMP_TARGET_DIR=""
+    if [[ "$PUBLISH" == true ]]; then
+        TMP_TARGET_DIR="$(mktemp -d "${TMPDIR:-/tmp}/simpleaf-release-check.XXXXXX")"
+        CARGO_TARGET_DIR="$TMP_TARGET_DIR" cargo package --allow-dirty --no-verify >/dev/null
+        rm -rf "$TMP_TARGET_DIR"
+        TMP_TARGET_DIR=""
+    fi
 fi
 
 run git add "$ROOT_CARGO" "$LOCKFILE"
