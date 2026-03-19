@@ -122,10 +122,11 @@ impl clap::ValueEnum for Organism {
 }
 
 /// Protocol type — distinguishes standard scRNA from Flex, ATAC, etc.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub enum ProtocolType {
     /// Standard single-cell RNA-seq (10x Chromium, etc.)
     #[serde(rename = "standard_rna")]
+    #[default]
     StandardRna,
     /// 10x Flex gene expression (probe-based, multi-barcode)
     #[serde(rename = "flex_gex")]
@@ -133,12 +134,6 @@ pub enum ProtocolType {
     /// scATAC-seq
     #[serde(rename = "atac")]
     Atac,
-}
-
-impl Default for ProtocolType {
-    fn default() -> Self {
-        ProtocolType::StandardRna
-    }
 }
 
 /// Info for fetching the probe/sample barcode list (for Flex protocols).

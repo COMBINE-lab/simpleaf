@@ -52,8 +52,8 @@ pub fn convert_probe_csv_to_fasta(
         let line = line?;
         let trimmed = line.trim();
 
-        if trimmed.starts_with('#') {
-            if let Some((key, val)) = trimmed[1..].split_once('=') {
+        if let Some(stripped) = trimmed.strip_prefix('#') {
+            if let Some((key, val)) = stripped.split_once('=') {
                 metadata.insert(key.to_string(), serde_json::Value::String(val.to_string()));
             }
             continue;

@@ -183,7 +183,7 @@ impl CellFilterMethod {
 pub enum Chemistry {
     Rna(RnaChemistry),
     Atac(AtacChemistry),
-    Custom(CustomChemistry),
+    Custom(Box<CustomChemistry>),
 }
 
 impl QueryInRegistry for Chemistry {
@@ -312,7 +312,7 @@ impl Chemistry {
                         s,
                         chem.geometry()
                     );
-                    Chemistry::Custom(chem)
+                    Chemistry::Custom(Box::new(chem))
                 } else {
                     // we want to bail with an error if the chemistry is *known* but
                     // not supported using this mapper (i.e. if it is a piscem-specific chem
@@ -325,12 +325,14 @@ impl Chemistry {
                             index_type.counterpart().as_str()
                         );
                     }
-                    Chemistry::Custom(CustomChemistry::simple_custom(s).with_context(|| {
-                        format!(
-                            "Could not parse the provided chemistry {}. Please ensure it is a valid chemistry string wrapped by quotes or that it is defined in the custom_chemistries.json file.",
-                            s
-                        )
-                    })?)
+                    Chemistry::Custom(Box::new(
+                        CustomChemistry::simple_custom(s).with_context(|| {
+                            format!(
+                                "Could not parse the provided chemistry {}. Please ensure it is a valid chemistry string wrapped by quotes or that it is defined in the custom_chemistries.json file.",
+                                s
+                            )
+                        })?,
+                    ))
                 }
             }
         };
