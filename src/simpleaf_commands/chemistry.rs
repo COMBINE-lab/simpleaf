@@ -406,6 +406,8 @@ pub fn add_chemistry(
         remote_pl_url: add_opts.remote_url,
         version,
         meta,
+        sample_bc_list: None,
+        probe_sets: None,
     };
 
     let mut chem_hm = get_custom_chem_hm(&chem_p)?;

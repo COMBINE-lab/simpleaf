@@ -75,6 +75,86 @@ impl ExpectedOri {
     }
 }
 
+/// Target organism for probe set selection in Flex protocols.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum Organism {
+    #[serde(rename = "human")]
+    Human,
+    #[serde(rename = "mouse")]
+    Mouse,
+    #[serde(untagged)]
+    Other(String),
+}
+
+impl std::str::FromStr for Organism {
+    type Err = std::convert::Infallible;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s.to_lowercase().as_str() {
+            "human" => Organism::Human,
+            "mouse" => Organism::Mouse,
+            other => Organism::Other(other.to_string()),
+        })
+    }
+}
+
+impl fmt::Display for Organism {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Organism::Human => write!(f, "human"),
+            Organism::Mouse => write!(f, "mouse"),
+            Organism::Other(s) => write!(f, "{}", s),
+        }
+    }
+}
+
+impl clap::ValueEnum for Organism {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Organism::Human, Organism::Mouse]
+    }
+
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        match self {
+            Organism::Human => Some(clap::builder::PossibleValue::new("human")),
+            Organism::Mouse => Some(clap::builder::PossibleValue::new("mouse")),
+            Organism::Other(_) => None,
+        }
+    }
+}
+
+/// Protocol type — distinguishes standard scRNA from Flex, ATAC, etc.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+pub enum ProtocolType {
+    /// Standard single-cell RNA-seq (10x Chromium, etc.)
+    #[serde(rename = "standard_rna")]
+    #[default]
+    StandardRna,
+    /// 10x Flex gene expression (probe-based, multi-barcode)
+    #[serde(rename = "flex_gex")]
+    FlexGex,
+    /// scATAC-seq
+    #[serde(rename = "atac")]
+    Atac,
+}
+
+/// Info for fetching the probe/sample barcode list (for Flex protocols).
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct SampleBcListInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plist_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote_url: Option<String>,
+}
+
+/// Info for a specific probe set (organism-specific, for Flex protocols).
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct ProbeSetInfo {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plist_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote_url: Option<String>,
+}
+
 /// A CustomChemistry is a description of a chemistry that is not
 /// covered under the different built-in chemistries.  It defines the
 /// relevant information about how a chemistry should be defined including
@@ -90,10 +170,16 @@ pub struct CustomChemistry {
     pub version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plist_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "remote_url")]
     pub remote_pl_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meta: Option<Value>,
+    /// Probe/sample barcode list info (for Flex protocols)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sample_bc_list: Option<SampleBcListInfo>,
+    /// Probe sets keyed by organism (for Flex protocols)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub probe_sets: Option<HashMap<String, ProbeSetInfo>>,
 }
 
 /// The key to use to query a custom chemistry
@@ -115,6 +201,8 @@ impl CustomChemistry {
             plist_name: None,
             remote_pl_url: None,
             meta: None,
+            sample_bc_list: None,
+            probe_sets: None,
         })
     }
     pub fn geometry(&self) -> &str {
@@ -147,6 +235,20 @@ impl CustomChemistry {
 
     pub fn meta(&self) -> &Option<Value> {
         &self.meta
+    }
+
+    /// Get the protocol type from meta.protocol_type, defaulting to StandardRna.
+    pub fn protocol_type(&self) -> ProtocolType {
+        self.meta
+            .as_ref()
+            .and_then(|m| m.get("protocol_type"))
+            .and_then(|v| serde_json::from_value::<ProtocolType>(v.clone()).ok())
+            .unwrap_or_default()
+    }
+
+    /// Whether this chemistry is a Flex GEX protocol.
+    pub fn is_flex_gex(&self) -> bool {
+        self.protocol_type() == ProtocolType::FlexGex
     }
 }
 

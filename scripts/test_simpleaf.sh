@@ -29,7 +29,7 @@ function cleanup {
 
 # implementation of script starts here
 echo "  - Downloading the toy read-reference set"
-wget https://umd.box.com/shared/static/lx2xownlrhz3us8496tyu9c4dgade814.gz  -O  ${WORK_DIR}/toy_read_ref_set.tar.gz -q
+wget https://umd.box.com/shared/static/z8d0v1xqi1jznlx1o8u1o2hxs1n4z1fl  -O  ${WORK_DIR}/toy_read_ref_set.tar.gz -q
 tar -xf ${WORK_DIR}/toy_read_ref_set.tar.gz -C ${WORK_DIR}
 
 echo "  - Testing simpleaf set-paths"
@@ -53,7 +53,7 @@ else
 fi
 
 echo "  - Testing simpleaf index"
-REF_DIR="${WORK_DIR}/toy_ref_read/toy_human_ref"
+REF_DIR="${WORK_DIR}/toy_read_ref_set/toy_human_ref"
 index_cmd="ALEVIN_FRY_HOME=$ALEVIN_FRY_HOME \
 ${SIMPLEAF} index --ref-type spliced+intronic -f ${REF_DIR}/fasta/genome.fa \
 -g ${REF_DIR}/genes/genes.gtf \
@@ -69,7 +69,7 @@ else
 fi
 
 echo "  - Testing simpleaf quant"
-FASTQ_DIR="${WORK_DIR}/toy_ref_read/toy_read_fastq"
+FASTQ_DIR="${WORK_DIR}/toy_read_ref_set/toy_read_fastq"
 quant_cmd="ALEVIN_FRY_HOME=$ALEVIN_FRY_HOME \
 ${SIMPLEAF} quant \
 -1 ${FASTQ_DIR}/selected_R1_reads.fastq \

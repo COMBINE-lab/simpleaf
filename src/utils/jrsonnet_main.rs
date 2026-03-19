@@ -192,9 +192,8 @@ impl From<ErrorKind> for Error {
 }
 
 fn main_catch(opts: Opts) -> anyhow::Result<String> {
-    let s = State::default();
     let trace = opts.trace.trace_format();
-    let eval_result = main_real(&s, opts);
+    let eval_result = main_real(opts);
     match eval_result {
         Ok(js) => Ok(js),
         Err(e) => {
@@ -211,18 +210,20 @@ fn main_catch(opts: Opts) -> anyhow::Result<String> {
     }
 }
 
-fn main_real(s: &State, opts: Opts) -> Result<String, Error> {
+fn main_real(opts: Opts) -> Result<String, Error> {
     let _gc_leak_guard = opts.gc.leak_on_exit();
     let _gc_print_stats = opts.gc.stats_printer();
     let _stack_depth_override = opts.misc.stack_size_override();
 
     let import_resolver = opts.misc.import_resolver();
-    s.set_import_resolver(import_resolver);
+    let mut state_builder = State::builder();
+    state_builder.import_resolver(import_resolver);
 
-    let std = opts.std.context_initializer(s)?;
+    let std = opts.std.context_initializer()?;
     if let Some(std) = std {
-        s.set_context_initializer(std);
+        state_builder.context_initializer(std);
     }
+    let s = state_builder.build();
 
     let input = opts.input.input.ok_or(Error::MissingInputArgument)?;
     let val = s.import(input)?;

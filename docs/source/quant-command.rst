@@ -1,6 +1,8 @@
 ``quant`` command
 =================
 
+For 10x Flex Gene Expression data, use :doc:`/flex-quant-command` instead. The ``quant`` command documented here covers the standard ``simpleaf`` quantification workflow for non-Flex chemistries.
+
 
 The ``quant`` command takes as input **either**:
   1) the index, reads, and relevant information about the experiment (e.g. the chemistry) OR
@@ -95,4 +97,3 @@ The relevant options (which you can obtain by running ``simpleaf quant -h``) are
 
     Output Options:
           --anndata-out  Generate an anndata (h5ad format) count matrix from the standard (matrix-market format) output
-
