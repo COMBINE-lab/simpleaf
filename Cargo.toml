@@ -66,9 +66,9 @@ time = { version = "^0.3.41", features = [
   "serde-human-readable",
 ] }
 which = "8.0.2"
-jrsonnet-evaluator = "0.5.0-pre95"
-jrsonnet-cli = "0.5.0-pre95"
-jrsonnet-parser = "0.5.0-pre95"
+jrsonnet-evaluator = "=0.5.0-pre97"
+jrsonnet-cli = "=0.5.0-pre97"
+jrsonnet-parser = "=0.5.0-pre97"
 thiserror = "2.0.12"
 phf = { version = "0.13.1", features = ["macros"] }
 chrono = "0.4.40"
