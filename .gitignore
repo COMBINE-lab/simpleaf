@@ -22,6 +22,10 @@ TEST_REF
 TEST_REF_CLAPV4
 TEST_REF_ROERS
 blarg
+gencode_v49_simpleaf/
+pbmc_1k_v3_test_quant/
+pbmc_1k_v3_test_quant_new/
+scripts/download_accessions_rush.sh
 
 # macOS Finder metadata
 **/.DS_Store
