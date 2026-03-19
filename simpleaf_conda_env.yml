@@ -6,5 +6,5 @@ channels:
   - bioconda
 
 dependencies:
-  - alevin-fry>=0.20.0
+  - alevin-fry>=0.12.0
   - piscem>=0.17.1
