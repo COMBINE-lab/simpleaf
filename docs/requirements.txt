@@ -1,4 +1,5 @@
 ####### 
 #
 ###### Custom themes (no version specifiers) ######
+sphinx
 furo

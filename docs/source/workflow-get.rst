@@ -30,8 +30,8 @@ Usually, a published workflow contains four sections:
 For most users, the ``fast_config`` is the only section needed to instantiate the template. To fill the missing information, one just needs to replace the ``null`` with a meaningful value. For more details, please check out dedicated tutorial on `running workflows from an published template <https://combine-lab.github.io/alevin-fry-tutorials/2023/running-simpleaf-workflow/>`_.
 
 
-Full Usage
-^^^^^^^^^^
+Get Usage
+^^^^^^^^^
 
 The relevant options (which you can obtain by running ``simpleaf workflow get -h``) are:
 
@@ -46,6 +46,5 @@ The relevant options (which you can obtain by running ``simpleaf workflow get -h
       -n, --name <NAME>      name of the queried workflow
       -h, --help             Print help
       -V, --version          Print version
-
 
 
