@@ -50,7 +50,7 @@ clap = { version = "4.5.37", features = [
   "usage",
   "error-context",
 ] }
-cmd_lib = "^2.0.0"
+cmd_lib = "^1.9.6"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", default-features = true, features = [
   "env-filter",
