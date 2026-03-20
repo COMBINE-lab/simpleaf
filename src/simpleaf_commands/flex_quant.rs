@@ -11,6 +11,7 @@ use crate::core::{context, exec};
 use crate::simpleaf_commands::FlexQuantOpts;
 use crate::utils::chem_utils::{CustomChemistry, CustomChemistryMap};
 use crate::utils::constants::CHEMISTRIES_PATH;
+use crate::utils::probe_utils;
 use crate::utils::prog_utils;
 
 use anyhow::{Context, bail};
@@ -19,101 +20,6 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tracing::{info, warn};
-
-/// Convert a 10x probe set CSV file to a FASTA file suitable for indexing.
-///
-/// Also generates a transcript-to-gene (t2g) map and extracts probe set metadata.
-/// Returns (fasta_path, t2g_path, metadata_json).
-pub fn convert_probe_csv_to_fasta(
-    csv_path: &Path,
-    output_dir: &Path,
-) -> anyhow::Result<(PathBuf, PathBuf, serde_json::Value)> {
-    std::fs::create_dir_all(output_dir)?;
-
-    let file = std::fs::File::open(csv_path)
-        .with_context(|| format!("couldn't open probe CSV: {}", csv_path.display()))?;
-    let reader = BufReader::new(file);
-
-    let fasta_path = output_dir.join("probes.fa");
-    let t2g_path = output_dir.join("probe_t2g.tsv");
-    let meta_path = output_dir.join("probe_set_info.json");
-
-    let mut fasta_writer = std::io::BufWriter::new(std::fs::File::create(&fasta_path)?);
-    let mut t2g_writer = std::io::BufWriter::new(std::fs::File::create(&t2g_path)?);
-
-    let mut metadata = serde_json::Map::new();
-    let mut num_probes = 0u64;
-    let mut num_included = 0u64;
-    let mut num_excluded = 0u64;
-    let mut genes = std::collections::HashSet::new();
-    let mut header_parsed = false;
-
-    for line in reader.lines() {
-        let line = line?;
-        let trimmed = line.trim();
-
-        if let Some(stripped) = trimmed.strip_prefix('#') {
-            if let Some((key, val)) = stripped.split_once('=') {
-                metadata.insert(key.to_string(), serde_json::Value::String(val.to_string()));
-            }
-            continue;
-        }
-
-        if !header_parsed {
-            header_parsed = true;
-            continue;
-        }
-
-        let cols: Vec<&str> = trimmed.split(',').collect();
-        if cols.len() < 4 {
-            continue;
-        }
-        let gene_id = cols[0];
-        let probe_seq = cols[1];
-        let probe_id = cols[2];
-        let included = cols[3].eq_ignore_ascii_case("true");
-
-        num_probes += 1;
-        if included {
-            num_included += 1;
-        } else {
-            num_excluded += 1;
-        }
-        // All probes (included and excluded) go into the FASTA and t2g map.
-        // The index contains all probes, so quant needs a t2g entry for every
-        // reference. Excluded probes still map to their gene — they simply
-        // won't contribute meaningful counts in practice.
-        writeln!(fasta_writer, ">{}", probe_id)?;
-        writeln!(fasta_writer, "{}", probe_seq)?;
-        writeln!(t2g_writer, "{}\t{}", probe_id, gene_id)?;
-        genes.insert(gene_id.to_string());
-    }
-
-    fasta_writer.flush()?;
-    t2g_writer.flush()?;
-
-    metadata.insert("num_probes".to_string(), json!(num_probes));
-    metadata.insert("num_included".to_string(), json!(num_included));
-    metadata.insert("num_excluded".to_string(), json!(num_excluded));
-    metadata.insert("num_genes".to_string(), json!(genes.len()));
-    metadata.insert(
-        "source_file".to_string(),
-        json!(csv_path.file_name().unwrap_or_default().to_string_lossy()),
-    );
-
-    let meta_value = serde_json::Value::Object(metadata);
-    let meta_file = std::fs::File::create(&meta_path)?;
-    serde_json::to_writer_pretty(meta_file, &meta_value)?;
-
-    info!(
-        "Converted probe CSV: {} included probes, {} genes, {} excluded",
-        num_included,
-        genes.len(),
-        num_excluded,
-    );
-
-    Ok((fasta_path, t2g_path, meta_value))
-}
 
 /// Main entry point for the flex-quant pipeline.
 pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result<()> {
@@ -133,39 +39,58 @@ pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result
         .as_ref()
         .context("alevin-fry is required; please run `simpleaf set-paths`")?;
 
-    // Load chemistry from registry
-    let chem_path = af_home.join(CHEMISTRIES_PATH);
-    if !chem_path.exists() {
-        bail!(
-            "Chemistry registry not found at {}. Run `simpleaf chemistry refresh` first.",
-            chem_path.display(),
-        );
-    }
-    let chem_file = std::fs::File::open(&chem_path)?;
-    let chem_map: CustomChemistryMap = serde_json::from_reader(chem_file)
-        .with_context(|| format!("couldn't parse {}", chem_path.display()))?;
+    // === Layered resolution: chemistry provides defaults, CLI flags override ===
 
-    let chem = chem_map
-        .get(&opts.chemistry)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Chemistry '{}' not found in registry. Run `simpleaf chemistry refresh`.",
-                opts.chemistry,
-            )
-        })?;
+    // Load chemistry from registry (optional)
+    let chem: Option<CustomChemistry> = if let Some(ref chem_name) = opts.chemistry {
+        let chem_path = af_home.join(CHEMISTRIES_PATH);
+        if !chem_path.exists() {
+            bail!(
+                "Chemistry registry not found at {}. Run `simpleaf chemistry refresh` first.",
+                chem_path.display(),
+            );
+        }
+        let chem_file = std::fs::File::open(&chem_path)?;
+        let chem_map: CustomChemistryMap = serde_json::from_reader(chem_file)
+            .with_context(|| format!("couldn't parse {}", chem_path.display()))?;
 
-    if !chem.is_flex_gex() {
-        bail!(
-            "Chemistry '{}' is not a Flex GEX protocol. Use `simpleaf quant` for standard chemistries.",
-            opts.chemistry,
-        );
-    }
+        let c = chem_map
+            .get(chem_name)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Chemistry '{}' not found in registry. Run `simpleaf chemistry refresh`.",
+                    chem_name,
+                )
+            })?
+            .clone();
+
+        if !c.is_flex_gex() {
+            bail!(
+                "Chemistry '{}' is not a Flex GEX protocol. Use `simpleaf quant` for standard chemistries.",
+                chem_name,
+            );
+        }
+        Some(c)
+    } else {
+        None
+    };
+
+    // Resolve geometry: CLI override > chemistry default > error
+    let geometry = opts.geometry.as_deref()
+        .or_else(|| chem.as_ref().map(|c| c.geometry()))
+        .ok_or_else(|| anyhow::anyhow!(
+            "No geometry specified. Provide --geometry or --chemistry."
+        ))?
+        .to_string();
+
+    // Resolve expected orientation
+    let expected_ori = &opts.expected_ori;
 
     info!(
-        "Chemistry: {} (geometry: {}, organism: {})",
-        opts.chemistry,
-        chem.geometry(),
-        opts.organism,
+        "Geometry: {}, orientation: {}{}",
+        geometry,
+        expected_ori,
+        opts.chemistry.as_ref().map(|c| format!(" (chemistry: {})", c)).unwrap_or_default(),
     );
 
     // Create output directory structure
@@ -178,15 +103,21 @@ pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result
 
     // === Step 1: Resolve probe index ===
     let (index_path, t2g_path) = resolve_probe_index(
-        af_home, chem, &opts, &piscem_info.exe_path,
+        af_home, chem.as_ref(), &opts, &piscem_info.exe_path,
     )?;
 
     // === Step 2: Resolve cell barcode whitelist ===
-    // For Flex, the cell BC whitelist is fetched the same way as standard chemistries.
-    let cell_bc_path = resolve_cell_bc_whitelist(af_home, chem)?;
+    let cell_bc_path = if let Some(ref user_list) = opts.cell_bc_list {
+        info!("Using user-provided cell barcode whitelist: {}", user_list.display());
+        user_list.clone()
+    } else if let Some(ref c) = chem {
+        resolve_cell_bc_whitelist(af_home, c)?
+    } else {
+        bail!("No cell barcode whitelist specified. Provide --cell-bc-list or --chemistry.");
+    };
 
     // === Step 3: Resolve probe barcode (sample BC) file ===
-    let sample_bc_path = resolve_sample_bc_list(af_home, chem, &opts)?;
+    let sample_bc_path = resolve_sample_bc_list(af_home, chem.as_ref(), &opts)?;
 
     // === Step 4: Map reads with piscem ===
     info!("Mapping reads with piscem...");
@@ -194,7 +125,7 @@ pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result
     piscem_cmd
         .arg("map-sc")
         .arg("-i").arg(&index_path)
-        .arg("-g").arg(chem.geometry())
+        .arg("-g").arg(&geometry)
         .arg("-o").arg(&map_output)
         .arg("-t").arg(format!("{}", opts.threads));
 
@@ -223,12 +154,12 @@ pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result
     gpl_cmd
         .arg("generate-permit-list")
         .arg("-i").arg(&map_output)
-        .arg("-d").arg(chem.expected_ori().as_str())
+        .arg("-d").arg(expected_ori)
         .arg("-o").arg(&quant_output)
         .arg("-t").arg(format!("{}", opts.threads.min(8)))
         .arg("--unfiltered-pl").arg(&cell_bc_path)
         .arg("--sample-bc-list").arg(&sample_bc_path)
-        .arg("--sample-correction-mode").arg("exact")
+        .arg("--sample-correction-mode").arg(&opts.sample_correction_mode)
         .arg("--min-reads").arg(format!("{}", opts.min_reads));
 
     let gpl_cmd_str = prog_utils::get_cmd_line_string(&gpl_cmd);
@@ -273,8 +204,8 @@ pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result
     // === Write pipeline metadata ===
     let meta = json!({
         "chemistry": opts.chemistry,
-        "organism": opts.organism.to_string(),
-        "geometry": chem.geometry(),
+        "organism": opts.organism.as_ref().map(|o| o.to_string()),
+        "geometry": geometry,
         "resolution": opts.resolution,
         "threads": opts.threads,
         "kmer_length": opts.kmer_length,
@@ -309,7 +240,7 @@ pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result
 /// Resolve the probe index: use provided, build from probe set, or auto-download.
 fn resolve_probe_index(
     af_home: &Path,
-    chem: &CustomChemistry,
+    chem: Option<&CustomChemistry>,
     opts: &FlexQuantOpts,
     piscem_path: &Path,
 ) -> anyhow::Result<(PathBuf, PathBuf)> {
@@ -321,7 +252,7 @@ fn resolve_probe_index(
             t2g_candidate
         } else if let Some(ref ps) = opts.probe_set {
             let conv_dir = opts.output.join("probe_conversion");
-            let (_, t2g, _) = convert_probe_csv_to_fasta(ps, &conv_dir)?;
+            let (_, t2g, _) = probe_utils::convert_probe_csv_to_fasta(ps, &conv_dir)?;
             t2g
         } else {
             bail!(
@@ -335,26 +266,29 @@ fn resolve_probe_index(
     // If user provided a probe set file, build index from it.
     if let Some(ref probe_set) = opts.probe_set {
         warn!(
-            "Using user-provided probe set: {}. This overrides the default for '{}'.",
+            "Using user-provided probe set: {}.",
             probe_set.display(),
-            opts.chemistry,
         );
         return build_index_from_probe_set(probe_set, opts, piscem_path);
     }
 
     // Auto mode: look up probe set in chemistry registry
-    let organism_key = opts.organism.to_string();
-    let probe_sets = chem.probe_sets.as_ref().ok_or_else(|| {
+    let chem_ref = chem.ok_or_else(|| {
+        anyhow::anyhow!("No chemistry specified and no --probe-set or --index provided.")
+    })?;
+    let organism = opts.organism.as_ref().ok_or_else(|| {
+        anyhow::anyhow!("--organism is required when auto-downloading probe sets from the chemistry registry.")
+    })?;
+    let organism_key = organism.to_string();
+    let probe_sets = chem_ref.probe_sets.as_ref().ok_or_else(|| {
         anyhow::anyhow!(
-            "Chemistry '{}' has no registered probe sets. Provide --probe-set.",
-            opts.chemistry,
+            "Chemistry has no registered probe sets. Provide --probe-set.",
         )
     })?;
     let probe_info = probe_sets.get(&organism_key).ok_or_else(|| {
         anyhow::anyhow!(
-            "No probe set for organism '{}' in chemistry '{}'. Provide --probe-set.",
+            "No probe set for organism '{}'. Provide --probe-set.",
             organism_key,
-            opts.chemistry,
         )
     })?;
 
@@ -412,7 +346,7 @@ fn build_index_from_probe_set(
 
     let (fasta_path, t2g_path) = if ext.eq_ignore_ascii_case("csv") {
         info!("Converting probe CSV to FASTA: {}", probe_set.display());
-        let (fa, t2g, _meta) = convert_probe_csv_to_fasta(probe_set, &index_dir)?;
+        let (fa, t2g, _meta) = probe_utils::convert_probe_csv_to_fasta(probe_set, &index_dir)?;
         (fa, t2g)
     } else {
         // Assume FASTA — generate identity t2g
@@ -488,7 +422,7 @@ fn resolve_cell_bc_whitelist(af_home: &Path, chem: &CustomChemistry) -> anyhow::
 /// Resolve probe barcode (sample BC) file: use provided or auto-fetch.
 fn resolve_sample_bc_list(
     af_home: &Path,
-    chem: &CustomChemistry,
+    chem: Option<&CustomChemistry>,
     opts: &FlexQuantOpts,
 ) -> anyhow::Result<PathBuf> {
     if let Some(ref path) = opts.sample_bc_list {
@@ -496,10 +430,12 @@ fn resolve_sample_bc_list(
         return Ok(path.clone());
     }
 
-    let sbc_info = chem.sample_bc_list.as_ref().ok_or_else(|| {
+    let chem_ref = chem.ok_or_else(|| {
+        anyhow::anyhow!("No chemistry specified and no --sample-bc-list provided.")
+    })?;
+    let sbc_info = chem_ref.sample_bc_list.as_ref().ok_or_else(|| {
         anyhow::anyhow!(
-            "Chemistry '{}' has no sample barcode list. Provide --sample-bc-list.",
-            opts.chemistry,
+            "Chemistry has no sample barcode list. Provide --sample-bc-list.",
         )
     })?;
 
@@ -525,6 +461,6 @@ fn resolve_sample_bc_list(
         info!("Downloaded to {}", dest.display());
         Ok(dest)
     } else {
-        bail!("Chemistry '{}' has no sample barcode list URL. Provide --sample-bc-list.", opts.chemistry);
+        bail!("Chemistry has no sample barcode list URL. Provide --sample-bc-list.");
     }
 }

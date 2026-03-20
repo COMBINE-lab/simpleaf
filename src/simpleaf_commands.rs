@@ -587,13 +587,33 @@ pub struct SetPathOpts {
 #[derive(Args, Clone, Debug)]
 #[command(arg_required_else_help = true)]
 pub struct FlexQuantOpts {
-    /// Chemistry name: 10x-flexv1-gex-3p or 10x-flexv2-gex-3p
+    /// Chemistry name (e.g. 10x-flexv1-gex-3p). Provides defaults for geometry,
+    /// cell BC whitelist, sample BC list, and probe set. All can be overridden
+    /// individually. If omitted, --geometry and --cell-bc-list are required.
     #[arg(short, long)]
-    pub chemistry: String,
+    pub chemistry: Option<String>,
+
+    /// Override the read geometry string (e.g. '1{b[16]u[12]x[0-3]hamming(f[TTGCTAGGACCG],1)s[10]x:}2{r:}')
+    #[arg(short, long)]
+    pub geometry: Option<String>,
 
     /// Target organism for automatic probe set selection
     #[arg(long, value_enum)]
-    pub organism: crate::utils::chem_utils::Organism,
+    pub organism: Option<crate::utils::chem_utils::Organism>,
+
+    /// Path to cell barcode whitelist (one barcode per line, overrides chemistry default)
+    #[arg(long)]
+    pub cell_bc_list: Option<PathBuf>,
+
+    /// Expected read orientation: fw, rc, or both
+    #[arg(long, default_value = "both")]
+    pub expected_ori: String,
+
+    /// Sample barcode correction mode
+    #[arg(long, default_value = "exact",
+        value_parser = clap::builder::PossibleValuesParser::new(["exact", "1-edit"]),
+        help_heading = "Permit List Options")]
+    pub sample_correction_mode: String,
 
     /// Path to output directory
     #[arg(short, long)]
