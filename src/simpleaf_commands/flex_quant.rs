@@ -192,7 +192,7 @@ pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result
     info!("Mapping reads with piscem...");
     let mut piscem_cmd = std::process::Command::new(&piscem_info.exe_path);
     piscem_cmd
-        .arg("map-scrna")
+        .arg("map-sc")
         .arg("-i").arg(&index_path)
         .arg("-g").arg(chem.geometry())
         .arg("-o").arg(&map_output)
