@@ -41,10 +41,12 @@ cc = "1.2.20"
 #seq_geom_parser = { git = "https://github.com/COMBINE-lab/seq_geom_parser", branch = "dev", version = "0.3.0" }
 #seq_geom_xform = { git = "https://github.com/COMBINE-lab/seq_geom_xform", branch = "dev", version = "0.4.0" }
 #roers = { git = "https://github.com/COMBINE-lab/roers", branch = "main", version = "0.4.0" }
+# af-anndata = { version = "0.3.3", git = "https://github.com/COMBINE-lab/af-anndata" }
 
 seq_geom_parser = { version = "0.3.0" }
 seq_geom_xform = { version = "0.4.0" }
 roers = { version = "0.4.0" }
+af-anndata = { version = "0.3.3" }
 
 anyhow = "^1.0"
 clap = { version = "4.5.37", features = [
@@ -91,7 +93,6 @@ regex = { version = "1.11.1", default-features = false, features = [
 ] }
 tempfile = "3.19.1"
 ureq = { version = "3.0.11", features = ["json"] }
-af-anndata = { version = "0.3.3", git = "https://github.com/COMBINE-lab/af-anndata" }
 file-requirements = "0.1.0"
 
 [profile.release]

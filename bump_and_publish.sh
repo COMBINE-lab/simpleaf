@@ -319,7 +319,10 @@ echo
 echo "Preflight checks before changing version"
 cargo check -q
 if [[ "$PUBLISH" == true ]]; then
-    mapfile -t git_dependencies < <(collect_git_dependencies)
+    git_dependencies=()
+    while IFS= read -r dependency; do
+        git_dependencies+=("$dependency")
+    done < <(collect_git_dependencies)
     if ((${#git_dependencies[@]} > 0)); then
         die "crates.io publish is currently blocked by git dependencies in $ROOT_CARGO: ${git_dependencies[*]}"
     fi
