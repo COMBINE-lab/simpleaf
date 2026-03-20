@@ -11,7 +11,8 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 [[package]]
 name = "af-anndata"
 version = "0.3.3"
-source = "git+https://github.com/COMBINE-lab/af-anndata#a76954158bd65409c07fc13af97a4c13c482881e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f8f9744d6df9e3eb32d4d690c65d2e72314870689992bd00aec74d828d1e002"
 dependencies = [
  "anndata",
  "anndata-hdf5",
@@ -3543,7 +3544,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "simpleaf"
-version = "0.21.0"
+version = "0.21.1"
 dependencies = [
  "af-anndata",
  "anyhow",
