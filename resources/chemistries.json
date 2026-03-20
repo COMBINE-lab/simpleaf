@@ -170,7 +170,7 @@
     }
   },
   "10x-flexv2-gex-3p": {
-    "geometry": "1{b[16]u[12]x[10]s[10]}2{r:}",
+    "geometry": "1{b[16]u[12]x[0-3]f[TTGCTAGGACCG]s[10]x:}2{r:}",
     "expected_ori": "both",
     "version": "0.1.0",
     "plist_name": "dcb018db2e9d7023ac077eb2477b877163fa5dcef7b8e39e0826bc2560c29cf9",
