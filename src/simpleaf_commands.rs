@@ -15,7 +15,7 @@ pub use self::indexing::build_ref_and_index;
 pub mod quant;
 pub use self::quant::map_and_quant;
 
-pub mod flex_quant;
+pub mod multiplex_quant;
 
 pub mod workflow;
 pub use self::workflow::{
@@ -500,13 +500,14 @@ pub struct SetPathOpts {
     macs: Option<PathBuf>,
 }
 
-/// Options for the `flex-quant` subcommand — 10x Flex GEX quantification.
+/// Options for the `multiplex-quant` subcommand — multiplexed sample quantification.
 ///
-/// This command handles the complete Flex pipeline: probe index building,
-/// mapping, barcode correction (cell + sample), collation, and quantification.
+/// This command handles the complete multiplexed pipeline: reference index building
+/// (from probe set or pre-built), mapping, barcode correction (cell + sample),
+/// hierarchical collation, and quantification with sample-prefixed output.
 #[derive(Args, Clone, Debug)]
 #[command(arg_required_else_help = true)]
-pub struct FlexQuantOpts {
+pub struct MultiplexQuantOpts {
     /// Chemistry name (e.g. 10x-flexv1-gex-3p). Provides defaults for geometry,
     /// cell BC whitelist, sample BC list, and probe set. All can be overridden
     /// individually. If omitted, --geometry and --cell-bc-list are required.
@@ -553,9 +554,14 @@ pub struct FlexQuantOpts {
     #[arg(long, help_heading = "Probe Set Options")]
     pub probe_set: Option<PathBuf>,
 
+    /// Path to a transcript-to-gene map file. Use this instead of --probe-set
+    /// when working with a transcriptome reference rather than a probe set.
+    #[arg(short = 'm', long, help_heading = "Reference Options")]
+    pub t2g_map: Option<PathBuf>,
+
     /// Path to sample/probe barcode file with rotation mapping
     /// (overrides auto-download). 3-column TSV: observed, canonical, sample_name.
-    #[arg(long, help_heading = "Probe Set Options")]
+    #[arg(long, help_heading = "Reference Options")]
     pub sample_bc_list: Option<PathBuf>,
 
     /// Comma-separated list of R1 FASTQ files
@@ -610,8 +616,8 @@ pub enum Commands {
     Inspect {},
     /// quantify a sample
     Quant(MapQuantOpts),
-    /// quantify a 10x Flex GEX sample (probe-based, multiplexed)
-    FlexQuant(FlexQuantOpts),
+    /// quantify a multiplexed sample (e.g. 10x Flex, or any custom multi-barcode protocol)
+    MultiplexQuant(MultiplexQuantOpts),
     /// set paths to the programs that simpleaf will use
     SetPaths(SetPathOpts),
     /// refreshes version information associated with programs used by simpleaf

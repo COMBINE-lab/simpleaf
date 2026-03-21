@@ -1,6 +1,6 @@
 //! Utilities for working with probe set CSV files.
 //!
-//! Shared between `flex-quant` (multiplexed) and `quant` (single-sample)
+//! Shared between `multiplex-quant` (multiplexed) and `quant` (single-sample)
 //! for converting 10x probe set CSVs to FASTA + t2g mapping files.
 
 use anyhow::Context;

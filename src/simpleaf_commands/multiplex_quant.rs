@@ -1,14 +1,14 @@
-//! Pipeline orchestration for 10x Flex GEX quantification.
+//! Pipeline orchestration for multiplexed sample quantification.
 //!
-//! Handles the complete Flex pipeline:
-//! 1. Resource resolution (probe index, cell BC whitelist, probe barcode file)
+//! Handles any multiplexed protocol (10x Flex, custom multi-barcode, etc.):
+//! 1. Resource resolution (index, cell BC whitelist, sample barcode file)
 //! 2. Mapping with piscem
 //! 3. Generate-permit-list (multi-barcode aware)
 //! 4. Collate (hierarchical, multi-barcode)
-//! 5. Quant
+//! 5. Quant with sample-prefixed output
 
 use crate::core::{context, exec};
-use crate::simpleaf_commands::FlexQuantOpts;
+use crate::simpleaf_commands::MultiplexQuantOpts;
 use crate::utils::chem_utils::{CustomChemistry, CustomChemistryMap};
 use crate::utils::constants::CHEMISTRIES_PATH;
 use crate::utils::probe_utils;
@@ -21,10 +21,10 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tracing::{info, warn};
 
-/// Main entry point for the flex-quant pipeline.
-pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result<()> {
+/// Main entry point for the multiplex-quant pipeline.
+pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyhow::Result<()> {
     let start = Instant::now();
-    info!("Starting Flex GEX pipeline");
+    info!("Starting multiplex quantification pipeline");
 
     // Load runtime context (program paths)
     let rt = context::load_runtime_context(af_home)?;
@@ -32,7 +32,7 @@ pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result
         .progs
         .piscem
         .as_ref()
-        .context("piscem is required for Flex mapping; please run `simpleaf set-paths`")?;
+        .context("piscem is required for mapping; please run `simpleaf set-paths`")?;
     let alevin_fry_info = rt
         .progs
         .alevin_fry
@@ -64,12 +64,6 @@ pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result
             })?
             .clone();
 
-        if !c.is_flex_gex() {
-            bail!(
-                "Chemistry '{}' is not a Flex GEX protocol. Use `simpleaf quant` for standard chemistries.",
-                chem_name,
-            );
-        }
         Some(c)
     } else {
         None
@@ -101,10 +95,12 @@ pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result
     std::fs::create_dir_all(&map_output)?;
     std::fs::create_dir_all(&quant_output)?;
 
-    // === Step 1: Resolve probe index ===
-    let (index_path, t2g_path) = resolve_probe_index(
+    // === Step 1: Resolve index and t2g ===
+    let (index_path, probe_t2g_path) = resolve_probe_index(
         af_home, chem.as_ref(), &opts, &piscem_info.exe_path,
     )?;
+    // --t2g-map overrides the probe-derived t2g (for transcriptome references)
+    let t2g_path = opts.t2g_map.clone().unwrap_or(probe_t2g_path);
 
     // === Step 2: Resolve cell barcode whitelist ===
     let cell_bc_path = if let Some(ref user_list) = opts.cell_bc_list {
@@ -224,12 +220,12 @@ pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result
         "total_duration_secs": start.elapsed().as_secs_f64(),
         "simpleaf_version": env!("CARGO_PKG_VERSION"),
     });
-    let meta_path = output_dir.join("simpleaf_flex_quant_info.json");
+    let meta_path = output_dir.join("simpleaf_multiplex_quant_info.json");
     let meta_file = std::fs::File::create(&meta_path)?;
     serde_json::to_writer_pretty(meta_file, &meta)?;
 
     info!(
-        "Flex GEX pipeline complete in {:.1}s. Output: {}",
+        "Multiplex pipeline complete in {:.1}s. Output: {}",
         start.elapsed().as_secs_f64(),
         output_dir.display(),
     );
@@ -241,7 +237,7 @@ pub fn flex_map_and_quant(af_home: &Path, opts: FlexQuantOpts) -> anyhow::Result
 fn resolve_probe_index(
     af_home: &Path,
     chem: Option<&CustomChemistry>,
-    opts: &FlexQuantOpts,
+    opts: &MultiplexQuantOpts,
     piscem_path: &Path,
 ) -> anyhow::Result<(PathBuf, PathBuf)> {
     // If user provided a pre-built index, use it directly.
@@ -333,7 +329,7 @@ fn resolve_probe_index(
 /// Build a probe index from a CSV or FASTA file.
 fn build_index_from_probe_set(
     probe_set: &Path,
-    opts: &FlexQuantOpts,
+    opts: &MultiplexQuantOpts,
     piscem_path: &Path,
 ) -> anyhow::Result<(PathBuf, PathBuf)> {
     let index_dir = opts.output.join("probe_index");
@@ -423,7 +419,7 @@ fn resolve_cell_bc_whitelist(af_home: &Path, chem: &CustomChemistry) -> anyhow::
 fn resolve_sample_bc_list(
     af_home: &Path,
     chem: Option<&CustomChemistry>,
-    opts: &FlexQuantOpts,
+    opts: &MultiplexQuantOpts,
 ) -> anyhow::Result<PathBuf> {
     if let Some(ref path) = opts.sample_bc_list {
         info!("Using user-provided sample barcode list: {}", path.display());
