@@ -71,11 +71,11 @@ pub fn convert_probe_csv_to_fasta(
         let included = cols[3].eq_ignore_ascii_case("true");
 
         num_probes += 1;
-        if included {
-            num_included += 1;
-        } else {
+        if !included {
             num_excluded += 1;
+            continue; // skip excluded probes — they are omitted from index and t2g
         }
+        num_included += 1;
 
         writeln!(fasta_writer, ">{}", probe_id)?;
         writeln!(fasta_writer, "{}", probe_seq)?;
