@@ -1,9 +1,0 @@
-# Local development config: pull seq_geom_parser from the piscem-rs GitHub repo
-# instead of crates.io. This allows testing before publishing.
-#
-# To use the published crates.io version instead, remove or rename this file.
-# To use a local checkout, change the git URL to a path:
-#   seq_geom_parser = { path = "/path/to/piscem-rs/crates/seq_geom_parser" }
-
-[patch.crates-io]
-seq_geom_parser = { git = "https://github.com/COMBINE-lab/piscem-rs", rev = "1e68f7a" }

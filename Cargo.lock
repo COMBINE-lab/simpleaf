@@ -3364,8 +3364,9 @@ checksum = "d767eb0aabc880b29956c35734170f26ed551a859dbd361d140cdbeca61ab1e2"
 
 [[package]]
 name = "seq_geom_parser"
-version = "1.0.0"
-source = "git+https://github.com/COMBINE-lab/piscem-rs?rev=1e68f7a#1e68f7a669b94add2052a17055135c79e1f6c84d"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8c95f700367e275cebf0698ab89aa8ce184bb0ef1ff2fdc31f741befa208921"
 dependencies = [
  "ariadne",
  "chumsky",
