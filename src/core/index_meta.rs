@@ -6,16 +6,14 @@ use serde_json::Value;
 use crate::core::io;
 use crate::utils::af_utils::IndexType;
 
+#[derive(Debug)]
 pub struct QuantIndexMetadata {
     pub index_type: IndexType,
     pub inferred_t2g: Option<PathBuf>,
     pub inferred_gene_id_to_name: Option<PathBuf>,
 }
 
-pub fn resolve_quant_index(
-    index: Option<PathBuf>,
-    use_piscem: bool,
-) -> anyhow::Result<QuantIndexMetadata> {
+pub fn resolve_quant_index(index: Option<PathBuf>) -> anyhow::Result<QuantIndexMetadata> {
     let mut inferred_t2g = None;
     let mut inferred_gene_id_to_name = None;
     let index_type;
@@ -35,8 +33,13 @@ pub fn resolve_quant_index(
 
                 let index_type_str: String = serde_json::from_value(v["index_type"].clone())?;
                 index_type = match index_type_str.as_ref() {
-                    "salmon" => IndexType::Salmon(index.clone()),
                     "piscem" => IndexType::Piscem(index.join("piscem_idx")),
+                    "salmon" => {
+                        bail!(
+                            "The index at {} was built for salmon, which is no longer supported. Please rebuild this index with `simpleaf index` to create a piscem index.",
+                            index.display()
+                        );
+                    }
                     _ => {
                         bail!(
                             "unknown index type {} present in simpleaf_index.json",
@@ -63,11 +66,7 @@ pub fn resolve_quant_index(
                 if removed_piscem_idx_suffix {
                     index.push("piscem_idx");
                 }
-                index_type = if use_piscem {
-                    IndexType::Piscem(index)
-                } else {
-                    IndexType::Salmon(index)
-                };
+                index_type = IndexType::Piscem(index);
             }
             Err(e) => bail!(e),
         }
@@ -121,8 +120,6 @@ mod tests {
     use serde_json::json;
     use tempfile::tempdir;
 
-    use crate::utils::af_utils::IndexType;
-
     use super::{resolve_atac_piscem_index_base, resolve_quant_index};
 
     #[test]
@@ -133,22 +130,21 @@ mod tests {
         fs::write(
             idx_dir.join("simpleaf_index.json"),
             serde_json::to_string_pretty(&json!({
-                "index_type":"salmon",
-                "t2g_file":"t2g_3col.tsv"
-            }))
-            .expect("failed to serialize json"),
+            "index_type":"salmon",
+            "t2g_file":"t2g_3col.tsv"
+        }))
+        .expect("failed to serialize json"),
         )
         .expect("failed to write simpleaf_index.json");
         fs::write(idx_dir.join("gene_id_to_name.tsv"), "g1\tn1\n")
             .expect("failed to write gene_id_to_name.tsv");
 
-        let meta = resolve_quant_index(Some(idx_dir.clone()), false)
-            .expect("failed to resolve quant index");
-        assert!(matches!(meta.index_type, IndexType::Salmon(_)));
-        assert_eq!(meta.inferred_t2g, Some(idx_dir.join("t2g_3col.tsv")));
-        assert_eq!(
-            meta.inferred_gene_id_to_name,
-            Some(idx_dir.join("gene_id_to_name.tsv"))
+        let err = resolve_quant_index(Some(idx_dir.clone()))
+            .expect_err("salmon metadata should be rejected");
+        assert!(
+            format!("{:#}", err).contains("no longer supported"),
+            "unexpected error: {:#}",
+            err
         );
     }
 

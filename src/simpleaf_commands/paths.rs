@@ -11,7 +11,6 @@ use super::SetPathOpts;
 pub fn set_paths(af_home_path: PathBuf, set_path_args: SetPathOpts) -> anyhow::Result<()> {
     const AF_HOME: &str = "ALEVIN_FRY_HOME";
     let SetPathOpts {
-        salmon,
         piscem,
         alevin_fry,
         macs,
@@ -26,13 +25,10 @@ pub fn set_paths(af_home_path: PathBuf, set_path_args: SetPathOpts) -> anyhow::R
         fs::create_dir_all(af_home_path.as_path())?;
     }
 
-    let rp = get_required_progs_from_paths(salmon, piscem, alevin_fry, macs)?;
+    let rp = get_required_progs_from_paths(piscem, alevin_fry, macs)?;
 
-    let have_mapper = rp.salmon.is_some() || rp.piscem.is_some();
-    if !have_mapper {
-        bail!(
-            "Suitable executable for piscem or salmon not found — at least one of these must be available."
-        );
+    if rp.piscem.is_none() {
+        bail!("Suitable piscem executable not found.");
     }
     if rp.alevin_fry.is_none() {
         bail!("Suitable alevin_fry executable not found.");

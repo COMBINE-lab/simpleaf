@@ -128,8 +128,7 @@ utils.simpleaf_index(step, ref_type, arguments, output)
     local splici = utils.splici(splici_args);
 
     local arguments = {
-        active : true,
-        "--use-piscem" : true
+        active : true
     };
         
     local simpleaf_index = utils.simpleaf_index(
@@ -147,7 +146,7 @@ The ``simpleaf_index`` object in the above code chunk will be
     {
         # hidden, system fields
         ref_type :: {}, # hidden field. The actual contents are omitted. see above example code for function `ref_type`
-        arguments :: {active : true, "--use-piscem" : true},  # hidden field
+        arguments :: {active : true},  # hidden field
         output :: "./simpleaf_index", # hidden field
         index :: "./simpleaf_index/index", # hidden field
         t2g_map :: "./simpleaf_index/index/t2g_3col.tsv", # hidden field
@@ -159,8 +158,7 @@ The ``simpleaf_index`` object in the above code chunk will be
         "--output": "./workflow_output/simpleaf_index",
         "--gtf" : "genes.gtf",
         "--fasta" : "genome.fa",
-        "--rlen" : 91,
-        "--use-piscem" : true
+        "--rlen" : 91
     }
 
 

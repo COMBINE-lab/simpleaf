@@ -2,7 +2,7 @@
 =============================
 
 The ``refresh-prog-info`` command reads the paths stored for the executables used by ``simpleaf`` (specifically those for 
-``alevin-fry``, ``piscem`` and ``salmon``), and for each of the installed programs, fetches and updates the associated versions
+``alevin-fry`` and ``piscem``), and for each of the installed programs, fetches and updates the associated versions
 of the programs.
 
 This command is useful because ``simpleaf`` records the version associated with each of the registered tools when their paths are

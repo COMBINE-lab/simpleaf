@@ -12,7 +12,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use super::{IndexOpts, ReferenceType};
 
@@ -112,20 +112,7 @@ mod tests {
     }
 }
 
-fn validate_index_type_opts(opts: &IndexOpts) -> anyhow::Result<()> {
-    let mut bail = false;
-    if opts.use_piscem && opts.sparse {
-        let msg = concat!(
-            "The `--sparse` flag implies the salmon index, and is incompatible with `--use-piscem` (the default). ",
-            "If you wish to use the salmon index, and the `--sparse` option, please pass both ",
-            "`--no-piscem` and `--sparse` to the `index` command."
-        );
-        error!(msg);
-        bail = true;
-    }
-    if bail {
-        bail!("conflicting command line arguments");
-    }
+fn validate_index_type_opts(_opts: &IndexOpts) -> anyhow::Result<()> {
     Ok(())
 }
 
@@ -343,7 +330,6 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
             "output" : output,
             "overwrite" : opts.overwrite,
             "keep_duplicates" : opts.keep_duplicates,
-            "sparse" : opts.sparse,
             "threads" : threads,
         }
     });
@@ -559,227 +545,120 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     let index_duration;
     let index_cmd_string: String;
 
-    if opts.use_piscem {
-        // ensure we have piscem
-        if rp.piscem.is_none() {
-            bail!(
-                "The construction of a piscem index was requested, but a valid piscem executable was not available. \n\
-                            Please either set a path using the `set-paths` command, or ensure the `PISCEM` environment variable is set properly."
-            );
-        }
+    if rp.piscem.is_none() {
+        bail!(
+            "The construction of a piscem index was requested, but a valid piscem executable was not available. \n\
+                        Please either set a path using the `set-paths` command, or ensure the `PISCEM` environment variable is set properly."
+        );
+    }
 
-        let piscem_prog_info = rp.piscem.as_ref().context(
-            "The construction of a piscem index was requested, but piscem program info is missing.",
-        )?;
+    let piscem_prog_info = rp.piscem.as_ref().context(
+        "The construction of a piscem index was requested, but piscem program info is missing.",
+    )?;
 
-        let mut piscem_index_cmd =
-            std::process::Command::new(format!("{}", piscem_prog_info.exe_path.display()));
+    let mut piscem_index_cmd =
+        std::process::Command::new(format!("{}", piscem_prog_info.exe_path.display()));
 
-        create_dir_if_absent(&output_index_dir)?;
-        let output_index_stem = output_index_dir.join("piscem_idx");
+    create_dir_if_absent(&output_index_dir)?;
+    let output_index_stem = output_index_dir.join("piscem_idx");
 
-        piscem_index_cmd
-            .arg("build")
-            .arg("-k")
-            .arg(kmer_length.to_string())
-            .arg("-m")
-            .arg(minimizer_length.to_string())
-            .arg("-o")
-            .arg(&output_index_stem)
-            .arg("-s")
-            .arg(&reference_stage.ref_seq)
-            .arg("--seed")
-            .arg(opts.hash_seed.to_string())
-            .arg("-w")
-            .arg(opts.work_dir);
+    piscem_index_cmd
+        .arg("build")
+        .arg("-k")
+        .arg(kmer_length.to_string())
+        .arg("-m")
+        .arg(minimizer_length.to_string())
+        .arg("-o")
+        .arg(&output_index_stem)
+        .arg("-s")
+        .arg(&reference_stage.ref_seq)
+        .arg("--seed")
+        .arg(opts.hash_seed.to_string())
+        .arg("-w")
+        .arg(opts.work_dir);
 
-        // if the user requested to overwrite, then pass this option
-        if opts.overwrite {
-            info!("will attempt to overwrite any existing piscem index, as requested");
-            piscem_index_cmd.arg("--overwrite");
-        }
+    if opts.overwrite {
+        info!("will attempt to overwrite any existing piscem index, as requested");
+        piscem_index_cmd.arg("--overwrite");
+    }
 
-        let (capped_threads, capped_at) = runtime::cap_threads(threads);
-        if let Some(max_threads) = capped_at {
-            warn!(
-                "The maximum available parallelism is {}, but {} threads were requested.",
-                max_threads, threads
-            );
-            warn!("setting number of threads to {}", max_threads);
-        }
-        threads = capped_threads;
+    let (capped_threads, capped_at) = runtime::cap_threads(threads);
+    if let Some(max_threads) = capped_at {
+        warn!(
+            "The maximum available parallelism is {}, but {} threads were requested.",
+            max_threads, threads
+        );
+        warn!("setting number of threads to {}", max_threads);
+    }
+    threads = capped_threads;
 
-        piscem_index_cmd
-            .arg("--threads")
-            .arg(format!("{}", threads));
+    piscem_index_cmd
+        .arg("--threads")
+        .arg(format!("{}", threads));
 
-        // if the user is requesting a poison k-mer table, ensure the
-        // piscem version is at least 0.7.0
-        if let Some(decoy_paths) = opts.decoy_paths {
-            match prog_utils::check_version_constraints(
-                "piscem",
-                ">=0.7.0, <1.0.0",
-                &piscem_prog_info.version,
-            ) {
-                Ok(_piscem_ver) => {
-                    let path_args = decoy_paths
-                        .into_iter()
-                        .map(|x| x.to_string_lossy().into_owned())
-                        .collect::<Vec<String>>()
-                        .join(",");
-                    piscem_index_cmd.arg("--decoy-paths").arg(path_args);
-                }
-                Err(_) => {
-                    warn!(
-                        r#"
+    if let Some(decoy_paths) = opts.decoy_paths {
+        match prog_utils::check_version_constraints(
+            "piscem",
+            ">=0.7.0, <1.0.0",
+            &piscem_prog_info.version,
+        ) {
+            Ok(_piscem_ver) => {
+                let path_args = decoy_paths
+                    .into_iter()
+                    .map(|x| x.to_string_lossy().into_owned())
+                    .collect::<Vec<String>>()
+                    .join(",");
+                piscem_index_cmd.arg("--decoy-paths").arg(path_args);
+            }
+            Err(_) => {
+                warn!(
+                    r#"
 You requested to build a poison k-mer table with {:?}, but you must be using piscem version >= 0.7.0 
 to use this feature. Simpleaf is currently using version {}. Please upgrade your piscem version or, 
 if you believe you have a sufficiently new version installed, update the executable being used by 
 simpleaf"#,
-                        decoy_paths, &piscem_prog_info.version
-                    );
-                }
+                    decoy_paths, &piscem_prog_info.version
+                );
             }
         }
-
-        // print piscem build command
-        index_cmd_string = prog_utils::get_cmd_line_string(&piscem_index_cmd);
-        info!("piscem build cmd : {}", index_cmd_string);
-
-        let index_start = Instant::now();
-        let _cres = exec::run_checked(&mut piscem_index_cmd, "piscem index command")?;
-        index_duration = index_start.elapsed();
-
-        // copy over the t2g file to the index
-        let mut t2g_out_path: Option<PathBuf> = None;
-        if let Some(t2g_file) = reference_stage.t2g.clone() {
-            let index_t2g_path = output_index_dir.join("t2g_3col.tsv");
-            t2g_out_path = Some(PathBuf::from("t2g_3col.tsv"));
-            std::fs::copy(t2g_file, index_t2g_path)?;
-        }
-
-        // copy over the gene_id_to_name.tsv file to the index
-        let mut gene_id_to_name_out_path: Option<PathBuf> = None;
-        if let Some(gene_id_to_name_file) = reference_stage.gene_id_to_name.clone() {
-            let index_id2name_path = output_index_dir.join("gene_id_to_name.tsv");
-            gene_id_to_name_out_path = Some(PathBuf::from("gene_id_to_name.tsv"));
-            std::fs::copy(gene_id_to_name_file, index_id2name_path)?;
-        }
-
-        let index_json_file = output_index_dir.join("simpleaf_index.json");
-        let index_json = json!({
-                "cmd" : index_cmd_string,
-                "index_type" : "piscem",
-                "t2g_file" : t2g_out_path,
-                "gene_id_to_name_file" : gene_id_to_name_out_path,
-                "piscem_index_parameters" : {
-                    "k" : kmer_length,
-                    "m" : minimizer_length,
-                    "overwrite" : opts.overwrite,
-                    "threads" : threads,
-                    "ref" : reference_stage.ref_seq
-                }
-        });
-        io::write_json_pretty_atomic(&index_json_file, &index_json)?;
-    } else {
-        // ensure we have piscem
-        if rp.salmon.is_none() {
-            bail!(
-                "The construction of a salmon index was requested, but a valid salmon executable was not available. \n\
-                            Please either set a path using the `simpleaf set-paths` command, or ensure the `SALMON` environment variable is set properly."
-            );
-        }
-
-        let salmon_prog_info = rp.salmon.as_ref().context(
-            "The construction of a salmon index was requested, but salmon program info is missing.",
-        )?;
-        let mut salmon_index_cmd =
-            std::process::Command::new(format!("{}", salmon_prog_info.exe_path.display()));
-
-        salmon_index_cmd
-            .arg("index")
-            .arg("-k")
-            .arg(kmer_length.to_string())
-            .arg("-i")
-            .arg(&output_index_dir)
-            .arg("-t")
-            .arg(&reference_stage.ref_seq);
-
-        // overwrite doesn't do anything special for the salmon index, so mention this to
-        // the user.
-        if opts.overwrite {
-            info!(
-                "As the default salmon behavior is to overwrite an existing index if the same directory is provided, \n\
-                        the --overwrite flag will have no additional effect."
-            );
-        }
-
-        // if the user requested a sparse index.
-        if opts.sparse {
-            salmon_index_cmd.arg("--sparse");
-        }
-
-        // if the user requested keeping duplicated sequences.
-        if opts.keep_duplicates {
-            salmon_index_cmd.arg("--keepDuplicates");
-        }
-
-        let (capped_threads, capped_at) = runtime::cap_threads(threads);
-        if let Some(max_threads) = capped_at {
-            warn!(
-                "The maximum available parallelism is {}, but {} threads were requested.",
-                max_threads, threads
-            );
-            warn!("setting number of threads to {}", max_threads);
-        }
-        threads = capped_threads;
-
-        salmon_index_cmd
-            .arg("--threads")
-            .arg(format!("{}", threads));
-
-        // print salmon index command
-        index_cmd_string = prog_utils::get_cmd_line_string(&salmon_index_cmd);
-        info!("salmon index cmd : {}", index_cmd_string);
-
-        let index_start = Instant::now();
-        let _cres = exec::run_checked(&mut salmon_index_cmd, "salmon index command")?;
-        index_duration = index_start.elapsed();
-
-        // copy over the t2g file to the index
-        let mut t2g_out_path: Option<PathBuf> = None;
-        if let Some(t2g_file) = reference_stage.t2g.clone() {
-            let index_t2g_path = output_index_dir.join("t2g_3col.tsv");
-            t2g_out_path = Some(PathBuf::from("t2g_3col.tsv"));
-            std::fs::copy(t2g_file, index_t2g_path)?;
-        }
-
-        // copy over the gene_id_to_name.tsv file to the index
-        let mut gene_id_to_name_out_path: Option<PathBuf> = None;
-        info!("{:?}", reference_stage.gene_id_to_name);
-        if let Some(gene_id_to_name_file) = reference_stage.gene_id_to_name.clone() {
-            let index_id2name_path = output_index_dir.join("gene_id_to_name.tsv");
-            gene_id_to_name_out_path = Some(PathBuf::from("gene_id_to_name.tsv"));
-            std::fs::copy(gene_id_to_name_file, index_id2name_path)?;
-        }
-
-        let index_json_file = output_index_dir.join("simpleaf_index.json");
-        let index_json = json!({
-                "cmd" : index_cmd_string,
-                "index_type" : "salmon",
-                "t2g_file" : t2g_out_path,
-                "gene_id_to_name_file" : gene_id_to_name_out_path,
-                "salmon_index_parameters" : {
-                    "k" : opts.kmer_length,
-                    "overwrite" : opts.overwrite,
-                    "sparse" : opts.sparse,
-                    "keep_duplicates" : opts.keep_duplicates,
-                    "threads" : threads,
-                    "ref" : reference_stage.ref_seq
-                }
-        });
-        io::write_json_pretty_atomic(&index_json_file, &index_json)?;
     }
+
+    index_cmd_string = prog_utils::get_cmd_line_string(&piscem_index_cmd);
+    info!("piscem build cmd : {}", index_cmd_string);
+
+    let index_start = Instant::now();
+    let _cres = exec::run_checked(&mut piscem_index_cmd, "piscem index command")?;
+    index_duration = index_start.elapsed();
+
+    let mut t2g_out_path: Option<PathBuf> = None;
+    if let Some(t2g_file) = reference_stage.t2g.clone() {
+        let index_t2g_path = output_index_dir.join("t2g_3col.tsv");
+        t2g_out_path = Some(PathBuf::from("t2g_3col.tsv"));
+        std::fs::copy(t2g_file, index_t2g_path)?;
+    }
+
+    let mut gene_id_to_name_out_path: Option<PathBuf> = None;
+    if let Some(gene_id_to_name_file) = reference_stage.gene_id_to_name.clone() {
+        let index_id2name_path = output_index_dir.join("gene_id_to_name.tsv");
+        gene_id_to_name_out_path = Some(PathBuf::from("gene_id_to_name.tsv"));
+        std::fs::copy(gene_id_to_name_file, index_id2name_path)?;
+    }
+
+    let index_json_file = output_index_dir.join("simpleaf_index.json");
+    let index_json = json!({
+            "cmd" : index_cmd_string,
+            "index_type" : "piscem",
+            "t2g_file" : t2g_out_path,
+            "gene_id_to_name_file" : gene_id_to_name_out_path,
+            "piscem_index_parameters" : {
+                "k" : kmer_length,
+                "m" : minimizer_length,
+                "overwrite" : opts.overwrite,
+                "threads" : threads,
+                "ref" : reference_stage.ref_seq
+            }
+    });
+    io::write_json_pretty_atomic(&index_json_file, &index_json)?;
     let index_stage = IndexBuildStageOutput {
         index_duration,
         index_cmd_string,

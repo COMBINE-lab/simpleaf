@@ -38,13 +38,16 @@ categories = ["command-line-utilities", "science"]
 [dependencies]
 cc = "1.2.20"
 
-#seq_geom_parser = { git = "https://github.com/COMBINE-lab/seq_geom_parser", branch = "dev", version = "0.3.0" }
-#seq_geom_xform = { git = "https://github.com/COMBINE-lab/seq_geom_xform", branch = "dev", version = "0.4.0" }
-#roers = { git = "https://github.com/COMBINE-lab/roers", branch = "main", version = "0.4.0" }
-# af-anndata = { version = "0.3.3", git = "https://github.com/COMBINE-lab/af-anndata" }
-
-seq_geom_parser = { version = "0.3.0" }
-seq_geom_xform = { version = "0.4.0" }
+# New seq_geom_parser 1.0 (chumsky-based, from piscem-rs workspace) — used for
+# geometry validation and flex-quant. Patched to GitHub in .cargo/config.toml
+# until published to crates.io.
+seq_geom_parser = "1.0"
+# Old seq_geom_parser 0.3.0 (pest-based) — still used by simpleaf quant for
+# PiscemGeomDesc/SalmonGeomDesc command-line arg generation and FIFO transforms.
+# Imported as `seq_geom_parser_legacy`. Will be migrated to 1.0 incrementally.
+# Legacy seq_geom_parser 0.3.0 and seq_geom_xform removed — salmon single-cell
+# mapping is deprecated, and piscem handles geometry strings directly.
+# All geometry validation uses seq_geom_parser 1.0 (above).
 roers = { version = "0.4.0" }
 af-anndata = { version = "0.3.3" }
 
@@ -58,7 +61,7 @@ clap = { version = "4.5.37", features = [
   "usage",
   "error-context",
 ] }
-cmd_lib = "^1.9.6"
+cmd_lib = "2.0.0"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", default-features = true, features = [
   "env-filter",

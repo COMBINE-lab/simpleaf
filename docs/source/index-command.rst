@@ -3,9 +3,9 @@
 
 The ``index`` command has two forms of input; either it will take a reference genome FASTA and GTF as input, from which it can build a spliced+intronic (splici) reference or a spliced+unspliced (spliceu) reference using `roers <https://github.com/COMBINE-lab/roers>`_  (which is used as a library directly from ``simpleaf``, and so need not be installed independently), or it will take a single reference sequence file (i.e. FASTA file) as input (direct-ref mode).  
 
-In expanded reference mode, after the expanded reference is constructed, the resulting reference will be indexed with ``piscem build`` or ``salmon index`` command (depending on the mapper you choose to use), and a copy of the 3-column transcript-to-gene file will be placed in the index directory for subsequent use. The output directory will contain both a ``ref`` and ``index`` subdirectory, with the first containing the splici reference that was extracted from the provided genome and GTF, and the latter containing the index built on this reference. 
+In expanded reference mode, after the expanded reference is constructed, the resulting reference will be indexed with ``piscem build``, and a copy of the 3-column transcript-to-gene file will be placed in the index directory for subsequent use. The output directory will contain both a ``ref`` and ``index`` subdirectory, with the first containing the splici reference that was extracted from the provided genome and GTF, and the latter containing the index built on this reference. 
 
-In direct-ref mode, if ``--refseq`` is passed, the provided FASTA file will be provided to ``piscem build`` or ``salmon index`` directly.  If ``probe_csv`` or ``feature_csv`` is passed, a FASTA file will be created accordingly and provided to ``piscem build`` or ``salmon index``. The output directory will contain an ``index`` subdirectory that contains the index built on this reference.
+In direct-ref mode, if ``--refseq`` is passed, the provided FASTA file will be provided to ``piscem build`` directly. If ``probe_csv`` or ``feature_csv`` is passed, a FASTA file will be created accordingly and provided to ``piscem build``. The output directory will contain an ``index`` subdirectory that contains the index built on this reference.
 
 - ``probe_csv``: A CSV file containing probe sequences to use for direct reference indexing. The file must follow the format of `10x Probe Set Reference CSV <https://www.10xgenomics.com/support/cytassist-spatial-gene-expression/documentation/steps/probe-sets/visium-ffpe-probe-sets-files#:~:text=probe%20set%20downloads-,Probe%20set%20reference%20CSV%20file,-This%20CSV%20file>`_, containing four mandatory columns: `gene_id`, `probe_seq`, `probe_id`, and `included` (must be ``TRUE`` or ``FALSE``), and an optional column: `region` (must be ``spliced`` or ``unspliced``). When parsing the file, ``simpleaf`` will only use the rows where the `included` column is ``TRUE``. For each row, ``simpleaf`` first builds a FASTA record where the identifier is set as `probe_id`, and the sequence is set as `probe_seq`. Then, it will build a t2g file where the first column is `probe_id` and the second column is `gene_id`. If the `region` column exists, the t2g file will include the region information, so as to trigger the USA mode in ``simpleaf quant`` to generate spliced and unspliced count separately. The t2g file will be identified by ``simpleaf quant`` automatically if ``--t2g-map`` is not set.
 - ``feature_csv``: A CSV file containing feature barcode sequences to use for direct reference indexing. The file must follow the format of `10x Feature Reference CSV <https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/inputs/cr-feature-ref-csv#columns>`_. Currently, only three columns are used: `id`, `name`, and `sequence`. When parsing the file, ``simpleaf`` first builds a FASTA file using the `id` and `sequence` columns. Then, it will build a t2g file where the transcript is set as `id` and the gene is set as `name`. The t2g file will be identified by ``simpleaf quant`` automatically if ``--t2g-map`` is not set.
@@ -70,11 +70,4 @@ The relevant options (which you can obtain by running ``simpleaf index -h``) are
             index build fails) [default: 1]
         --work-dir <WORK_DIR>
             The working directory where temporary files should be placed [default: ./workdir.noindex]
-        --use-piscem
-            Use piscem instead of salmon for indexing and mapping (default)
-
-    Alternative salmon-alevin Index Options:
-    -p, --sparse     If this flag is passed, build the sparse rather than dense index for mapping
-        --no-piscem  Don't use the default piscem mapper, instead, use salmon-alevin
-
 

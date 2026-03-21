@@ -53,9 +53,3 @@ Piscem Index Options:
           index build fails) [default: 1]
       --work-dir <WORK_DIR>
           The working directory where temporary files should be placed [default: ./workdir.noindex]
-      --use-piscem
-          Use piscem instead of salmon for indexing and mapping (default)
-
-Alternative salmon-alevin Index Options:
-  -p, --sparse     If this flag is passed, build the sparse rather than dense index for mapping
-      --no-piscem  Don't use the default piscem mapper, instead, use salmon-alevin

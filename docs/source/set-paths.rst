@@ -10,8 +10,8 @@ The ``set-paths`` command is used to set the paths to the relevant executables a
   Usage: simpleaf set-paths [OPTIONS]
   
   Options:
-    -s, --salmon <SALMON>          path to salmon to use
     -p, --piscem <PISCEM>          path to piscem to use
     -a, --alevin-fry <ALEVIN_FRY>  path to alein-fry to use
+    -m, --macs <MACS>              path to macs3 to use
     -h, --help                     Print help information
     -V, --version                  Print version information

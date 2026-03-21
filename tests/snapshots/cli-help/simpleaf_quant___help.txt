@@ -11,18 +11,12 @@ Options:
   -V, --version                Print version
 
 Mapping Options:
-  -i, --index <INDEX>            Path to a folder containing the index files
-  -1, --reads1 <READS1>          Comma-separated list of paths to read 1 files. The order must match
-                                 the read 2 files
-  -2, --reads2 <READS2>          Comma-separated list of paths to read 2 files. The order must match
-                                 the read 1 files
-      --no-piscem                Don't use the default piscem mapper, instead, use salmon-alevin
-      --use-piscem               Use piscem for mapping (requires that index points to the piscem
-                                 index)
-  -s, --use-selective-alignment  Use selective-alignment for mapping (only if using salmon alevin as
-                                 the underlying mapper)
-      --map-dir <MAP_DIR>        Path to a mapped output directory containing a RAD file to skip
-                                 mapping
+  -i, --index <INDEX>      Path to a folder containing the index files
+  -1, --reads1 <READS1>    Comma-separated list of paths to read 1 files. The order must match the
+                           read 2 files
+  -2, --reads2 <READS2>    Comma-separated list of paths to read 2 files. The order must match the
+                           read 1 files
+      --map-dir <MAP_DIR>  Path to a mapped output directory containing a RAD file to skip mapping
 
 Piscem Mapping Options:
       --struct-constraints

@@ -5,16 +5,18 @@ use serde_json::json;
 use tempfile::tempdir;
 
 #[test]
-fn salmon_missing_error_mentions_salmon_executable() {
+fn legacy_salmon_index_metadata_is_rejected_with_migration_error() {
     let binary = env!("CARGO_BIN_EXE_simpleaf");
     let af_home = tempdir().expect("failed to create temp af home");
+    let index_dir = af_home.path().join("index");
+    fs::create_dir_all(&index_dir).expect("failed to create index dir");
+
     let t2g = af_home.path().join("t2g.tsv");
     fs::write(&t2g, "tx1\tgene1\n").expect("failed to write t2g");
 
     let af_info = json!({
         "prog_info": {
-            "salmon": null,
-            "piscem": null,
+            "piscem": {"exe_path": "/bin/echo", "version": "0.12.2"},
             "alevin_fry": {"exe_path": "/bin/echo", "version": "0.11.2"},
             "macs": null
         }
@@ -24,6 +26,16 @@ fn salmon_missing_error_mentions_salmon_executable() {
         serde_json::to_string_pretty(&af_info).expect("failed to serialize af info"),
     )
     .expect("failed to write simpleaf_info.json");
+
+    let index_json = json!({
+        "index_type": "salmon",
+        "t2g_file": "t2g_3col.tsv"
+    });
+    fs::write(
+        index_dir.join("simpleaf_index.json"),
+        serde_json::to_string_pretty(&index_json).expect("failed to serialize index info"),
+    )
+    .expect("failed to write simpleaf_index.json");
 
     let output = Command::new(binary)
         .env("ALEVIN_FRY_HOME", af_home.path())
@@ -37,8 +49,7 @@ fn salmon_missing_error_mentions_salmon_executable() {
             "cr-like",
             "--knee",
             "-i",
-            "/tmp/fake_index",
-            "--no-piscem",
+            &index_dir.to_string_lossy(),
             "-1",
             "r1.fastq",
             "-2",
@@ -52,8 +63,8 @@ fn salmon_missing_error_mentions_salmon_executable() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("no salmon executable is provided"),
-        "stderr did not mention salmon executable:\n{}",
+        stderr.contains("no longer supported"),
+        "stderr did not mention migration guidance:\n{}",
         stderr
     );
 }

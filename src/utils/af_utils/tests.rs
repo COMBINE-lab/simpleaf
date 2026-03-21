@@ -40,24 +40,14 @@ fn test_no_index_known_chems() {
     let idx_type = IndexType::NoIndex;
     let custom_chem_p = PathBuf::from("resources").join("chemistries.json");
     let cs = [
-        // forward
         "10xv2",
         "10xv3",
         "10xv4-3p",
         "10xv2-5p",
         "10xv3-5p",
-        "splitseqv1",
-        "splitseqv2",
-        "indropv2",
-        "sciseq3",
-        "dropseq",
-        "citeseq",
-        // reverse
-        "celseq2",
     ];
 
-    let mut dirs = vec![ExpectedOri::Forward; cs.len() - 1];
-    dirs.push(ExpectedOri::Reverse);
+    let dirs = vec![ExpectedOri::Forward; cs.len()];
 
     for (chem, dir) in cs.iter().zip(dirs.iter()) {
         let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem);
@@ -77,10 +67,9 @@ fn test_no_index_known_chems() {
 #[test]
 fn test_invalid_chemistry_name() {
     let piscem_idx = IndexType::Piscem(PathBuf::new());
-    let salmon_idx = IndexType::Salmon(PathBuf::new());
     let custom_chem_p = PathBuf::from("resources").join("chemistries.json");
 
-    let indexes = vec![piscem_idx, salmon_idx];
+    let indexes = vec![piscem_idx, IndexType::NoIndex];
     let cs = vec!["flerb"];
     for idx_type in indexes {
         for chem in &cs {
@@ -125,106 +114,15 @@ fn test_piscem_known_invalid() {
 }
 
 #[test]
-fn test_salmon_known_invalid() {
-    let salmon_idx = IndexType::Salmon(PathBuf::new());
+fn test_custom_general_geometry_is_accepted_for_piscem() {
+    let idx_type = IndexType::Piscem(PathBuf::new());
     let custom_chem_p = PathBuf::from("resources").join("chemistries.json");
-    let cs = vec!["10xv3-5p", "10xv2-5p"];
+    let chem = r#"1{b[16]u[12]x[0-3]hamming(f[TTGCTAGGACCG],1)s[10]x:}2{r:}"#;
 
-    for chem in &cs {
-        let c = Chemistry::from_str(&salmon_idx, &custom_chem_p, chem);
-        match c {
-            Err(e) => println!("{:?}", e),
-            Ok(_) => panic!(
-                "This lookup of chemistry {} in the piscem mapper should not succeed!",
-                chem
-            ),
-        }
+    let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem)
+        .expect("general geometry should be accepted");
+    match c {
+        Chemistry::Custom(custom) => assert_eq!(custom.geometry(), chem),
+        other => panic!("expected custom chemistry, found {:?}", other),
     }
-}
-
-#[test]
-fn test_salmon_known_chems() {
-    let idx_type = IndexType::Salmon(PathBuf::new());
-    let custom_chem_p = PathBuf::from("resources").join("chemistries.json");
-
-    let chem = "10xv2";
-    let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem)
-        .expect("should be able to obtain chemistry");
-    assert_eq!(c, Chemistry::Rna(RnaChemistry::TenxV2));
-    assert_eq!(c.expected_ori(), ExpectedOri::Forward);
-
-    let chem = "10xv3";
-    let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem)
-        .expect("should be able to obtain chemistry");
-    assert_eq!(c, Chemistry::Rna(RnaChemistry::TenxV3));
-    assert_eq!(c.expected_ori(), ExpectedOri::Forward);
-
-    let chem = "10xv4-3p";
-    let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem)
-        .expect("should be able to obtain chemistry");
-    assert_eq!(c, Chemistry::Rna(RnaChemistry::TenxV43P));
-    assert_eq!(c.expected_ori(), ExpectedOri::Forward);
-
-    let chem = "dropseq";
-    let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem)
-        .expect("should be able to obtain chemistry");
-    assert_eq!(
-        c,
-        Chemistry::Rna(RnaChemistry::Other(String::from("dropseq")))
-    );
-    assert_eq!(c.expected_ori(), ExpectedOri::Forward);
-
-    let chem = "indropv2";
-    let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem)
-        .expect("should be able to obtain chemistry");
-    assert_eq!(
-        c,
-        Chemistry::Rna(RnaChemistry::Other(String::from("indropv2")))
-    );
-    assert_eq!(c.expected_ori(), ExpectedOri::Forward);
-
-    let chem = "citeseq";
-    let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem)
-        .expect("should be able to obtain chemistry");
-    assert_eq!(
-        c,
-        Chemistry::Rna(RnaChemistry::Other(String::from("citeseq")))
-    );
-    assert_eq!(c.expected_ori(), ExpectedOri::Forward);
-
-    let chem = "celseq2";
-    let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem)
-        .expect("should be able to obtain chemistry");
-    assert_eq!(
-        c,
-        Chemistry::Rna(RnaChemistry::Other(String::from("celseq2")))
-    );
-    assert_eq!(c.expected_ori(), ExpectedOri::Reverse);
-
-    let chem = "splitseqv1";
-    let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem)
-        .expect("should be able to obtain chemistry");
-    assert_eq!(
-        c,
-        Chemistry::Rna(RnaChemistry::Other(String::from("splitseqv1")))
-    );
-    assert_eq!(c.expected_ori(), ExpectedOri::Forward);
-
-    let chem = "splitseqv2";
-    let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem)
-        .expect("should be able to obtain chemistry");
-    assert_eq!(
-        c,
-        Chemistry::Rna(RnaChemistry::Other(String::from("splitseqv2")))
-    );
-    assert_eq!(c.expected_ori(), ExpectedOri::Forward);
-
-    let chem = "sciseq3";
-    let c = Chemistry::from_str(&idx_type, &custom_chem_p, chem)
-        .expect("should be able to obtain chemistry");
-    assert_eq!(
-        c,
-        Chemistry::Rna(RnaChemistry::Other(String::from("sciseq3")))
-    );
-    assert_eq!(c.expected_ori(), ExpectedOri::Forward);
 }

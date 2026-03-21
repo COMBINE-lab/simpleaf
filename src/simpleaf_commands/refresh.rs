@@ -10,7 +10,6 @@ pub fn refresh_prog_info(af_home_path: PathBuf) -> anyhow::Result<()> {
     let current_rp: ReqProgs = serde_json::from_value(v["prog_info"].clone())?;
 
     let new_rp = get_required_progs_from_paths(
-        current_rp.salmon.map(|p| p.exe_path),
         current_rp.piscem.map(|p| p.exe_path),
         current_rp.alevin_fry.map(|p| p.exe_path),
         current_rp.macs.map(|p| p.exe_path),

@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use super::MapQuantOpts;
 use crate::utils::chem_utils::ExpectedOri;
@@ -230,17 +230,7 @@ fn push_advanced_piscem_options(
     Ok(())
 }
 
-fn validate_map_and_quant_opts(opts: &MapQuantOpts) -> anyhow::Result<()> {
-    if opts.use_piscem && opts.use_selective_alignment {
-        error!(concat!(
-            "The `--use-selective-alignment` flag cannot be used with the ",
-            "default `piscem` mapper. If you wish to use `--selective-alignment` ",
-            "then please pass the `--no-piscem` flag as well (and ensure that ",
-            "you are passing a `salmon` index and not a `piscem` index)."
-        ));
-        bail!("conflicting command line arguments");
-    }
-
+fn validate_map_and_quant_opts(_opts: &MapQuantOpts) -> anyhow::Result<()> {
     Ok(())
 }
 
@@ -284,7 +274,7 @@ fn resolve_quant_setup(
     let rp: ReqProgs = ctx.progs;
     rp.issue_recommended_version_messages();
 
-    let index_meta = index_meta::resolve_quant_index(opts.index.clone(), opts.use_piscem)?;
+    let index_meta = index_meta::resolve_quant_index(opts.index.clone())?;
     if t2g_map.is_none()
         && let Some(t2g_loc) = index_meta.inferred_t2g.clone()
     {
@@ -308,13 +298,6 @@ fn resolve_quant_setup(
             if rp.piscem.is_none() {
                 bail!(
                     "A piscem index is being used, but no piscem executable is provided. Please set one with `simpleaf set-paths`."
-                );
-            }
-        }
-        IndexType::Salmon(_) => {
-            if rp.salmon.is_none() {
-                bail!(
-                    "A salmon index is being used, but no salmon executable is provided. Please set one with `simpleaf set-paths`."
                 );
             }
         }
@@ -413,7 +396,7 @@ fn run_mapping_stage(
     opts: &MapQuantOpts,
     setup: &QuantSetup,
 ) -> anyhow::Result<MappingStageOutput> {
-    if let Some(index) = opts.index.clone() {
+    if opts.index.is_some() {
         let reads1 = opts.reads1.as_ref().context(
             "Mapping against an index was requested, but read1 files were not provided.",
         )?;
@@ -469,8 +452,7 @@ being used by simpleaf"#,
                     }
                 }
 
-                let frag_lib_xform = add_or_transform_fragment_library(
-                    MapperType::Piscem,
+                add_fragment_library_to_piscem(
                     setup.chem.fragment_geometry_str(),
                     reads1,
                     reads2,
@@ -487,32 +469,6 @@ being used by simpleaf"#,
 
                 let map_start = Instant::now();
                 exec::run_checked(&mut piscem_quant_cmd, "piscem [mapping phase]")?;
-                match frag_lib_xform {
-                    FragmentTransformationType::TransformedIntoFifo(xform_data) => {
-                        match xform_data.join_handle.join() {
-                            Ok(join_res) => {
-                                let xform_stats = join_res?;
-                                let total = xform_stats.total_fragments;
-                                let failed = xform_stats.failed_parsing;
-                                info!(
-                                    "seq_geom_xform : observed {} input fragments. {} ({:.2}%) of them failed to parse and were not transformed",
-                                    total,
-                                    failed,
-                                    if total > 0 {
-                                        (failed as f64) / (total as f64)
-                                    } else {
-                                        0_f64
-                                    } * 100_f64
-                                );
-                            }
-                            Err(e) => {
-                                bail!("Thread panicked with {:?}", e);
-                            }
-                        }
-                    }
-                    FragmentTransformationType::Identity => {}
-                }
-
                 Ok(MappingStageOutput {
                     sc_mapper: String::from("piscem"),
                     map_cmd_string,
@@ -520,86 +476,9 @@ being used by simpleaf"#,
                     map_duration: map_start.elapsed(),
                 })
             }
-            IndexType::Salmon(index_base) => {
-                let salmon_prog_info =
-                    setup.rp.salmon.as_ref().context(
-                        "A salmon index is being used, but salmon program info is missing.",
-                    )?;
-                let mut salmon_quant_cmd =
-                    std::process::Command::new(format!("{}", salmon_prog_info.exe_path.display()));
-                let index_path = format!("{}", index_base.display());
-                salmon_quant_cmd
-                    .arg("alevin")
-                    .arg("--index")
-                    .arg(index_path)
-                    .arg("-l")
-                    .arg("A");
-
-                let frag_lib_xform = add_or_transform_fragment_library(
-                    MapperType::Salmon,
-                    setup.chem.fragment_geometry_str(),
-                    reads1,
-                    reads2,
-                    &mut salmon_quant_cmd,
-                )?;
-
-                let map_output = opts.output.join("af_map");
-                salmon_quant_cmd
-                    .arg("--threads")
-                    .arg(format!("{}", setup.threads))
-                    .arg("-o")
-                    .arg(&map_output);
-                if opts.use_selective_alignment {
-                    salmon_quant_cmd.arg("--rad");
-                } else {
-                    salmon_quant_cmd.arg("--sketch");
-                }
-
-                let map_cmd_string = prog_utils::get_cmd_line_string(&salmon_quant_cmd);
-                info!("salmon alevin cmd : {}", map_cmd_string);
-                let mut input_files = vec![index];
-                input_files.extend_from_slice(reads1);
-                input_files.extend_from_slice(reads2);
-                prog_utils::check_files_exist(&input_files)?;
-
-                let map_start = Instant::now();
-                exec::run_checked(&mut salmon_quant_cmd, "salmon [mapping phase]")?;
-                match frag_lib_xform {
-                    FragmentTransformationType::TransformedIntoFifo(xform_data) => {
-                        match xform_data.join_handle.join() {
-                            Ok(join_res) => {
-                                let xform_stats = join_res?;
-                                let total = xform_stats.total_fragments;
-                                let failed = xform_stats.failed_parsing;
-                                info!(
-                                    "seq_geom_xform : observed {} input fragments. {} ({:.2}%) of them failed to parse and were not transformed",
-                                    total,
-                                    failed,
-                                    if total > 0 {
-                                        (failed as f64) / (total as f64)
-                                    } else {
-                                        0_f64
-                                    } * 100_f64
-                                );
-                            }
-                            Err(e) => {
-                                bail!("Thread panicked with {:?}", e);
-                            }
-                        }
-                    }
-                    FragmentTransformationType::Identity => {}
-                }
-
-                Ok(MappingStageOutput {
-                    sc_mapper: String::from("salmon"),
-                    map_cmd_string,
-                    map_output,
-                    map_duration: map_start.elapsed(),
-                })
-            }
             IndexType::NoIndex => {
                 bail!(
-                    "Cannot perform mapping an quantification without known (piscem or salmon) index!"
+                    "Cannot perform mapping and quantification without a known piscem index."
                 );
             }
         }
@@ -634,10 +513,6 @@ fn run_quant_stage(
         IndexType::Piscem(_) => {
             let piscem_map_log_path = mapping.map_output.join("map_info.json");
             prog_parsing_utils::construct_json_from_piscem_log(piscem_map_log_path)?
-        }
-        IndexType::Salmon(_) => {
-            let salmon_log_path = mapping.map_output.join("logs").join("salmon_quant.log");
-            prog_parsing_utils::construct_json_from_salmon_log(salmon_log_path)?
         }
         IndexType::NoIndex => {
             serde_json::json!({
@@ -813,7 +688,6 @@ mod tests {
     fn minimal_no_index_setup() -> QuantSetup {
         QuantSetup {
             rp: ReqProgs {
-                salmon: None,
                 piscem: None,
                 alevin_fry: None,
                 macs: None,

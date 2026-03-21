@@ -35,7 +35,6 @@ mod tests {
         let td = tempdir().expect("failed to create tempdir");
         let af_info = json!({
             "prog_info": {
-                "salmon": null,
                 "piscem": {"exe_path": "/bin/echo", "version": "0.12.2"},
                 "alevin_fry": {"exe_path": "/bin/echo", "version": "0.11.2"},
                 "macs": null

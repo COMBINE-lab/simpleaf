@@ -1655,7 +1655,6 @@ mod tests {
                     "--fasta": "genome.fa",
                     "--gtf": "genes.gtf",
                     "--output": "index_output",
-                    "--use-piscem": "",
                     "--overwrite": ""
                 },
                 "simpleaf_quant": {
@@ -1670,9 +1669,7 @@ mod tests {
                     "--reads2": "reads2.fastq",
                     "--unfiltered-pl": "",
                     "--output": "quant_output",
-                    "--index": "index_output/index",
-                    "--use-piscem": "",
-                    "--use-selective-alignment": ""
+                    "--index": "index_output/index"
                 }
             }, 
             "external-commands": {
@@ -1864,8 +1861,6 @@ mod tests {
                     assert_eq!(quant_opts.index, Some(PathBuf::from("index_output/index")));
                     assert_eq!(quant_opts.reads1, Some(vec![PathBuf::from("reads1.fastq")]));
                     assert_eq!(quant_opts.reads2, Some(vec![PathBuf::from("reads2.fastq")]));
-                    assert!(quant_opts.use_selective_alignment);
-                    assert!(quant_opts.use_piscem);
                     assert_eq!(quant_opts.map_dir, None);
                     assert!(!quant_opts.knee);
                     assert_eq!(quant_opts.unfiltered_pl, Some(None));
