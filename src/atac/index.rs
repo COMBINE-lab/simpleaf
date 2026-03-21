@@ -19,7 +19,7 @@ pub(crate) fn piscem_index(af_home_path: &Path, opts: &IndexOpts) -> anyhow::Res
 
     match prog_utils::check_version_constraints(
         "piscem",
-        ">=0.11.0, <1.0.0",
+        ">=0.18.0, <1.0.0",
         &piscem_prog_info.version,
     ) {
         Ok(af_ver) => info!("found piscem version {:#}, proceeding", af_ver),

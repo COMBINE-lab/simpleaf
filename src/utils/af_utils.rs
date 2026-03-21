@@ -535,8 +535,8 @@ Please consider removing and re-adding this chemistry with a valid permit list."
 /// with the piscem mapping command `quant_cmd`.
 pub fn add_fragment_library_to_piscem(
     fragment_geometry_str: &str,
-    reads1: &Vec<PathBuf>,
-    reads2: &Vec<PathBuf>,
+    reads1: &[PathBuf],
+    reads2: &[PathBuf],
     quant_cmd: &mut std::process::Command,
 ) -> Result<()> {
     let reads1_str = reads1

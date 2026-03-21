@@ -164,7 +164,7 @@ pub(crate) fn check_progs<P: AsRef<Path>>(
 
     match prog_utils::check_version_constraints(
         "alevin-fry",
-        ">=0.11.2, <1.0.0",
+        ">=0.13.0, <1.0.0",
         &af_prog_info.version,
     ) {
         Ok(af_ver) => info!("found alevin-fry version {:#}, proceeding", af_ver),
@@ -178,7 +178,7 @@ pub(crate) fn check_progs<P: AsRef<Path>>(
 
     match prog_utils::check_version_constraints(
         "piscem",
-        ">=0.11.0, <1.0.0",
+        ">=0.18.0, <1.0.0",
         &piscem_prog_info.version,
     ) {
         Ok(piscem_ver) => info!("found piscem version {:#}, proceeding", piscem_ver),
@@ -255,10 +255,10 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
     add_read_args(&mut piscem_map_cmd, opts)?;
 
     // if the user is requesting a mapping option that required
-    // piscem version >= 0.7.0, ensure we have that
+    // piscem version >= 0.18.0, ensure we have that
     match prog_utils::check_version_constraints(
         "piscem",
-        ">=0.11.0, <1.0.0",
+        ">=0.18.0, <1.0.0",
         &piscem_prog_info.version,
     ) {
         Ok(_piscem_ver) => {
@@ -267,9 +267,9 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
         Err(_) => {
             info!(
                 r#"
-Simpleaf is currently using piscem version {}, but you must be using version >= 0.11.0 in order to use the 
-mapping options specific to this, or later versions. If you wish to use these options, please upgrade your 
-piscem version or, if you believe you have a sufficiently new version installed, update the executable 
+Simpleaf is currently using piscem version {}, but you must be using version >= 0.18.0 in order to use the
+mapping options specific to this, or later versions. If you wish to use these options, please upgrade your
+piscem version or, if you believe you have a sufficiently new version installed, update the executable
 being used by simpleaf"#,
                 &piscem_prog_info.version
             );

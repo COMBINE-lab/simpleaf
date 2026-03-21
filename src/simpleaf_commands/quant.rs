@@ -434,7 +434,7 @@ fn run_mapping_stage(
 
                 match prog_utils::check_version_constraints(
                     "piscem",
-                    ">=0.7.0, <1.0.0",
+                    ">=0.18.0, <1.0.0",
                     &piscem_prog_info.version,
                 ) {
                     Ok(_piscem_ver) => {
@@ -443,9 +443,9 @@ fn run_mapping_stage(
                     Err(_) => {
                         info!(
                             r#"
-Simpleaf is currently using piscem version {}, but you must be using version >= 0.7.0 in order to use the 
-mapping options specific to this, or later versions. If you wish to use these options, please upgrade your 
-piscem version or, if you believe you have a sufficiently new version installed, update the executable 
+Simpleaf is currently using piscem version {}, but you must be using version >= 0.18.0 in order to use the
+mapping options specific to this, or later versions. If you wish to use these options, please upgrade your
+piscem version or, if you believe you have a sufficiently new version installed, update the executable
 being used by simpleaf"#,
                             &piscem_prog_info.version
                         );

@@ -230,9 +230,9 @@ pub struct ReqProgs {
 
 impl ReqProgs {
     pub fn issue_recommended_version_messages(&self) {
-        // Currently (2/08/2025) want to recommend piscem >= 0.12.2
+        // Currently (3/21/2026) want to recommend piscem >= 0.18.0
         if let Some(ref piscem_info) = self.piscem {
-            let desired_ver = VersionReq::parse(">=0.12.2").unwrap();
+            let desired_ver = VersionReq::parse(">=0.18.0").unwrap();
             let current_ver = Version::parse(&piscem_info.version).unwrap();
             if desired_ver.matches(&current_ver) {
                 // nothing to do here
@@ -364,10 +364,7 @@ pub fn get_required_progs_from_paths(
 
     let opt_piscem = match piscem_exe {
         Some(p) => Some(p),
-        None => match get_which_executable("piscem") {
-            Ok(p) => Some(p),
-            Err(_e) => None,
-        },
+        None => get_which_executable("piscem").ok(),
     };
 
     let alevin_fry = match alevin_fry_exe {

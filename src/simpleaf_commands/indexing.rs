@@ -542,9 +542,6 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     )?;
 
     let output_index_dir = output.join("index");
-    let index_duration;
-    let index_cmd_string: String;
-
     if rp.piscem.is_none() {
         bail!(
             "The construction of a piscem index was requested, but a valid piscem executable was not available. \n\
@@ -599,7 +596,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     if let Some(decoy_paths) = opts.decoy_paths {
         match prog_utils::check_version_constraints(
             "piscem",
-            ">=0.7.0, <1.0.0",
+            ">=0.18.0, <1.0.0",
             &piscem_prog_info.version,
         ) {
             Ok(_piscem_ver) => {
@@ -613,9 +610,9 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
             Err(_) => {
                 warn!(
                     r#"
-You requested to build a poison k-mer table with {:?}, but you must be using piscem version >= 0.7.0 
-to use this feature. Simpleaf is currently using version {}. Please upgrade your piscem version or, 
-if you believe you have a sufficiently new version installed, update the executable being used by 
+You requested to build a poison k-mer table with {:?}, but you must be using piscem version >= 0.18.0
+to use this feature. Simpleaf is currently using version {}. Please upgrade your piscem version or,
+if you believe you have a sufficiently new version installed, update the executable being used by
 simpleaf"#,
                     decoy_paths, &piscem_prog_info.version
                 );
@@ -623,12 +620,12 @@ simpleaf"#,
         }
     }
 
-    index_cmd_string = prog_utils::get_cmd_line_string(&piscem_index_cmd);
+    let index_cmd_string = prog_utils::get_cmd_line_string(&piscem_index_cmd);
     info!("piscem build cmd : {}", index_cmd_string);
 
     let index_start = Instant::now();
     let _cres = exec::run_checked(&mut piscem_index_cmd, "piscem index command")?;
-    index_duration = index_start.elapsed();
+    let index_duration = index_start.elapsed();
 
     let mut t2g_out_path: Option<PathBuf> = None;
     if let Some(t2g_file) = reference_stage.t2g.clone() {
