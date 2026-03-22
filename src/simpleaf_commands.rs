@@ -117,7 +117,11 @@ pub struct MapQuantOpts {
 
     /// Skip checking of the equivalence classes of k-mers that were too ambiguous to be otherwise
     /// considered (passing this flag can speed up mapping slightly, but may reduce specificity)
-    #[arg(long, conflicts_with = "max_ec_card", help_heading = "Piscem Mapping Options")]
+    #[arg(
+        long,
+        conflicts_with = "max_ec_card",
+        help_heading = "Piscem Mapping Options"
+    )]
     pub ignore_ambig_hits: bool,
 
     /// Do not consider poison k-mers, even if the underlying index contains them. In this case,
@@ -559,17 +563,35 @@ pub struct MultiplexQuantOpts {
     #[arg(short = 'm', long, help_heading = "Reference Options")]
     pub t2g_map: Option<PathBuf>,
 
+    /// Resolve expression separately into spliced and unspliced counts (USA mode).
+    /// Requires splicing-aware probe annotations: either a probe CSV with a
+    /// `region` column (`spliced` / `unspliced`) or a pre-built index with an
+    /// adjacent 3-column t2g file. By default, expression is grouped at the gene
+    /// level.
+    #[arg(long, help_heading = "Reference Options")]
+    pub usa: bool,
+
     /// Path to sample/probe barcode file with rotation mapping
     /// (overrides auto-download). 3-column TSV: observed, canonical, sample_name.
     #[arg(long, help_heading = "Reference Options")]
     pub sample_bc_list: Option<PathBuf>,
 
     /// Comma-separated list of R1 FASTQ files
-    #[arg(short = '1', long, value_delimiter = ',', help_heading = "Mapping Options")]
+    #[arg(
+        short = '1',
+        long,
+        value_delimiter = ',',
+        help_heading = "Mapping Options"
+    )]
     pub reads1: Vec<PathBuf>,
 
     /// Comma-separated list of R2 FASTQ files
-    #[arg(short = '2', long, value_delimiter = ',', help_heading = "Mapping Options")]
+    #[arg(
+        short = '2',
+        long,
+        value_delimiter = ',',
+        help_heading = "Mapping Options"
+    )]
     pub reads2: Vec<PathBuf>,
 
     /// UMI resolution mode

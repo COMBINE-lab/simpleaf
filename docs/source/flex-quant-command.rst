@@ -1,7 +1,7 @@
-``flex-quant`` command
-======================
+``multiplex-quant`` command
+===========================
 
-The ``flex-quant`` command runs the end-to-end ``simpleaf`` pipeline for 10x Flex Gene Expression data. Unlike :doc:`/quant-command`, which is designed around standard single-cell RNA-seq chemistries and a single cell-barcode whitelist, ``flex-quant`` handles the extra resources and steps required for Flex assays:
+The ``multiplex-quant`` command runs the end-to-end ``simpleaf`` pipeline for 10x Flex Gene Expression data and related multi-barcode assays. Unlike :doc:`/quant-command`, which is designed around standard single-cell RNA-seq chemistries and a single cell-barcode whitelist, ``multiplex-quant`` handles the extra resources and steps required for Flex assays:
 
 - Flex chemistry lookup from the chemistry registry
 - probe set selection by organism
@@ -13,7 +13,7 @@ The ``flex-quant`` command runs the end-to-end ``simpleaf`` pipeline for 10x Fle
 - multi-barcode permit-list generation with ``alevin-fry generate-permit-list``
 - ``alevin-fry collate`` and ``alevin-fry quant``
 
-At present, ``flex-quant`` expects a registered Flex chemistry such as ``10x-flexv1-gex-3p`` or ``10x-flexv2-gex-3p`` and requires ``piscem`` plus ``alevin-fry`` to be configured with :doc:`/set-paths`.
+At present, ``multiplex-quant`` expects a registered Flex chemistry such as ``10x-flexv1-gex-3p`` or ``10x-flexv2-gex-3p`` and requires ``piscem`` plus ``alevin-fry`` to be configured with :doc:`/set-paths`.
 
 Overview
 --------
@@ -27,17 +27,21 @@ The command needs:
 
 If the chemistry registry contains the needed metadata, ``simpleaf`` can automatically download and cache the probe set, the cell barcode whitelist, and the sample barcode list. If you already have local resources, you can override these defaults with ``--index``, ``--probe-set``, or ``--sample-bc-list``.
 
-The relevant options (which you can obtain by running ``simpleaf flex-quant -h``) are below:
+The relevant options (which you can obtain by running ``simpleaf multiplex-quant -h``) are below:
 
 .. code-block:: console
 
-    quantify a 10x Flex GEX sample (probe-based, multiplexed)
+    quantify a multiplexed sample (e.g. 10x Flex, or any custom multi-barcode protocol)
 
-    Usage: simpleaf flex-quant [OPTIONS] --chemistry <CHEMISTRY> --organism <ORGANISM> --output <OUTPUT> --reads1 <READS1> --reads2 <READS2>
+    Usage: simpleaf multiplex-quant [OPTIONS] --output <OUTPUT>
 
     Options:
-      -c, --chemistry <CHEMISTRY>    Chemistry name: 10x-flexv1-gex-3p or 10x-flexv2-gex-3p
+      -c, --chemistry <CHEMISTRY>    Chemistry name (e.g. 10x-flexv1-gex-3p). Provides defaults for geometry, cell BC whitelist, sample BC list, and probe set. All can be overridden individually. If omitted, --geometry and --cell-bc-list are required
           --organism <ORGANISM>      Target organism for automatic probe set selection [possible values: human, mouse]
+          --cell-bc-list <CELL_BC_LIST>
+                                      Path to cell barcode whitelist (one barcode per line, overrides chemistry default)
+          --expected-ori <EXPECTED_ORI>
+                                      Expected read orientation: fw, rc, or both [default: both]
       -o, --output <OUTPUT>          Path to output directory
       -t, --threads <THREADS>        Number of threads to use [default: 16]
       -r, --resolution <RESOLUTION>  UMI resolution mode [default: cr-like] [possible values: cr-like, cr-like-em, parsimony, parsimony-em, parsimony-gene, parsimony-gene-em]
@@ -54,6 +58,10 @@ The relevant options (which you can obtain by running ``simpleaf flex-quant -h``
           --sample-bc-list <SAMPLE_BC_LIST>  Path to sample/probe barcode file with rotation mapping
           --kmer-length <KMER_LENGTH>        k-mer length for probe index building [default: 23]
 
+    Reference Options:
+      -m, --t2g-map <T2G_MAP>  Path to a transcript-to-gene map file
+          --usa                Resolve expression into separate spliced and unspliced counts. This requires splicing-aware probe annotations: either a probe CSV with a ``region`` column containing ``spliced`` / ``unspliced`` values, or a pre-built index with an adjacent 3-column t2g file
+
     Piscem Mapping Options:
           --skipping-strategy <SKIPPING_STRATEGY>  The skipping strategy to use for k-mer collection [default: permissive] [possible values: permissive, strict]
           --struct-constraints                     If piscem >= 0.7.0, enable structural constraints
@@ -65,18 +73,31 @@ The relevant options (which you can obtain by running ``simpleaf flex-quant -h``
 Resource resolution
 -------------------
 
-``flex-quant`` resolves resources in the following order:
+``multiplex-quant`` resolves resources in the following order:
 
 - Probe index:
-  If ``--index`` is provided, ``simpleaf`` uses that index directly. The command expects a corresponding ``probe_t2g.tsv`` next to the index, unless you also provide ``--probe-set`` so it can generate the t2g mapping.
+  If ``--index`` is provided, ``simpleaf`` accepts either a ``simpleaf index`` output directory, its ``index/`` subdirectory, the ``piscem_idx`` prefix within that directory, or a multiplex probe-index directory/prefix. It will reuse adjacent metadata and t2g files when present.
 - Probe set:
-  If ``--probe-set`` is provided, it overrides the registry entry. A CSV probe set is converted into a FASTA plus ``probe_t2g.tsv`` automatically. A FASTA input is accepted as-is, and ``simpleaf`` generates an identity-style t2g mapping from the FASTA headers.
+  If ``--probe-set`` is provided, it overrides the registry entry. A CSV probe set is converted into a FASTA plus a gene-level ``probe_t2g.tsv`` automatically, and if probe ``region`` annotations are present it also produces a USA-mode t2g for ``--usa``. A FASTA input is accepted as-is, and ``simpleaf`` generates an identity-style t2g mapping from the FASTA headers.
 - Automatic probe-set selection:
   If neither ``--index`` nor ``--probe-set`` is provided, ``simpleaf`` looks up the requested ``--organism`` in the selected chemistry's registered probe sets, downloads the matching probe CSV if needed, and builds a cached probe index.
 - Cell barcode whitelist:
   This is resolved from the selected chemistry's permit-list metadata in the registry.
 - Sample barcode list:
   This is resolved from ``--sample-bc-list`` if provided, otherwise from the selected chemistry's registry metadata.
+
+USA-mode requirements
+---------------------
+
+``--usa`` is optional. If it is not provided, ``multiplex-quant`` collapses probe expression to the gene level even when splicing annotations are available.
+
+If ``--usa`` is provided, the reference must carry splicing-aware annotations:
+
+- For probe CSV input, the CSV must contain a ``region`` column and each included probe must have value ``spliced`` or ``unspliced``.
+- For pre-built indices, ``simpleaf`` must be able to find an adjacent 3-column t2g such as ``t2g_3col.tsv`` or ``probe_t2g_usa.tsv``.
+- FASTA probe sets do not encode splicing status, so they are not compatible with ``--usa`` unless you also provide an explicit splicing-aware ``--t2g-map``.
+
+If the required splicing annotations are not available, ``simpleaf`` will stop with an error that explains which input is missing the needed information and suggests rerunning without ``--usa``.
 
 Examples
 --------
@@ -86,7 +107,7 @@ Use a registry-backed Flex chemistry with automatic resource resolution:
 .. code-block:: console
 
    $ export ALEVIN_FRY_HOME=/path/to/af_home
-   $ simpleaf flex-quant \
+   $ simpleaf multiplex-quant \
        --chemistry 10x-flexv2-gex-3p \
        --organism human \
        --reads1 sample_R1.fastq.gz \
@@ -97,7 +118,7 @@ Use local probe-set and sample-barcode files instead of downloading them:
 
 .. code-block:: console
 
-   $ simpleaf flex-quant \
+   $ simpleaf multiplex-quant \
        --chemistry 10x-flexv1-gex-3p \
        --organism mouse \
        --probe-set /path/to/probe_set.csv \
@@ -110,10 +131,23 @@ Use a pre-built probe index:
 
 .. code-block:: console
 
-   $ simpleaf flex-quant \
+   $ simpleaf multiplex-quant \
        --chemistry 10x-flexv2-gex-3p \
        --organism human \
-       --index /path/to/probe_index \
+       --index /path/to/simpleaf_index_output \
+       --reads1 sample_R1.fastq.gz \
+       --reads2 sample_R2.fastq.gz \
+       --output flex_out
+
+Request USA-mode probe quantification:
+
+.. code-block:: console
+
+   $ simpleaf multiplex-quant \
+       --chemistry 10x-flexv2-gex-3p \
+       --organism human \
+       --probe-set /path/to/probe_set.csv \
+       --usa \
        --reads1 sample_R1.fastq.gz \
        --reads2 sample_R2.fastq.gz \
        --output flex_out
@@ -125,11 +159,11 @@ The command creates the requested output directory and writes:
 
 - ``af_map/``: the ``piscem`` mapping output
 - ``af_quant/``: the ``alevin-fry`` permit-list, collate, and quantification output
-- ``simpleaf_flex_quant_info.json``: a metadata record describing the resolved inputs, executed commands, and step timings
+- ``simpleaf_multiplex_quant_info.json``: a metadata record describing the resolved inputs, executed commands, and step timings
 
 Notes
 -----
 
-- ``flex-quant`` is specific to registered Flex GEX chemistries. For standard scRNA-seq chemistries and general custom geometries, use :doc:`/quant-command`.
+- ``multiplex-quant`` is specific to registered Flex GEX chemistries and related multi-barcode protocols. For standard scRNA-seq chemistries and general custom geometries, use :doc:`/quant-command`.
 - The Flex pipeline currently uses ``piscem`` for mapping.
-- When a probe CSV is converted, all probes are kept in the generated FASTA and t2g mapping so that downstream quantification has a complete reference-to-gene map.
+- By default, probe expression is grouped at the gene level. Pass ``--usa`` only when the input probe set or pre-built index carries explicit splicing annotations.

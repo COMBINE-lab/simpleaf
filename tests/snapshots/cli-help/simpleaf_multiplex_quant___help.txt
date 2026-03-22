@@ -1,0 +1,64 @@
+quantify a multiplexed sample (e.g. 10x Flex, or any custom multi-barcode protocol)
+
+Usage: simpleaf multiplex-quant [OPTIONS] --output <OUTPUT>
+
+Options:
+  -c, --chemistry <CHEMISTRY>        Chemistry name (e.g. 10x-flexv1-gex-3p). Provides defaults for
+                                     geometry, cell BC whitelist, sample BC list, and probe set. All
+                                     can be overridden individually. If omitted, --geometry and
+                                     --cell-bc-list are required
+  -g, --geometry <GEOMETRY>          Override the read geometry string (e.g.
+                                     '1{b[16]u[12]x[0-3]hamming(f[TTGCTAGGACCG],1)s[10]x:}2{r:}')
+      --organism <ORGANISM>          Target organism for automatic probe set selection [possible
+                                     values: human, mouse]
+      --cell-bc-list <CELL_BC_LIST>  Path to cell barcode whitelist (one barcode per line, overrides
+                                     chemistry default)
+      --expected-ori <EXPECTED_ORI>  Expected read orientation: fw, rc, or both [default: both]
+  -o, --output <OUTPUT>              Path to output directory
+  -t, --threads <THREADS>            Number of threads to use [default: 16]
+  -h, --help                         Print help
+  -V, --version                      Print version
+
+Permit List Options:
+      --sample-correction-mode <SAMPLE_CORRECTION_MODE>
+          Sample barcode correction mode [default: exact] [possible values: exact, 1-edit]
+      --min-reads <MIN_READS>
+          Minimum read count threshold for unfiltered permit list [default: 10]
+
+Mapping Options:
+  -i, --index <INDEX>    Path to pre-built probe index (overrides auto-build)
+  -1, --reads1 <READS1>  Comma-separated list of R1 FASTQ files
+  -2, --reads2 <READS2>  Comma-separated list of R2 FASTQ files
+
+Probe Set Options:
+      --probe-set <PROBE_SET>      Path to probe set CSV or FASTA (overrides auto-download). If a
+                                   CSV is provided, it is converted to FASTA and a t2g map is
+                                   generated automatically
+      --kmer-length <KMER_LENGTH>  k-mer length for probe index building [default: 23]
+
+Reference Options:
+  -m, --t2g-map <T2G_MAP>
+          Path to a transcript-to-gene map file. Use this instead of --probe-set when working with a
+          transcriptome reference rather than a probe set
+      --usa
+          Resolve expression separately into spliced and unspliced counts (USA mode). Requires
+          splicing-aware probe annotations: either a probe CSV with a `region` column (`spliced` /
+          `unspliced`) or a pre-built index with an adjacent 3-column t2g file. By default,
+          expression is grouped at the gene level
+      --sample-bc-list <SAMPLE_BC_LIST>
+          Path to sample/probe barcode file with rotation mapping (overrides auto-download).
+          3-column TSV: observed, canonical, sample_name
+
+Quantification Options:
+  -r, --resolution <RESOLUTION>  UMI resolution mode [default: cr-like] [possible values: cr-like,
+                                 cr-like-em, parsimony, parsimony-em, parsimony-gene,
+                                 parsimony-gene-em]
+
+Piscem Mapping Options:
+      --skipping-strategy <SKIPPING_STRATEGY>
+          The skipping strategy to use for k-mer collection [default: permissive] [possible values:
+          permissive, strict]
+      --struct-constraints
+          If piscem >= 0.7.0, enable structural constraints
+      --max-ec-card <MAX_EC_CARD>
+          Maximum cardinality equivalence class to examine [default: 4096]

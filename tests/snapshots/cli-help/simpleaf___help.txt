@@ -7,7 +7,8 @@ Commands:
   chemistry          operate on or inspect the chemistry registry
   inspect            inspect the current configuration
   quant              quantify a sample
-  flex-quant         quantify a 10x Flex GEX sample (probe-based, multiplexed)
+  multiplex-quant    quantify a multiplexed sample (e.g. 10x Flex, or any custom multi-barcode
+                     protocol)
   set-paths          set paths to the programs that simpleaf will use
   refresh-prog-info  refreshes version information associated with programs used by simpleaf
   atac               run a sub-command dealing with atac-seq data

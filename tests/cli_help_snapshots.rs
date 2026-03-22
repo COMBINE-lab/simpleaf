@@ -9,6 +9,10 @@ fn snapshot_cases() -> Vec<(&'static str, Vec<&'static str>)> {
         ("simpleaf___help.txt", vec!["--help"]),
         ("simpleaf_index___help.txt", vec!["index", "--help"]),
         ("simpleaf_quant___help.txt", vec!["quant", "--help"]),
+        (
+            "simpleaf_multiplex_quant___help.txt",
+            vec!["multiplex-quant", "--help"],
+        ),
         ("simpleaf_chemistry___help.txt", vec!["chemistry", "--help"]),
         (
             "simpleaf_chemistry_add___help.txt",
