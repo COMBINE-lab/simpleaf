@@ -13,6 +13,7 @@ use crate::utils::af_utils::IndexType;
 use crate::utils::chem_utils::{CustomChemistry, CustomChemistryMap};
 use crate::utils::constants::CHEMISTRIES_PATH;
 use crate::utils::probe_utils;
+use crate::utils::prog_parsing_utils;
 use crate::utils::prog_utils;
 
 use anyhow::{Context, bail};
@@ -26,6 +27,7 @@ struct ResolvedProbeSetFiles {
     fasta_path: PathBuf,
     gene_t2g_path: PathBuf,
     usa_t2g_path: Option<PathBuf>,
+    gene_id_to_name_path: Option<PathBuf>,
 }
 
 fn t2g_mode(opts: &MultiplexQuantOpts) -> probe_utils::ProbeT2gMode {
@@ -34,6 +36,20 @@ fn t2g_mode(opts: &MultiplexQuantOpts) -> probe_utils::ProbeT2gMode {
     } else {
         probe_utils::ProbeT2gMode::Gene
     }
+}
+
+fn write_multiplex_metadata(
+    output_dir: &Path,
+    quant_output: &Path,
+    meta: &serde_json::Value,
+) -> anyhow::Result<()> {
+    let meta_path = output_dir.join("simpleaf_multiplex_quant_info.json");
+    let meta_file = std::fs::File::create(&meta_path)?;
+    serde_json::to_writer_pretty(meta_file, meta)?;
+    let quant_meta_path = quant_output.join("simpleaf_multiplex_quant_info.json");
+    let quant_meta_file = std::fs::File::create(&quant_meta_path)?;
+    serde_json::to_writer_pretty(quant_meta_file, meta)?;
+    Ok(())
 }
 
 fn select_probe_set_t2g(
@@ -65,6 +81,7 @@ fn prepare_probe_set_files(
             fasta_path: converted.fasta_path,
             gene_t2g_path: converted.gene_t2g_path,
             usa_t2g_path: converted.usa_t2g_path,
+            gene_id_to_name_path: converted.gene_id_to_name_path,
         });
     }
 
@@ -77,6 +94,7 @@ fn prepare_probe_set_files(
         fasta_path: probe_set.to_path_buf(),
         gene_t2g_path,
         usa_t2g_path: None,
+        gene_id_to_name_path: None,
     })
 }
 
@@ -86,6 +104,13 @@ fn probe_index_base_exists(index_base: &Path) -> bool {
 
 fn existing_path(paths: &[PathBuf]) -> Option<PathBuf> {
     paths.iter().find(|p| p.exists()).cloned()
+}
+
+fn gene_id_to_name_for_dir(dir: Option<&Path>) -> Option<PathBuf> {
+    dir.and_then(|d| {
+        let candidate = d.join("gene_id_to_name.tsv");
+        candidate.exists().then_some(candidate)
+    })
 }
 
 fn resolve_t2g_from_candidates(
@@ -141,7 +166,7 @@ fn resolve_user_supplied_index(
     index: &Path,
     output_dir: &Path,
     mode: probe_utils::ProbeT2gMode,
-) -> anyhow::Result<(PathBuf, Option<PathBuf>)> {
+) -> anyhow::Result<(PathBuf, Option<PathBuf>, Option<PathBuf>)> {
     let simpleaf_index_dir = if index.join("simpleaf_index.json").exists() {
         Some(index.to_path_buf())
     } else if index.join("index").join("simpleaf_index.json").exists() {
@@ -173,7 +198,7 @@ fn resolve_user_supplied_index(
         let candidates =
             multiplex_t2g_candidates_for(meta.inferred_t2g, Some(index_dir.as_path()), mode);
         let t2g = resolve_t2g_from_candidates(&candidates, output_dir, mode)?;
-        return Ok((index_path, t2g));
+        return Ok((index_path, t2g, meta.inferred_gene_id_to_name));
     }
 
     if index.is_dir() {
@@ -181,7 +206,7 @@ fn resolve_user_supplied_index(
         if probe_index_base_exists(&prefix) {
             let candidates = multiplex_t2g_candidates_for(None, Some(index), mode);
             let t2g = resolve_t2g_from_candidates(&candidates, output_dir, mode)?;
-            return Ok((prefix, t2g));
+            return Ok((prefix, t2g, gene_id_to_name_for_dir(Some(index))));
         }
     }
 
@@ -189,7 +214,7 @@ fn resolve_user_supplied_index(
         let sibling_dir = index.parent();
         let candidates = multiplex_t2g_candidates_for(None, sibling_dir, mode);
         let t2g = resolve_t2g_from_candidates(&candidates, output_dir, mode)?;
-        return Ok((index.to_path_buf(), t2g));
+        return Ok((index.to_path_buf(), t2g, gene_id_to_name_for_dir(sibling_dir)));
     }
 
     bail!(
@@ -278,7 +303,7 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
     std::fs::create_dir_all(&quant_output)?;
 
     // === Step 1: Resolve index and t2g ===
-    let (index_path, probe_t2g_path_opt) = resolve_probe_index(
+    let (index_path, probe_t2g_path_opt, gene_id_to_name_opt) = resolve_probe_index(
         af_home,
         chem.as_ref(),
         &opts,
@@ -352,6 +377,10 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
     exec::run_checked(&mut piscem_cmd, "[piscem map-sc]")?;
     let map_duration = map_start.elapsed();
     info!("Mapping complete in {:.1}s", map_duration.as_secs_f64());
+    let mapping_log = prog_parsing_utils::construct_json_from_piscem_log(map_output.join("map_info.json"))?;
+    let map_info_path = quant_output.join("simpleaf_map_info.json");
+    let map_info_file = std::fs::File::create(&map_info_path)?;
+    serde_json::to_writer(map_info_file, &mapping_log)?;
 
     // === Step 5: Generate permit list (multi-barcode) ===
     info!("Generating permit list...");
@@ -422,8 +451,24 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
     exec::run_checked(&mut quant_cmd, "[quant]")?;
     let quant_duration = quant_start.elapsed();
 
-    // === Write pipeline metadata ===
-    let meta = json!({
+    if let Some(gene_id_to_name_path) = &gene_id_to_name_opt {
+        let target_path = quant_output.join("gene_id_to_name.tsv");
+        std::fs::copy(gene_id_to_name_path, &target_path).with_context(|| {
+            format!(
+                "could not copy gene_id_to_name.tsv from {} to {}",
+                gene_id_to_name_path.display(),
+                target_path.display()
+            )
+        })?;
+    }
+
+    let anndata_path = opts
+        .anndata_out
+        .then(|| quant_output.join("alevin").join("quants.h5ad"));
+    let mut convert_duration_secs = None;
+
+    // Write metadata before conversion so af-anndata can embed it into `uns`.
+    let mut meta = json!({
         "chemistry": opts.chemistry,
         "organism": opts.organism.as_ref().map(|o| o.to_string()),
         "geometry": geometry,
@@ -434,20 +479,38 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
         "cell_bc_path": cell_bc_path.display().to_string(),
         "sample_bc_path": sample_bc_path.display().to_string(),
         "t2g_path": t2g_path.display().to_string(),
+        "gene_id_to_name_path": gene_id_to_name_opt
+            .as_ref()
+            .map(|p| p.display().to_string()),
         "map_cmd": map_cmd_str,
         "gpl_cmd": gpl_cmd_str,
         "collate_cmd": collate_cmd_str,
         "quant_cmd": quant_cmd_str,
+        "map_info_path": map_info_path.display().to_string(),
         "map_duration_secs": map_duration.as_secs_f64(),
         "gpl_duration_secs": gpl_duration.as_secs_f64(),
         "collate_duration_secs": collate_duration.as_secs_f64(),
         "quant_duration_secs": quant_duration.as_secs_f64(),
+        "anndata_path": anndata_path.as_ref().map(|p| p.display().to_string()),
+        "conversion_duration_secs": convert_duration_secs,
         "total_duration_secs": start.elapsed().as_secs_f64(),
         "simpleaf_version": env!("CARGO_PKG_VERSION"),
     });
-    let meta_path = output_dir.join("simpleaf_multiplex_quant_info.json");
-    let meta_file = std::fs::File::create(&meta_path)?;
-    serde_json::to_writer_pretty(meta_file, &meta)?;
+    write_multiplex_metadata(output_dir, &quant_output, &meta)?;
+
+    if opts.anndata_out {
+        let convert_start = Instant::now();
+        let opath = anndata_path
+            .as_ref()
+            .expect("anndata_path must exist when --anndata-out is set");
+        af_anndata::convert_csr_to_anndata(&quant_output, &opath)?;
+        convert_duration_secs = Some(convert_start.elapsed().as_secs_f64());
+    }
+
+    // === Rewrite pipeline metadata with final timing information ===
+    meta["conversion_duration_secs"] = json!(convert_duration_secs);
+    meta["total_duration_secs"] = json!(start.elapsed().as_secs_f64());
+    write_multiplex_metadata(output_dir, &quant_output, &meta)?;
 
     info!(
         "Multiplex pipeline complete in {:.1}s. Output: {}",
@@ -465,11 +528,11 @@ fn resolve_probe_index(
     opts: &MultiplexQuantOpts,
     piscem_path: &Path,
     mode: probe_utils::ProbeT2gMode,
-) -> anyhow::Result<(PathBuf, Option<PathBuf>)> {
+) -> anyhow::Result<(PathBuf, Option<PathBuf>, Option<PathBuf>)> {
     // If user provided a pre-built index, use it directly.
     if let Some(ref index) = opts.index {
         info!("Using user-provided probe index: {}", index.display());
-        let (index_path, inferred_t2g) =
+        let (index_path, inferred_t2g, inferred_gene_id_to_name) =
             resolve_user_supplied_index(index, &opts.output.join("resolved_t2g"), mode)?;
         let t2g = if inferred_t2g.is_some() {
             inferred_t2g
@@ -480,14 +543,24 @@ fn resolve_probe_index(
         } else {
             None
         };
-        return Ok((index_path, t2g));
+        let gene_id_to_name = if inferred_gene_id_to_name.is_some() {
+            inferred_gene_id_to_name
+        } else if let Some(ref ps) = opts.probe_set {
+            let conv_dir = opts.output.join("probe_conversion");
+            let probe_set_files = prepare_probe_set_files(ps, &conv_dir)?;
+            probe_set_files.gene_id_to_name_path
+        } else {
+            None
+        };
+        return Ok((index_path, t2g, gene_id_to_name));
     }
 
     // If user provided a probe set file, build index from it.
     if let Some(ref probe_set) = opts.probe_set {
         warn!("Using user-provided probe set: {}.", probe_set.display(),);
-        let (index_path, t2g) = build_index_from_probe_set(probe_set, opts, piscem_path, mode)?;
-        return Ok((index_path, Some(t2g)));
+        let (index_path, t2g, gene_id_to_name) =
+            build_index_from_probe_set(probe_set, opts, piscem_path, mode)?;
+        return Ok((index_path, Some(t2g), gene_id_to_name));
     }
 
     // Auto mode: look up probe set in chemistry registry
@@ -515,15 +588,16 @@ fn resolve_probe_index(
     std::fs::create_dir_all(&cache_dir)?;
     let cache_key = probe_info.plist_name.as_deref().unwrap_or("unknown");
     let cached_index = cache_dir.join(format!("{}_{}", cache_key, opts.kmer_length));
-    let cached_probe_index_dir = cached_index.join("probe_index");
-    let cached_probe_index = cached_probe_index_dir.join("index");
-    if probe_index_base_exists(&cached_probe_index) {
-        let candidates = multiplex_t2g_candidates_for(None, Some(&cached_probe_index_dir), mode);
-        let t2g =
-            resolve_t2g_from_candidates(&candidates, &opts.output.join("resolved_t2g"), mode)?;
-        info!("Using cached probe index: {}", cached_probe_index.display());
-        return Ok((cached_probe_index, t2g));
-    }
+        let cached_probe_index_dir = cached_index.join("probe_index");
+        let cached_probe_index = cached_probe_index_dir.join("index");
+        if probe_index_base_exists(&cached_probe_index) {
+            let candidates = multiplex_t2g_candidates_for(None, Some(&cached_probe_index_dir), mode);
+            let t2g =
+                resolve_t2g_from_candidates(&candidates, &opts.output.join("resolved_t2g"), mode)?;
+            let gene_id_to_name = gene_id_to_name_for_dir(Some(&cached_probe_index_dir));
+            info!("Using cached probe index: {}", cached_probe_index.display());
+            return Ok((cached_probe_index, t2g, gene_id_to_name));
+        }
 
     // Download and build
     if let Some(ref url) = probe_info.remote_url {
@@ -540,7 +614,7 @@ fn resolve_probe_index(
         let mut build_opts = opts.clone();
         build_opts.output = cached_index.clone();
         let result = build_index_from_probe_set(&csv_path, &build_opts, piscem_path, mode)?;
-        Ok((result.0, Some(result.1)))
+        Ok((result.0, Some(result.1), result.2))
     } else {
         bail!(
             "No remote URL for probe set '{}'. Provide --probe-set.",
@@ -555,7 +629,7 @@ fn build_index_from_probe_set(
     opts: &MultiplexQuantOpts,
     piscem_path: &Path,
     mode: probe_utils::ProbeT2gMode,
-) -> anyhow::Result<(PathBuf, PathBuf)> {
+) -> anyhow::Result<(PathBuf, PathBuf, Option<PathBuf>)> {
     let index_dir = opts.output.join("probe_index");
     std::fs::create_dir_all(&index_dir)?;
     let probe_set_files = prepare_probe_set_files(probe_set, &index_dir)?;
@@ -584,7 +658,7 @@ fn build_index_from_probe_set(
     );
     exec::run_checked(&mut build_cmd, "[piscem build]")?;
 
-    Ok((index_prefix, t2g_path))
+    Ok((index_prefix, t2g_path, probe_set_files.gene_id_to_name_path))
 }
 
 /// Resolve cell barcode whitelist from the chemistry's plist_name/remote_url.
@@ -701,7 +775,7 @@ mod tests {
         )
         .expect("failed to write simpleaf index json");
 
-        let (resolved_index, t2g) = resolve_user_supplied_index(
+        let (resolved_index, t2g, gene_id_to_name) = resolve_user_supplied_index(
             &output_root,
             &td.path().join("resolved"),
             ProbeT2gMode::Gene,
@@ -714,6 +788,7 @@ mod tests {
             fs::read_to_string(t2g).expect("failed to read inferred t2g"),
             "P1\tG1\n"
         );
+        assert!(gene_id_to_name.is_none());
     }
 
     #[test]
@@ -728,7 +803,7 @@ mod tests {
         fs::write(probe_index_dir.join("probe_t2g_usa.tsv"), "P1\tG1\tS\n")
             .expect("failed to write USA t2g");
 
-        let (resolved_index, t2g) = resolve_user_supplied_index(
+        let (resolved_index, t2g, gene_id_to_name) = resolve_user_supplied_index(
             &probe_index_dir,
             &td.path().join("resolved"),
             ProbeT2gMode::Usa,
@@ -740,6 +815,7 @@ mod tests {
             fs::read_to_string(t2g.expect("missing USA t2g")).expect("failed to read USA t2g"),
             "P1\tG1\tS\n"
         );
+        assert!(gene_id_to_name.is_none());
     }
 
     #[test]
@@ -766,6 +842,7 @@ mod tests {
             struct_constraints: false,
             max_ec_card: 4096,
             min_reads: 10,
+            anndata_out: false,
         };
 
         assert_eq!(t2g_mode(&opts), ProbeT2gMode::Usa);
@@ -777,6 +854,7 @@ mod tests {
             fasta_path: Path::new("/tmp/custom_probes.fa").to_path_buf(),
             gene_t2g_path: Path::new("/tmp/probe_t2g.tsv").to_path_buf(),
             usa_t2g_path: None,
+            gene_id_to_name_path: None,
         };
 
         let err = super::select_probe_set_t2g(&files, ProbeT2gMode::Usa)

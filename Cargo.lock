@@ -10,9 +10,9 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "af-anndata"
-version = "0.3.3"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f8f9744d6df9e3eb32d4d690c65d2e72314870689992bd00aec74d828d1e002"
+checksum = "7ac8a47bef10cd80043dab7e32174969b6dab746be7e2f6178a45a764ca19015"
 dependencies = [
  "anndata",
  "anndata-hdf5",

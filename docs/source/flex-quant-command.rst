@@ -27,6 +27,17 @@ The command needs:
 
 If the chemistry registry contains the needed metadata, ``simpleaf`` can automatically download and cache the probe set, the cell barcode whitelist, and the sample barcode list. If you already have local resources, you can override these defaults with ``--index``, ``--probe-set``, or ``--sample-bc-list``.
 
+The default output is the standard Matrix Market directory under ``af_quant/alevin``. If you pass ``--anndata-out``, ``simpleaf`` will additionally write an AnnData ``.h5ad`` file at ``af_quant/alevin/quants.h5ad``.
+
+For multiplex output, the resulting AnnData object is intended to preserve the extra sample-level structure of the experiment:
+
+- ``obs_names`` are sample-qualified cell identifiers
+- ``obs["cell_barcode"]`` stores the corrected cell barcode without the sample prefix
+- ``obs["sample_name"]`` stores the sample / probe-barcode assignment
+- ``var["gene_id"]`` remains the matrix feature identifier
+- ``var["gene_symbol"]`` is added when a ``gene_id_to_name.tsv`` mapping is available from the probe set or index
+- ``uns`` stores the standard ``gpl_info``, ``collate_info``, ``quant_info``, and ``simpleaf_map_info`` records, and for multiplex runs it also stores ``sample_info`` plus ``simpleaf_multiplex_quant_info``
+
 The relevant options (which you can obtain by running ``simpleaf multiplex-quant -h``) are below:
 
 .. code-block:: console
@@ -69,6 +80,9 @@ The relevant options (which you can obtain by running ``simpleaf multiplex-quant
 
     Permit List Options:
           --min-reads <MIN_READS>  Minimum read count threshold for unfiltered permit list [default: 10]
+
+    Output Options:
+          --anndata-out  Generate an anndata (h5ad format) count matrix from the standard (matrix-market format) output
 
 Resource resolution
 -------------------
@@ -139,6 +153,18 @@ Use a pre-built probe index:
        --reads2 sample_R2.fastq.gz \
        --output flex_out
 
+Request AnnData output in addition to the Matrix Market output:
+
+.. code-block:: console
+
+   $ simpleaf multiplex-quant \
+       --chemistry 10x-flexv1-gex-3p \
+       --organism human \
+       --reads1 sample_R1.fastq.gz \
+       --reads2 sample_R2.fastq.gz \
+       --output flex_out \
+       --anndata-out
+
 Request USA-mode probe quantification:
 
 .. code-block:: console
@@ -159,6 +185,10 @@ The command creates the requested output directory and writes:
 
 - ``af_map/``: the ``piscem`` mapping output
 - ``af_quant/``: the ``alevin-fry`` permit-list, collate, and quantification output
+- ``af_quant/simpleaf_map_info.json``: parsed mapping metadata copied into the quantification directory for downstream consumers such as AnnData conversion
+- ``af_quant/simpleaf_multiplex_quant_info.json``: multiplex pipeline metadata copied into the quantification directory so it can be embedded into AnnData ``uns``
+- ``af_quant/gene_id_to_name.tsv``: optional gene ID to gene symbol/name mapping copied when available from the probe set or index
+- ``af_quant/alevin/quants.h5ad``: optional AnnData output written when ``--anndata-out`` is requested
 - ``simpleaf_multiplex_quant_info.json``: a metadata record describing the resolved inputs, executed commands, and step timings
 
 Notes

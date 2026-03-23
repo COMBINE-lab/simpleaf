@@ -625,6 +625,10 @@ pub struct MultiplexQuantOpts {
     /// Minimum read count threshold for unfiltered permit list
     #[arg(long, default_value_t = 10, help_heading = "Permit List Options")]
     pub min_reads: usize,
+
+    /// Generate an anndata (h5ad format) count matrix from the standard (matrix-market format) output
+    #[arg(long, help_heading = "Output Options")]
+    pub anndata_out: bool,
 }
 
 #[derive(Debug, Subcommand)]

@@ -5,7 +5,7 @@
 
 use anyhow::{Context, bail};
 use serde_json::json;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use tracing::info;
@@ -21,8 +21,15 @@ pub struct ProbeReferenceFiles {
     pub fasta_path: PathBuf,
     pub gene_t2g_path: PathBuf,
     pub usa_t2g_path: Option<PathBuf>,
+    pub gene_id_to_name_path: Option<PathBuf>,
     #[allow(dead_code)]
     pub metadata: serde_json::Value,
+}
+
+fn get_optional_idx(headers: &csv::StringRecord, names: &[&str]) -> Option<usize> {
+    names
+        .iter()
+        .find_map(|name| headers.iter().position(|h| h == *name))
 }
 
 fn parse_probe_region(region: &str) -> anyhow::Result<&'static str> {
@@ -80,10 +87,12 @@ pub fn convert_probe_csv_to_reference_files(
     let probe_idx = get_required_idx(&headers, "probe_id")?;
     let included_idx = headers.iter().position(|h| h == "included");
     let region_idx = headers.iter().position(|h| h == "region");
+    let gene_name_idx = get_optional_idx(&headers, &["gene_symbol", "gene_name"]);
 
     let fasta_path = output_dir.join("probes.fa");
     let gene_t2g_path = output_dir.join("probe_t2g.tsv");
     let usa_t2g_path = region_idx.map(|_| output_dir.join("probe_t2g_usa.tsv"));
+    let gene_id_to_name_path = gene_name_idx.map(|_| output_dir.join("gene_id_to_name.tsv"));
     let meta_path = output_dir.join("probe_set_info.json");
 
     let mut fasta_writer = BufWriter::new(std::fs::File::create(&fasta_path)?);
@@ -98,6 +107,7 @@ pub fn convert_probe_csv_to_reference_files(
     let mut num_included = 0u64;
     let mut num_excluded = 0u64;
     let mut genes = HashSet::new();
+    let mut gene_id_to_name = BTreeMap::new();
 
     for record in rdr.records() {
         let record = record?;
@@ -126,6 +136,22 @@ pub fn convert_probe_csv_to_reference_files(
         writeln!(fasta_writer, "{}", probe_seq)?;
         writeln!(gene_t2g_writer, "{}\t{}", probe_id, gene_id)?;
 
+        if let Some(gene_name_i) = gene_name_idx
+            && let Some(gene_name) = record.get(gene_name_i).map(str::trim)
+            && !gene_name.is_empty()
+        {
+            if let Some(prev) = gene_id_to_name.insert(gene_id.to_string(), gene_name.to_string())
+                && prev != gene_name
+            {
+                bail!(
+                    "probe CSV contains inconsistent gene annotations for `{}`: saw both `{}` and `{}`.",
+                    gene_id,
+                    prev,
+                    gene_name,
+                );
+            }
+        }
+
         if let Some(region_i) = region_idx {
             let region = record
                 .get(region_i)
@@ -152,12 +178,23 @@ Expected `spliced` or `unspliced`.",
     if let Some(writer) = usa_t2g_writer.as_mut() {
         writer.flush()?;
     }
+    if let Some(ref path) = gene_id_to_name_path {
+        let mut writer = BufWriter::new(std::fs::File::create(path)?);
+        for (gene_id, gene_name) in &gene_id_to_name {
+            writeln!(writer, "{}\t{}", gene_id, gene_name)?;
+        }
+        writer.flush()?;
+    }
 
     metadata.insert("num_probes".to_string(), json!(num_probes));
     metadata.insert("num_included".to_string(), json!(num_included));
     metadata.insert("num_excluded".to_string(), json!(num_excluded));
     metadata.insert("num_genes".to_string(), json!(genes.len()));
     metadata.insert("has_region".to_string(), json!(region_idx.is_some()));
+    metadata.insert("has_gene_symbol".to_string(), json!(gene_name_idx.is_some()));
+    if let Some(idx) = gene_name_idx {
+        metadata.insert("gene_symbol_column".to_string(), json!(headers.get(idx)));
+    }
     metadata.insert(
         "source_file".to_string(),
         json!(csv_path.file_name().unwrap_or_default().to_string_lossy()),
@@ -178,6 +215,7 @@ Expected `spliced` or `unspliced`.",
         fasta_path,
         gene_t2g_path,
         usa_t2g_path,
+        gene_id_to_name_path,
         metadata: meta_value,
     })
 }
@@ -285,7 +323,7 @@ mod tests {
         let csv_path = td.path().join("probes.csv");
         fs::write(
             &csv_path,
-            "#panel=test\ngene_id,probe_seq,probe_id,included,region\nG1,AAAA,P1,TRUE,spliced\nG1,CCCC,P2,FALSE,unspliced\nG2,GGGG,P3,TRUE,unspliced\n",
+            "#panel=test\ngene_id,gene_name,probe_seq,probe_id,included,region\nG1,GeneOne,AAAA,P1,TRUE,spliced\nG1,GeneOne,CCCC,P2,FALSE,unspliced\nG2,GeneTwo,GGGG,P3,TRUE,unspliced\n",
         )
         .expect("failed to write probe CSV");
 
@@ -310,6 +348,37 @@ mod tests {
             converted.metadata["has_region"]
                 .as_bool()
                 .expect("has_region must be a bool")
+        );
+        assert_eq!(
+            fs::read_to_string(
+                converted
+                    .gene_id_to_name_path
+                    .as_ref()
+                    .expect("gene_id_to_name should be present")
+            )
+            .expect("failed to read gene_id_to_name"),
+            "G1\tGeneOne\nG2\tGeneTwo\n"
+        );
+    }
+
+    #[test]
+    fn convert_probe_csv_without_gene_name_skips_gene_id_to_name() {
+        let td = tempdir().expect("failed to create tempdir");
+        let csv_path = td.path().join("probes.csv");
+        fs::write(
+            &csv_path,
+            "gene_id,probe_seq,probe_id\nG1,AAAA,P1\nG2,CCCC,P2\n",
+        )
+        .expect("failed to write probe CSV");
+
+        let converted = convert_probe_csv_to_reference_files(&csv_path, td.path())
+            .expect("failed to convert probe CSV");
+
+        assert!(converted.gene_id_to_name_path.is_none());
+        assert!(
+            !converted.metadata["has_gene_symbol"]
+                .as_bool()
+                .expect("has_gene_symbol must be a bool")
         );
     }
 

@@ -62,3 +62,7 @@ Piscem Mapping Options:
           If piscem >= 0.7.0, enable structural constraints
       --max-ec-card <MAX_EC_CARD>
           Maximum cardinality equivalence class to examine [default: 4096]
+
+Output Options:
+      --anndata-out  Generate an anndata (h5ad format) count matrix from the standard (matrix-market
+                     format) output
