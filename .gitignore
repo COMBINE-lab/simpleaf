@@ -26,6 +26,7 @@ gencode_v49_simpleaf/
 pbmc_1k_v3_test_quant/
 pbmc_1k_v3_test_quant_new/
 scripts/download_accessions_rush.sh
+test_e2e.sh
 
 # macOS Finder metadata
 **/.DS_Store
