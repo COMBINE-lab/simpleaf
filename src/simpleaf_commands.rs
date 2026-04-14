@@ -26,8 +26,26 @@ pub use self::workflow::{
 pub use crate::atac::commands::AtacCommand;
 pub use crate::defaults::{DefaultMappingParams, DefaultParams};
 
-use clap::{ArgGroup, Args, Subcommand, builder::ArgPredicate};
+use clap::{ArgGroup, Args, Subcommand, ValueEnum, builder::ArgPredicate};
 use std::path::PathBuf;
+
+/// Dictionary backend to request from piscem build / map commands.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PiscemDict {
+    Auto,
+    Sshash,
+    Tiny,
+}
+
+impl PiscemDict {
+    pub fn as_cli(&self) -> &'static str {
+        match self {
+            PiscemDict::Auto => "auto",
+            PiscemDict::Sshash => "sshash",
+            PiscemDict::Tiny => "tiny",
+        }
+    }
+}
 
 /// The type of references we might create
 /// to map against for quantification with
@@ -355,6 +373,17 @@ pub struct IndexOpts {
     /// Overwrite existing files if the output directory is already populated
     #[arg(long, display_order = 6)]
     pub overwrite: bool,
+
+    /// Piscem dictionary backend: `auto` (default, emits Tiny artifacts for
+    /// small references), `sshash` (compact), or `tiny` (fast-path).
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = PiscemDict::Auto,
+        help_heading = "Piscem Index Options",
+        display_order = 7
+    )]
+    pub dict: PiscemDict,
 
     /// Number of threads to use when running
     #[arg(short, long, default_value_t = 16, display_order = 2)]

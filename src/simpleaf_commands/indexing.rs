@@ -591,7 +591,9 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
 
     piscem_index_cmd
         .arg("--threads")
-        .arg(format!("{}", threads));
+        .arg(format!("{}", threads))
+        .arg("--dict")
+        .arg(opts.dict.as_cli());
 
     if let Some(decoy_paths) = opts.decoy_paths {
         match prog_utils::check_version_constraints(
