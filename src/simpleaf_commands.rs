@@ -184,6 +184,16 @@ pub struct MapQuantOpts {
         help_heading = "Piscem Mapping Options")]
     pub max_read_occ: u32,
 
+    /// Piscem dictionary backend to use at map time: `auto` (default, honors the
+    /// index's embedded choice), `sshash`, or `tiny`.
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = PiscemDict::Auto,
+        help_heading = "Piscem Mapping Options"
+    )]
+    pub dict: PiscemDict,
+
     /// Path to a mapped output directory containing a RAD file to skip mapping
     #[arg(long = "map-dir", conflicts_with_all = ["index", "reads1", "reads2"], help_heading = "Mapping Options")]
     pub map_dir: Option<PathBuf>,
@@ -650,6 +660,16 @@ pub struct MultiplexQuantOpts {
     /// Maximum cardinality equivalence class to examine
     #[arg(long, default_value_t = DefaultParams::MAX_EC_CARD, help_heading = "Piscem Mapping Options")]
     pub max_ec_card: u32,
+
+    /// Piscem dictionary backend: `auto` (default), `sshash`, or `tiny`. Applies
+    /// both to the auto-built probe index (build time) and to map-sc (map time).
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = PiscemDict::Auto,
+        help_heading = "Piscem Mapping Options"
+    )]
+    pub dict: PiscemDict,
 
     /// Minimum read count threshold for unfiltered permit list
     #[arg(long, default_value_t = 10, help_heading = "Permit List Options")]

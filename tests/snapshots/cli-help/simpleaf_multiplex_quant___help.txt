@@ -62,6 +62,10 @@ Piscem Mapping Options:
           If piscem >= 0.7.0, enable structural constraints
       --max-ec-card <MAX_EC_CARD>
           Maximum cardinality equivalence class to examine [default: 4096]
+      --dict <DICT>
+          Piscem dictionary backend: `auto` (default), `sshash`, or `tiny`. Applies both to the
+          auto-built probe index (build time) and to map-sc (map time) [default: auto] [possible
+          values: auto, sshash, tiny]
 
 Output Options:
       --anndata-out  Generate an anndata (h5ad format) count matrix from the standard (matrix-market

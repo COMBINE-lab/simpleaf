@@ -53,3 +53,7 @@ Piscem Index Options:
           index build fails) [default: 1]
       --work-dir <WORK_DIR>
           The working directory where temporary files should be placed [default: ./workdir.noindex]
+      --dict <DICT>
+          Piscem dictionary backend: `auto` (default, emits Tiny artifacts for small references),
+          `sshash` (compact), or `tiny` (fast-path) [default: auto] [possible values: auto, sshash,
+          tiny]

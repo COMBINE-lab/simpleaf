@@ -356,7 +356,9 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
         .arg("--skipping-strategy")
         .arg(&opts.skipping_strategy)
         .arg("--max-ec-card")
-        .arg(format!("{}", opts.max_ec_card));
+        .arg(format!("{}", opts.max_ec_card))
+        .arg("--dict")
+        .arg(opts.dict.as_cli());
 
     let r1_str: Vec<String> = opts
         .reads1
@@ -403,6 +405,16 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
         .arg(&opts.sample_correction_mode)
         .arg("--min-reads")
         .arg(format!("{}", opts.min_reads));
+
+    // If the chemistry declares a sample-barcode orientation (e.g. 10x Flex v2
+    // where the whitelist is the RC of what appears on the read), forward it.
+    if let Some(c) = chem.as_ref() {
+        if let Some(sbc_info) = c.sample_bc_list.as_ref() {
+            if let Some(ori) = sbc_info.sample_bc_ori.as_deref() {
+                gpl_cmd.arg("--sample-bc-ori").arg(ori);
+            }
+        }
+    }
 
     let gpl_cmd_str = prog_utils::get_cmd_line_string(&gpl_cmd);
     info!("generate-permit-list cmd: {}", gpl_cmd_str);
@@ -650,6 +662,8 @@ fn build_index_from_probe_set(
         .arg(format!("{}", opts.kmer_length))
         .arg("-t")
         .arg(format!("{}", opts.threads))
+        .arg("--dict")
+        .arg(opts.dict.as_cli())
         .arg("--overwrite");
 
     info!(
@@ -841,6 +855,7 @@ mod tests {
             skipping_strategy: String::from("permissive"),
             struct_constraints: false,
             max_ec_card: 4096,
+            dict: crate::simpleaf_commands::PiscemDict::Auto,
             min_reads: 10,
             anndata_out: false,
         };

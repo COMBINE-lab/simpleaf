@@ -143,6 +143,12 @@ pub struct SampleBcListInfo {
     pub plist_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_url: Option<String>,
+    /// Orientation of the whitelist entries relative to how the sample BC
+    /// appears in the read. `"forward"` (default) means no transformation;
+    /// `"reverse"` means the observed BC on the read is the reverse
+    /// complement of the whitelist entry (e.g., 10x Flex v2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sample_bc_ori: Option<String>,
 }
 
 /// Info for a specific probe set (organism-specific, for Flex protocols).

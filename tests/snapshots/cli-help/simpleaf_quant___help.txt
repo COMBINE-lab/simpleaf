@@ -42,6 +42,9 @@ Piscem Mapping Options:
           second pass and consider k-mers having <= --max-hit-occ-recover hits [default: 1024]
       --max-read-occ <MAX_READ_OCC>
           Threshold for discarding reads with too many mappings [default: 2500]
+      --dict <DICT>
+          Piscem dictionary backend to use at map time: `auto` (default, honors the index's embedded
+          choice), `sshash`, or `tiny` [default: auto] [possible values: auto, sshash, tiny]
 
 Permit List Generation Options:
   -k, --knee

@@ -429,6 +429,8 @@ fn run_mapping_stage(
                 piscem_quant_cmd
                     .arg("--threads")
                     .arg(format!("{}", setup.threads))
+                    .arg("--dict")
+                    .arg(opts.dict.as_cli())
                     .arg("-o")
                     .arg(&map_output);
 
