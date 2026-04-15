@@ -230,9 +230,9 @@ pub struct ReqProgs {
 
 impl ReqProgs {
     pub fn issue_recommended_version_messages(&self) {
-        // Currently (3/21/2026) want to recommend piscem >= 0.18.0
+        // Currently (4/14/2026) want to recommend piscem >= 0.19.0
         if let Some(ref piscem_info) = self.piscem {
-            let desired_ver = VersionReq::parse(">=0.18.0").unwrap();
+            let desired_ver = VersionReq::parse(">=0.19.0").unwrap();
             let current_ver = Version::parse(&piscem_info.version).unwrap();
             if desired_ver.matches(&current_ver) {
                 // nothing to do here
@@ -393,7 +393,7 @@ pub fn get_required_progs_from_paths(
     if let Some(piscem) = opt_piscem {
         let st = piscem.display().to_string();
         let sr = run_fun!(${st} --version);
-        let v = check_version_constraints_from_output("piscem", ">=0.5.1, <1.0.0", sr)?;
+        let v = check_version_constraints_from_output("piscem", ">=0.19.0, <1.0.0", sr)?;
         rp.piscem = Some(ProgInfo {
             exe_path: piscem,
             version: format!("{}", v),
@@ -412,7 +412,7 @@ pub fn get_required_progs_from_paths(
 
     let st = alevin_fry.display().to_string();
     let sr = run_fun!(${st} --version);
-    let v = check_version_constraints_from_output("alevin-fry", ">=0.8.1, <1.0.0", sr)?;
+    let v = check_version_constraints_from_output("alevin-fry", ">=0.14.0, <1.0.0", sr)?;
     rp.alevin_fry = Some(ProgInfo {
         exe_path: alevin_fry,
         version: format!("{}", v),
