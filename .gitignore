@@ -30,3 +30,10 @@ test_e2e.sh
 
 # macOS Finder metadata
 **/.DS_Store
+
+# Local benchmark / scratch data
+flexv1_bench/
+flexv2_cyto_quant/
+flexv2_quant*/
+rsjsonnet-bug-report.md
+synchronous-tickling-llama.md
