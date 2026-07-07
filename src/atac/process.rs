@@ -164,7 +164,7 @@ pub(crate) fn check_progs<P: AsRef<Path>>(
 
     match prog_utils::check_version_constraints(
         "alevin-fry",
-        ">=0.13.0, <1.0.0",
+        ">=0.16.0, <1.0.0",
         &af_prog_info.version,
     ) {
         Ok(af_ver) => info!("found alevin-fry version {:#}, proceeding", af_ver),

@@ -416,7 +416,7 @@ pub fn get_required_progs_from_paths(
 
     let st = alevin_fry.display().to_string();
     let sr = run_fun!(${st} --version);
-    let v = check_version_constraints_from_output("alevin-fry", ">=0.15.0, <1.0.0", sr)?;
+    let v = check_version_constraints_from_output("alevin-fry", ">=0.16.0, <1.0.0", sr)?;
     rp.alevin_fry = Some(ProgInfo {
         exe_path: alevin_fry,
         version: format!("{}", v),
