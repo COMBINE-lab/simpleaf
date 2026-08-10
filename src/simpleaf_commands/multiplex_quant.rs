@@ -360,6 +360,7 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
         .arg(format!("{}", opts.max_ec_card))
         .arg("--dict")
         .arg(opts.dict.as_cli());
+    opts.decode.append_to(&mut piscem_cmd);
 
     let r1_str: Vec<String> = opts
         .reads1
@@ -848,6 +849,10 @@ mod tests {
             cell_bc_list: None,
             expected_ori: String::from("both"),
             sample_bc_ori: None,
+            decode: crate::simpleaf_commands::PiscemDecoderOpts {
+                decoder: String::from("auto"),
+                thread_policy: None,
+            },
             sample_correction_mode: String::from("exact"),
             output: Path::new(".").to_path_buf(),
             threads: 1,

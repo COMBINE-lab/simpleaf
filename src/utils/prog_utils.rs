@@ -14,6 +14,32 @@ use which::which;
 
 use file_requirements::{FileRequirementBuildError, FileRequirementBuilder};
 
+/// The versions of the external programs this release of simpleaf requires.
+///
+/// These are the single source of truth. They used to be written out at each
+/// call site, and drifted: `get_required_progs_from_paths` demanded piscem
+/// `>=0.19.0` while every per-command check still said `>=0.18.0` and
+/// `simpleaf_conda_env.yml` said `>=0.17.1` — three different answers to one
+/// question, so raising the floor meant finding all of them.
+///
+/// Keep `simpleaf_conda_env.yml` in step when these change; it pins the same
+/// programs for CI and cannot read these constants.
+pub mod min_versions {
+    /// piscem 0.22.0 is the first release built against piscem-rs 0.9.x, which
+    /// is where `--decoder` and `--thread-policy` appear, and where `-t` became
+    /// a budget shared between mapping and gzip decoding. simpleaf forwards
+    /// those options unconditionally, so an older piscem would be handed flags
+    /// it does not recognise.
+    pub const PISCEM: &str = ">=0.22.0, <1.0.0";
+
+    /// alevin-fry 0.17.0 carries the libradicl 0.17 reader work, the scATAC
+    /// collate/deduplicate fixes, and the `infer` matrix-type fix.
+    pub const ALEVIN_FRY: &str = ">=0.17.0, <1.0.0";
+
+    /// Only consulted when peak calling is actually requested.
+    pub const MACS3: &str = ">=3.0.2, <4.0.0";
+}
+
 // The below functions are taken from the [`execute`](https://crates.io/crates/execute)
 // crate.
 
@@ -232,26 +258,6 @@ pub struct ReqProgs {
     pub macs: Option<ProgInfo>,
 }
 
-impl ReqProgs {
-    pub fn issue_recommended_version_messages(&self) {
-        // Currently (4/14/2026) want to recommend piscem >= 0.19.0
-        if let Some(ref piscem_info) = self.piscem {
-            let desired_ver = VersionReq::parse(">=0.19.0").unwrap();
-            let current_ver = Version::parse(&piscem_info.version).unwrap();
-            if desired_ver.matches(&current_ver) {
-                // nothing to do here
-            } else {
-                warn!(
-                    "It is recommended to use piscem version {}, but currently version {} is being used. \
-                       Please consider installing the latest version of piscem and setting simpleaf to use this \
-                       new version by running the `refresh-prog-info` command.",
-                    &desired_ver, &current_ver
-                );
-            }
-        }
-    }
-}
-
 #[allow(dead_code)]
 pub fn check_version_constraints<S1: AsRef<str>>(
     prog_name: &str,
@@ -397,7 +403,7 @@ pub fn get_required_progs_from_paths(
     if let Some(piscem) = opt_piscem {
         let st = piscem.display().to_string();
         let sr = run_fun!(${st} --version);
-        let v = check_version_constraints_from_output("piscem", ">=0.19.0, <1.0.0", sr)?;
+        let v = check_version_constraints_from_output("piscem", min_versions::PISCEM, sr)?;
         rp.piscem = Some(ProgInfo {
             exe_path: piscem,
             version: format!("{}", v),
@@ -407,7 +413,7 @@ pub fn get_required_progs_from_paths(
     if let Some(macs) = opt_macs {
         let st = macs.display().to_string();
         let sr = run_fun!(${st} --version);
-        let v = check_version_constraints_from_output("macs3", ">=3.0.2, <4.0.0", sr)?;
+        let v = check_version_constraints_from_output("macs3", min_versions::MACS3, sr)?;
         rp.macs = Some(ProgInfo {
             exe_path: macs,
             version: format!("{}", v),
@@ -416,7 +422,7 @@ pub fn get_required_progs_from_paths(
 
     let st = alevin_fry.display().to_string();
     let sr = run_fun!(${st} --version);
-    let v = check_version_constraints_from_output("alevin-fry", ">=0.16.1, <1.0.0", sr)?;
+    let v = check_version_constraints_from_output("alevin-fry", min_versions::ALEVIN_FRY, sr)?;
     rp.alevin_fry = Some(ProgInfo {
         exe_path: alevin_fry,
         version: format!("{}", v),

@@ -15,12 +15,18 @@ Options:
   -h, --help                 Print help
   -V, --version              Print version
 
+Piscem Index Options:
+      --tmp-dir <DIR>              Directory for SSHash's external minimizer-sort scratch files.
+                                   This is a later, separate phase from the cDBG construction that
+                                   `--work-dir` covers. Unset leaves piscem's default
+      --ram-limit-gib <GIB>        RAM ceiling, in GiB, for SSHash's external minimizer sort. Unset
+                                   leaves piscem's default (8 GiB); a smaller value spills to disk
+                                   sooner
+      --decoy-paths <DECOY_PATHS>  path to (optional) decoy sequence used to insert poison k-mer
+                                   information into the index (only if using piscem >= 0.7)
+
 Index Configuration Options:
   -k, --kmer-length <KMER_LENGTH>
           the value of k to be used to construct the index [default: 25]
   -m, --minimizer-length <MINIMIZER_LENGTH>
           the value of m to be used to construct the piscem index (must be < k) [default: 17]
-
-Piscem Index Options:
-      --decoy-paths <DECOY_PATHS>  path to (optional) decoy sequence used to insert poison k-mer
-                                   information into the index (only if using piscem >= 0.7)

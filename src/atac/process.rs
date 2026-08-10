@@ -164,7 +164,7 @@ pub(crate) fn check_progs<P: AsRef<Path>>(
 
     match prog_utils::check_version_constraints(
         "alevin-fry",
-        ">=0.16.1, <1.0.0",
+        prog_utils::min_versions::ALEVIN_FRY,
         &af_prog_info.version,
     ) {
         Ok(af_ver) => info!("found alevin-fry version {:#}, proceeding", af_ver),
@@ -178,7 +178,7 @@ pub(crate) fn check_progs<P: AsRef<Path>>(
 
     match prog_utils::check_version_constraints(
         "piscem",
-        ">=0.18.0, <1.0.0",
+        prog_utils::min_versions::PISCEM,
         &piscem_prog_info.version,
     ) {
         Ok(piscem_ver) => info!("found piscem version {:#}, proceeding", piscem_ver),
@@ -194,7 +194,7 @@ pub(crate) fn check_progs<P: AsRef<Path>>(
             )?;
         match prog_utils::check_version_constraints(
             "macs3",
-            ">=3.0.2, <4.0.0",
+            prog_utils::min_versions::MACS3,
             &macs_prog_info.version,
         ) {
             Ok(macs_ver) => info!("found macs3 version {:#}, proceeding", macs_ver),
@@ -254,27 +254,11 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
     // add either the paired-end or single-end read arguments
     add_read_args(&mut piscem_map_cmd, opts)?;
 
-    // if the user is requesting a mapping option that required
-    // piscem version >= 0.18.0, ensure we have that
-    match prog_utils::check_version_constraints(
-        "piscem",
-        ">=0.18.0, <1.0.0",
-        &piscem_prog_info.version,
-    ) {
-        Ok(_piscem_ver) => {
-            push_advanced_piscem_options(&mut piscem_map_cmd, opts)?;
-        }
-        Err(_) => {
-            info!(
-                r#"
-Simpleaf is currently using piscem version {}, but you must be using version >= 0.18.0 in order to use the
-mapping options specific to this, or later versions. If you wish to use these options, please upgrade your
-piscem version or, if you believe you have a sufficiently new version installed, update the executable
-being used by simpleaf"#,
-                &piscem_prog_info.version
-            );
-        }
-    }
+    // No version gate here any more: `set-paths` refuses a piscem older than
+    // `min_versions::PISCEM`, so the branch that quietly dropped these options
+    // for pre-0.18.0 piscem could never be taken.
+    push_advanced_piscem_options(&mut piscem_map_cmd, opts)?;
+    opts.decode.append_to(&mut piscem_map_cmd);
 
     let map_cmd_string = prog_utils::get_cmd_line_string(&piscem_map_cmd);
     info!("map command : {}", map_cmd_string);
@@ -666,6 +650,10 @@ mod tests {
 
     fn base_process_opts() -> ProcessOpts {
         ProcessOpts {
+            decode: crate::simpleaf_commands::PiscemDecoderOpts {
+                decoder: String::from("auto"),
+                thread_policy: None,
+            },
             index: PathBuf::from("/tmp/index"),
             reads1: None,
             reads2: None,

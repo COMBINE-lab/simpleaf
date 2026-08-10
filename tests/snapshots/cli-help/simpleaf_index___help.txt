@@ -57,3 +57,9 @@ Piscem Index Options:
           Piscem dictionary backend: `auto` (default, emits Tiny artifacts for small references),
           `sshash` (compact), or `tiny` (fast-path) [default: auto] [possible values: auto, sshash,
           tiny]
+      --tmp-dir <DIR>
+          Directory for SSHash's external minimizer-sort scratch files. This is a later, separate
+          phase from the cDBG construction that `--work-dir` covers. Unset leaves piscem's default
+      --ram-limit-gib <GIB>
+          RAM ceiling, in GiB, for SSHash's external minimizer sort. Unset leaves piscem's default
+          (8 GiB); a smaller value spills to disk sooner

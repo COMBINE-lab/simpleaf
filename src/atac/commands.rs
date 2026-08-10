@@ -1,5 +1,6 @@
 use crate::atac::defaults::{AtacIndexParams, DefaultAtacParams};
 use crate::defaults::{DefaultMappingParams, DefaultParams};
+use crate::simpleaf_commands::{PiscemBuildResourceOpts, PiscemDecoderOpts};
 use crate::utils::chem_utils::{ExpectedOri, QueryInRegistry};
 use clap::{
     Args, Subcommand, ValueEnum,
@@ -168,6 +169,9 @@ pub struct IndexOpts {
     #[arg(short, long, default_value_t = 16, display_order = 5)]
     pub threads: u32,
 
+    #[command(flatten)]
+    pub build_resources: PiscemBuildResourceOpts,
+
     /// the value of k to be used to construct the index
     #[arg(
         short = 'k',
@@ -304,6 +308,9 @@ pub struct ProcessOpts {
     /// number of threads to use when running
     #[arg(short, long, default_value_t = 16, display_order = 5)]
     pub threads: u32,
+
+    #[command(flatten)]
+    pub decode: PiscemDecoderOpts,
 
     /// do peak calling after generating the bed file
     #[arg(long)]

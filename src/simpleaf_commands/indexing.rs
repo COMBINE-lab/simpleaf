@@ -323,7 +323,6 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     let output = opts.output;
     let rp: ReqProgs = context::load_required_programs(af_home_path)?;
 
-    rp.issue_recommended_version_messages();
     // we are building a custom spliced+intronic reference
     // make sure that a read length is available / was provided.
     // if fasta.is_some() && matches!(ref_type, ReferenceType::SplicedIntronic) && rlen.is_none() {
@@ -622,32 +621,20 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
         .arg(format!("{}", threads))
         .arg("--dict")
         .arg(opts.dict.as_cli());
+    opts.build_resources.append_to(&mut piscem_index_cmd);
 
     if let Some(decoy_paths) = opts.decoy_paths {
-        match prog_utils::check_version_constraints(
-            "piscem",
-            ">=0.18.0, <1.0.0",
-            &piscem_prog_info.version,
-        ) {
-            Ok(_piscem_ver) => {
-                let path_args = decoy_paths
-                    .into_iter()
-                    .map(|x| x.to_string_lossy().into_owned())
-                    .collect::<Vec<String>>()
-                    .join(",");
-                piscem_index_cmd.arg("--decoy-paths").arg(path_args);
-            }
-            Err(_) => {
-                warn!(
-                    r#"
-You requested to build a poison k-mer table with {:?}, but you must be using piscem version >= 0.18.0
-to use this feature. Simpleaf is currently using version {}. Please upgrade your piscem version or,
-if you believe you have a sufficiently new version installed, update the executable being used by
-simpleaf"#,
-                    decoy_paths, &piscem_prog_info.version
-                );
-            }
-        }
+        // No version gate here any more: `set-paths` refuses a piscem older
+        // than `min_versions::PISCEM`, so `--decoy-paths` is always supported
+        // and the silent-drop branch could never be taken. Silently ignoring a
+        // requested poison table was the worst of the three soft gates: it
+        // produced an index that looked fine and simply lacked the decoys.
+        let path_args = decoy_paths
+            .into_iter()
+            .map(|x| x.to_string_lossy().into_owned())
+            .collect::<Vec<String>>()
+            .join(",");
+        piscem_index_cmd.arg("--decoy-paths").arg(path_args);
     }
 
     let index_cmd_string = prog_utils::get_cmd_line_string(&piscem_index_cmd);

@@ -19,7 +19,7 @@ pub(crate) fn piscem_index(af_home_path: &Path, opts: &IndexOpts) -> anyhow::Res
 
     match prog_utils::check_version_constraints(
         "piscem",
-        ">=0.18.0, <1.0.0",
+        prog_utils::min_versions::PISCEM,
         &piscem_prog_info.version,
     ) {
         Ok(af_ver) => info!("found piscem version {:#}, proceeding", af_ver),
@@ -68,6 +68,8 @@ pub(crate) fn piscem_index(af_home_path: &Path, opts: &IndexOpts) -> anyhow::Res
     piscem_index_cmd
         .arg("--threads")
         .arg(format!("{}", threads));
+
+    opts.build_resources.append_to(&mut piscem_index_cmd);
 
     // if the user is requesting a poison k-mer table, ensure the
     // piscem version is at least 0.7.0

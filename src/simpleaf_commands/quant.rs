@@ -272,7 +272,6 @@ fn resolve_quant_setup(
     let mut t2g_map = opts.t2g_map.clone();
     let ctx = context::load_runtime_context(af_home_path)?;
     let rp: ReqProgs = ctx.progs;
-    rp.issue_recommended_version_messages();
 
     let index_meta = index_meta::resolve_quant_index(opts.index.clone())?;
     if t2g_map.is_none()
@@ -434,25 +433,12 @@ fn run_mapping_stage(
                     .arg("-o")
                     .arg(&map_output);
 
-                match prog_utils::check_version_constraints(
-                    "piscem",
-                    ">=0.18.0, <1.0.0",
-                    &piscem_prog_info.version,
-                ) {
-                    Ok(_piscem_ver) => {
-                        push_advanced_piscem_options(&mut piscem_quant_cmd, opts)?;
-                    }
-                    Err(_) => {
-                        info!(
-                            r#"
-Simpleaf is currently using piscem version {}, but you must be using version >= 0.18.0 in order to use the
-mapping options specific to this, or later versions. If you wish to use these options, please upgrade your
-piscem version or, if you believe you have a sufficiently new version installed, update the executable
-being used by simpleaf"#,
-                            &piscem_prog_info.version
-                        );
-                    }
-                }
+                // No version gate here any more: `set-paths` refuses a piscem
+                // older than `min_versions::PISCEM`, which is well past the
+                // 0.18.0 these options needed, so the fallback that quietly
+                // dropped them could never be reached.
+                push_advanced_piscem_options(&mut piscem_quant_cmd, opts)?;
+                opts.decode.append_to(&mut piscem_quant_cmd);
 
                 add_fragment_library_to_piscem(
                     setup.chem.fragment_geometry_str(),

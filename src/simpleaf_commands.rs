@@ -47,6 +47,86 @@ impl PiscemDict {
     }
 }
 
+/// How piscem should split its thread budget between mapping and gzip decoding.
+///
+/// From piscem 0.22.0 (piscem-rs 0.9.x), `-t` is a single execution-slot budget
+/// shared by mapping and decompression, and a live broker solves the split
+/// during the run. These two options steer that; simpleaf only forwards them.
+///
+/// Flattened into every subcommand that invokes a piscem `map-*`, so the help
+/// text is written once.
+#[derive(Args, Clone, Debug)]
+pub struct PiscemDecoderOpts {
+    /// Gzip decoder selection passed to piscem: `auto`, `serial`, `parallel`,
+    /// or `parallel=N`.
+    ///
+    /// `auto` lets piscem adapt the mapping/decode split while the run
+    /// proceeds. `serial` gives mapping the whole budget. `parallel` forces the
+    /// parallel decoder where the input allows it; `parallel=N` fixes N decode
+    /// slots per gzip input and stops the adaptation. Inputs that cannot be
+    /// read positionally (FIFOs, process substitution) stay serial regardless.
+    #[arg(
+        long,
+        default_value = "auto",
+        value_name = "MODE",
+        help_heading = "Piscem Mapping Options"
+    )]
+    pub decoder: String,
+
+    /// JSON file overriding piscem's thread and decoder policy.
+    ///
+    /// Every field is optional and defaults to a measured value; an unrecognised
+    /// field is an error rather than a silent no-op. Currently understood:
+    /// `{"parallel_decode": {"min_threads_per_stream": 8}}`, the number of
+    /// threads that must be free per gzip input before the parallel decoder is
+    /// engaged at all.
+    #[arg(long, value_name = "FILE", help_heading = "Piscem Mapping Options")]
+    pub thread_policy: Option<PathBuf>,
+}
+
+impl PiscemDecoderOpts {
+    /// Append these options to a piscem `map-*` invocation.
+    ///
+    /// `--thread-policy` is only passed when the user supplied one, so piscem's
+    /// own measured defaults apply otherwise.
+    pub fn append_to(&self, cmd: &mut std::process::Command) {
+        cmd.arg("--decoder").arg(&self.decoder);
+        if let Some(ref policy) = self.thread_policy {
+            cmd.arg("--thread-policy").arg(policy);
+        }
+    }
+}
+
+/// Options controlling SSHash's external minimizer sort during `piscem build`.
+///
+/// Flattened into both index-building subcommands. These matter most on HPC,
+/// where `/tmp` may be small and the job runs under a memory cgroup.
+#[derive(Args, Clone, Debug)]
+pub struct PiscemBuildResourceOpts {
+    /// Directory for SSHash's external minimizer-sort scratch files. This is a
+    /// later, separate phase from the cDBG construction that `--work-dir`
+    /// covers. Unset leaves piscem's default.
+    #[arg(long, value_name = "DIR", help_heading = "Piscem Index Options")]
+    pub tmp_dir: Option<PathBuf>,
+
+    /// RAM ceiling, in GiB, for SSHash's external minimizer sort. Unset leaves
+    /// piscem's default (8 GiB); a smaller value spills to disk sooner.
+    #[arg(long, value_name = "GIB", help_heading = "Piscem Index Options")]
+    pub ram_limit_gib: Option<usize>,
+}
+
+impl PiscemBuildResourceOpts {
+    /// Append these options to a `piscem build` invocation.
+    pub fn append_to(&self, cmd: &mut std::process::Command) {
+        if let Some(ref dir) = self.tmp_dir {
+            cmd.arg("--tmp-dir").arg(dir);
+        }
+        if let Some(gib) = self.ram_limit_gib {
+            cmd.arg("--ram-limit-gib").arg(gib.to_string());
+        }
+    }
+}
+
 /// The type of references we might create
 /// to map against for quantification with
 /// alevin-fry.
@@ -193,6 +273,9 @@ pub struct MapQuantOpts {
         help_heading = "Piscem Mapping Options"
     )]
     pub dict: PiscemDict,
+
+    #[command(flatten)]
+    pub decode: PiscemDecoderOpts,
 
     /// Path to a mapped output directory containing a RAD file to skip mapping
     #[arg(long = "map-dir", conflicts_with_all = ["index", "reads1", "reads2"], help_heading = "Mapping Options")]
@@ -394,6 +477,9 @@ pub struct IndexOpts {
         display_order = 7
     )]
     pub dict: PiscemDict,
+
+    #[command(flatten)]
+    pub build_resources: PiscemBuildResourceOpts,
 
     /// Number of threads to use when running
     #[arg(short, long, default_value_t = 16, display_order = 2)]
@@ -680,6 +766,9 @@ pub struct MultiplexQuantOpts {
         help_heading = "Piscem Mapping Options"
     )]
     pub dict: PiscemDict,
+
+    #[command(flatten)]
+    pub decode: PiscemDecoderOpts,
 
     /// Minimum read count threshold for unfiltered permit list
     #[arg(long, default_value_t = 10, help_heading = "Permit List Options")]
