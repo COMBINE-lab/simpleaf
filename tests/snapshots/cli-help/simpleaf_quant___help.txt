@@ -36,7 +36,7 @@ Mapping Options:
 
 Piscem Mapping Options:
       --struct-constraints
-          If piscem >= 0.7.0, enable structural constraints
+          Enable structural constraints when mapping
 
       --ignore-ambig-hits
           Skip checking of the equivalence classes of k-mers that were too ambiguous to be otherwise

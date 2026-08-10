@@ -109,10 +109,19 @@ pub struct PiscemBuildResourceOpts {
     #[arg(long, value_name = "DIR", help_heading = "Piscem Index Options")]
     pub tmp_dir: Option<PathBuf>,
 
-    /// RAM ceiling, in GiB, for SSHash's external minimizer sort. Unset leaves
-    /// piscem's default (8 GiB); a smaller value spills to disk sooner.
-    #[arg(long, value_name = "GIB", help_heading = "Piscem Index Options")]
-    pub ram_limit_gib: Option<usize>,
+    /// RAM ceiling, in GiB, for SSHash's external minimizer sort. A smaller
+    /// value spills to disk sooner, trading peak memory for build time.
+    ///
+    /// The default of 8 is deliberately fixed rather than deferring to piscem,
+    /// whose own default scales with the machine's total RAM and so makes peak
+    /// index-build memory vary from host to host.
+    #[arg(
+        long,
+        value_name = "GIB",
+        default_value_t = 8,
+        help_heading = "Piscem Index Options"
+    )]
+    pub ram_limit_gib: usize,
 }
 
 impl PiscemBuildResourceOpts {
@@ -121,9 +130,8 @@ impl PiscemBuildResourceOpts {
         if let Some(ref dir) = self.tmp_dir {
             cmd.arg("--tmp-dir").arg(dir);
         }
-        if let Some(gib) = self.ram_limit_gib {
-            cmd.arg("--ram-limit-gib").arg(gib.to_string());
-        }
+        cmd.arg("--ram-limit-gib")
+            .arg(self.ram_limit_gib.to_string());
     }
 }
 
@@ -209,7 +217,7 @@ pub struct MapQuantOpts {
     #[arg(long = "use-piscem", requires = "index", hide = true)]
     pub use_piscem: bool,
 
-    /// If piscem >= 0.7.0, enable structural constraints
+    /// Enable structural constraints when mapping
     #[arg(long, help_heading = "Piscem Mapping Options")]
     pub struct_constraints: bool,
 
@@ -431,7 +439,7 @@ pub struct IndexOpts {
     pub minimizer_length: u32,
 
     /// Paths to decoy sequence FASTA files used to insert poison
-    /// k-mer information into the index (only if using piscem >= 0.7).
+    /// k-mer information into the index.
     #[arg(
         long,
         help_heading = "Piscem Index Options",
@@ -749,7 +757,7 @@ pub struct MultiplexQuantOpts {
         help_heading = "Piscem Mapping Options")]
     pub skipping_strategy: String,
 
-    /// If piscem >= 0.7.0, enable structural constraints
+    /// Enable structural constraints when mapping
     #[arg(long, help_heading = "Piscem Mapping Options")]
     pub struct_constraints: bool,
 

@@ -3,63 +3,112 @@ build the (expanded) reference index
 Usage: simpleaf index [OPTIONS] --output <OUTPUT> <--fasta <FASTA>|--ref-seq <REF_SEQ>|--probe-csv <PROBE_CSV>|--feature-csv <FEATURE_CSV>>
 
 Options:
-  -o, --output <OUTPUT>            Path to output directory (will be created if it doesn't exist)
-  -t, --threads <THREADS>          Number of threads to use when running [default: 16]
-  -k, --kmer-length <KMER_LENGTH>  The value of k to be used to construct the index [default: 31]
-      --gff3-format                Denotes that the input annotation is a GFF3 (instead of GTF) file
-      --keep-duplicates            Keep duplicated identical sequences when constructing the index
-      --overwrite                  Overwrite existing files if the output directory is already
-                                   populated
-  -h, --help                       Print help
-  -V, --version                    Print version
+  -o, --output <OUTPUT>
+          Path to output directory (will be created if it doesn't exist)
+
+  -t, --threads <THREADS>
+          Number of threads to use when running
+          
+          [default: 16]
+
+  -k, --kmer-length <KMER_LENGTH>
+          The value of k to be used to construct the index
+          
+          [default: 31]
+
+      --gff3-format
+          Denotes that the input annotation is a GFF3 (instead of GTF) file
+
+      --keep-duplicates
+          Keep duplicated identical sequences when constructing the index
+
+      --overwrite
+          Overwrite existing files if the output directory is already populated
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
 
 Expanded Reference Options:
-      --ref-type <REF_TYPE>    Specify whether an expanded reference, spliced+intronic (or splici)
-                               or spliced+unspliced (or spliceu), should be built [default:
-                               spliced+intronic]
-  -f, --fasta <FASTA>          Path to a reference genome to be used for the expanded reference
-                               construction
-  -g, --gtf <GTF>              Path to a reference GTF/GFF3 file to be used for the expanded
-                               reference construction
-  -r, --rlen <RLEN>            The Read length used in roers to add flanking lengths to intronic
-                               sequences
-      --dedup                  Deduplicate identical sequences in roers when building the expanded
-                               reference
-      --spliced <SPLICED>      Path to a FASTA file with extra spliced sequence to add to the index
-      --unspliced <UNSPLICED>  Path to a FASTA file with extra unspliced sequence to add to the
-                               index
+      --ref-type <REF_TYPE>
+          Specify whether an expanded reference, spliced+intronic (or splici) or spliced+unspliced
+          (or spliceu), should be built
+          
+          [default: spliced+intronic]
+
+  -f, --fasta <FASTA>
+          Path to a reference genome to be used for the expanded reference construction
+
+  -g, --gtf <GTF>
+          Path to a reference GTF/GFF3 file to be used for the expanded reference construction
+
+  -r, --rlen <RLEN>
+          The Read length used in roers to add flanking lengths to intronic sequences
+
+      --dedup
+          Deduplicate identical sequences in roers when building the expanded reference
+
+      --spliced <SPLICED>
+          Path to a FASTA file with extra spliced sequence to add to the index
+
+      --unspliced <UNSPLICED>
+          Path to a FASTA file with extra unspliced sequence to add to the index
 
 Direct Reference Options:
-      --feature-csv <FEATURE_CSV>  Path to a CSV file containing feature barcode sequences to use
-                                   for direct reference indexing. The file must follow the format of
-                                   10x Feature Reference CSV. Currently, only three columns are
-                                   used: id, name, and sequence
-      --probe-csv <PROBE_CSV>      Path to a CSV file containing probe sequences to use for direct
-                                   reference indexing. The file must follow the format of 10x Probe
-                                   Set Reference v2 CSV, containing four mandatory columns: gene_id,
-                                   probe_seq, probe_id, and included (TRUE or FALSE), and an
-                                   optional column: region (spliced or unspliced)
-      --ref-seq <REF_SEQ>          Path to a FASTA file containing reference sequences to directly
-                                   build index on, and avoid expanded reference construction
+      --feature-csv <FEATURE_CSV>
+          Path to a CSV file containing feature barcode sequences to use for direct reference
+          indexing. The file must follow the format of 10x Feature Reference CSV. Currently, only
+          three columns are used: id, name, and sequence
+
+      --probe-csv <PROBE_CSV>
+          Path to a CSV file containing probe sequences to use for direct reference indexing. The
+          file must follow the format of 10x Probe Set Reference v2 CSV, containing four mandatory
+          columns: gene_id, probe_seq, probe_id, and included (TRUE or FALSE), and an optional
+          column: region (spliced or unspliced)
+
+      --ref-seq <REF_SEQ>
+          Path to a FASTA file containing reference sequences to directly build index on, and avoid
+          expanded reference construction
 
 Piscem Index Options:
   -m, --minimizer-length <MINIMIZER_LENGTH>
-          Minimizer length to be used to construct the piscem index (must be < k) [default: 19]
+          Minimizer length to be used to construct the piscem index (must be < k)
+          
+          [default: 19]
+
       --decoy-paths <DECOY_PATHS>
           Paths to decoy sequence FASTA files used to insert poison k-mer information into the index
-          (only if using piscem >= 0.7)
+
       --seed <HASH_SEED>
           The seed value to use in SSHash index construction (try changing this in the rare event
-          index build fails) [default: 1]
+          index build fails)
+          
+          [default: 1]
+
       --work-dir <WORK_DIR>
-          The working directory where temporary files should be placed [default: ./workdir.noindex]
+          The working directory where temporary files should be placed
+          
+          [default: ./workdir.noindex]
+
       --dict <DICT>
           Piscem dictionary backend: `auto` (default, emits Tiny artifacts for small references),
-          `sshash` (compact), or `tiny` (fast-path) [default: auto] [possible values: auto, sshash,
-          tiny]
+          `sshash` (compact), or `tiny` (fast-path)
+          
+          [default: auto]
+          [possible values: auto, sshash, tiny]
+
       --tmp-dir <DIR>
           Directory for SSHash's external minimizer-sort scratch files. This is a later, separate
           phase from the cDBG construction that `--work-dir` covers. Unset leaves piscem's default
+
       --ram-limit-gib <GIB>
-          RAM ceiling, in GiB, for SSHash's external minimizer sort. Unset leaves piscem's default
-          (8 GiB); a smaller value spills to disk sooner
+          RAM ceiling, in GiB, for SSHash's external minimizer sort. A smaller value spills to disk
+          sooner, trading peak memory for build time.
+          
+          The default of 8 is deliberately fixed rather than deferring to piscem, whose own default
+          scales with the machine's total RAM and so makes peak index-build memory vary from host to
+          host.
+          
+          [default: 8]

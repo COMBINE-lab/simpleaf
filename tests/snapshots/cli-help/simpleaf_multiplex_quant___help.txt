@@ -111,7 +111,7 @@ Piscem Mapping Options:
           [possible values: permissive, strict]
 
       --struct-constraints
-          If piscem >= 0.7.0, enable structural constraints
+          Enable structural constraints when mapping
 
       --max-ec-card <MAX_EC_CARD>
           Maximum cardinality equivalence class to examine

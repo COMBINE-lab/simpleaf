@@ -210,7 +210,7 @@ pub struct IndexOpts {
     pub work_dir: PathBuf,
 
     /// path to (optional) decoy sequence used to insert poison
-    /// k-mer information into the index (only if using piscem >= 0.7).
+    /// k-mer information into the index.
     #[arg(
         long,
         help_heading = "Piscem Index Options",

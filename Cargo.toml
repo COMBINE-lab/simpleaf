@@ -11,7 +11,7 @@ description = "A rust framework to make using alevin-fry and alevin-fry-ATAC eve
 license-file = "LICENSE"
 readme = "README.md"
 repository = "https://github.com/COMBINE-lab/simpleaf"
-homepage = "https://simpleaf.readthedocs.io"
+homepage = "https://combine-lab.github.io/simpleaf"
 #documentation = "https://fry.readthedocs.io/en/latest/"
 include = [
   "/src/*.rs",

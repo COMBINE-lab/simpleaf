@@ -3,30 +3,63 @@ build a piscem index over the genome for scATAC-seq mapping
 Usage: simpleaf atac index [OPTIONS] --input <INPUT> --output <OUTPUT>
 
 Options:
-  -i, --input <INPUT>        target sequences (provide target sequences directly; avoid expanded
-                             reference construction)
-  -o, --output <OUTPUT>      path to output directory (will be created if it doesn't exist)
-  -t, --threads <THREADS>    number of threads to use when running [default: 16]
-      --work-dir <WORK_DIR>  working directory where temporary files should be placed [default:
-                             ./workdir.noindex]
-      --seed <HASH_SEED>     seed value to use in SSHash index construction (try changing this in
-                             the rare event index build fails) [default: 1]
-      --overwrite            overwrite existing files if the output directory is already populated
-  -h, --help                 Print help
-  -V, --version              Print version
+  -i, --input <INPUT>
+          target sequences (provide target sequences directly; avoid expanded reference
+          construction)
+
+  -o, --output <OUTPUT>
+          path to output directory (will be created if it doesn't exist)
+
+  -t, --threads <THREADS>
+          number of threads to use when running
+          
+          [default: 16]
+
+      --work-dir <WORK_DIR>
+          working directory where temporary files should be placed
+          
+          [default: ./workdir.noindex]
+
+      --seed <HASH_SEED>
+          seed value to use in SSHash index construction (try changing this in the rare event index
+          build fails)
+          
+          [default: 1]
+
+      --overwrite
+          overwrite existing files if the output directory is already populated
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
 
 Piscem Index Options:
-      --tmp-dir <DIR>              Directory for SSHash's external minimizer-sort scratch files.
-                                   This is a later, separate phase from the cDBG construction that
-                                   `--work-dir` covers. Unset leaves piscem's default
-      --ram-limit-gib <GIB>        RAM ceiling, in GiB, for SSHash's external minimizer sort. Unset
-                                   leaves piscem's default (8 GiB); a smaller value spills to disk
-                                   sooner
-      --decoy-paths <DECOY_PATHS>  path to (optional) decoy sequence used to insert poison k-mer
-                                   information into the index (only if using piscem >= 0.7)
+      --tmp-dir <DIR>
+          Directory for SSHash's external minimizer-sort scratch files. This is a later, separate
+          phase from the cDBG construction that `--work-dir` covers. Unset leaves piscem's default
+
+      --ram-limit-gib <GIB>
+          RAM ceiling, in GiB, for SSHash's external minimizer sort. A smaller value spills to disk
+          sooner, trading peak memory for build time.
+          
+          The default of 8 is deliberately fixed rather than deferring to piscem, whose own default
+          scales with the machine's total RAM and so makes peak index-build memory vary from host to
+          host.
+          
+          [default: 8]
+
+      --decoy-paths <DECOY_PATHS>
+          path to (optional) decoy sequence used to insert poison k-mer information into the index
 
 Index Configuration Options:
   -k, --kmer-length <KMER_LENGTH>
-          the value of k to be used to construct the index [default: 25]
+          the value of k to be used to construct the index
+          
+          [default: 25]
+
   -m, --minimizer-length <MINIMIZER_LENGTH>
-          the value of m to be used to construct the piscem index (must be < k) [default: 17]
+          the value of m to be used to construct the piscem index (must be < k)
+          
+          [default: 17]
