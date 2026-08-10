@@ -39,13 +39,7 @@ fn test_piscem_known_chems() {
 fn test_no_index_known_chems() {
     let idx_type = IndexType::NoIndex;
     let custom_chem_p = PathBuf::from("resources").join("chemistries.json");
-    let cs = [
-        "10xv2",
-        "10xv3",
-        "10xv4-3p",
-        "10xv2-5p",
-        "10xv3-5p",
-    ];
+    let cs = ["10xv2", "10xv3", "10xv4-3p", "10xv2-5p", "10xv3-5p"];
 
     let dirs = vec![ExpectedOri::Forward; cs.len()];
 
@@ -160,7 +154,10 @@ fn all_registry_geometries_validate() {
         }
     }
 
-    assert!(checked > 0, "no chemistry in the registry declared a geometry");
+    assert!(
+        checked > 0,
+        "no chemistry in the registry declared a geometry"
+    );
     assert!(
         failures.is_empty(),
         "invalid geometries in the chemistry registry:\n  {}",
