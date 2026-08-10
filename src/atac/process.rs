@@ -239,14 +239,7 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
         .arg(opts.bin_overlap.to_string());
 
     // if the user requested more threads than can be used
-    let (threads, capped_at) = runtime::cap_threads(opts.threads);
-    if let Some(max_threads) = capped_at {
-        warn!(
-            "The maximum available parallelism is {}, but {} threads were requested.",
-            max_threads, opts.threads
-        );
-        warn!("setting number of threads to {}", max_threads);
-    }
+    let threads = runtime::cap_threads_warned(opts.threads);
 
     // location of output directory, number of threads
     let map_output = opts.output.join("af_map");
@@ -404,14 +397,7 @@ fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<SortStageO
         .arg(rad_dir);
 
     // if the user requested more threads than can be used
-    let (threads, capped_at) = runtime::cap_threads(opts.threads);
-    if let Some(max_threads) = capped_at {
-        warn!(
-            "The maximum available parallelism is {}, but {} threads were requested.",
-            max_threads, opts.threads
-        );
-        warn!("setting number of threads to {}", max_threads);
-    }
+    let threads = runtime::cap_threads_warned(opts.threads);
     af_sort.arg("--threads").arg(threads.to_string());
 
     if opts.compress {
@@ -598,14 +584,7 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<GplStageOut
     }
 
     // if the user requested more threads than can be used
-    let (threads, capped_at) = runtime::cap_threads(opts.threads);
-    if let Some(max_threads) = capped_at {
-        warn!(
-            "The maximum available parallelism is {}, but {} threads were requested.",
-            max_threads, opts.threads
-        );
-        warn!("setting number of threads to {}", max_threads);
-    }
+    let threads = runtime::cap_threads_warned(opts.threads);
     af_gpl.arg("--threads").arg(format!("{}", threads));
 
     let gpl_cmd_string = prog_utils::get_cmd_line_string(&af_gpl);

@@ -369,14 +369,7 @@ fn resolve_quant_setup(
         filter_meth_opt = Some(CellFilterMethod::KneeFinding);
     }
 
-    let (threads, capped_at) = runtime::cap_threads(opts.threads);
-    if let Some(max_threads) = capped_at {
-        warn!(
-            "The maximum available parallelism is {}, but {} threads were requested.",
-            max_threads, opts.threads
-        );
-        warn!("setting number of threads to {}", max_threads);
-    }
+    let threads = runtime::cap_threads_warned(opts.threads);
 
     let setup = QuantSetup {
         rp,

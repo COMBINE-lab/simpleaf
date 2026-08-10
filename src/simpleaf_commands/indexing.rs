@@ -13,7 +13,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use tracing::{info, warn};
+use tracing::info;
 
 use super::{IndexOpts, ReferenceType};
 
@@ -606,14 +606,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
         piscem_index_cmd.arg("--overwrite");
     }
 
-    let (capped_threads, capped_at) = runtime::cap_threads(threads);
-    if let Some(max_threads) = capped_at {
-        warn!(
-            "The maximum available parallelism is {}, but {} threads were requested.",
-            max_threads, threads
-        );
-        warn!("setting number of threads to {}", max_threads);
-    }
+    let capped_threads = runtime::cap_threads_warned(threads);
     threads = capped_threads;
 
     piscem_index_cmd

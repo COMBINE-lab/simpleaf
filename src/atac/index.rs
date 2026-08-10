@@ -7,7 +7,7 @@ use cmd_lib::run_fun;
 use serde_json::json;
 use std::path::Path;
 use std::time::Instant;
-use tracing::{info, warn};
+use tracing::info;
 
 pub(crate) fn piscem_index(af_home_path: &Path, opts: &IndexOpts) -> anyhow::Result<()> {
     let rp: ReqProgs = context::load_required_programs(af_home_path)?;
@@ -56,14 +56,7 @@ pub(crate) fn piscem_index(af_home_path: &Path, opts: &IndexOpts) -> anyhow::Res
         piscem_index_cmd.arg("--overwrite");
     }
 
-    let (threads, capped_at) = runtime::cap_threads(opts.threads);
-    if let Some(max_threads) = capped_at {
-        warn!(
-            "The maximum available parallelism is {}, but {} threads were requested.",
-            max_threads, opts.threads
-        );
-        warn!("setting number of threads to {}", max_threads);
-    }
+    let threads = runtime::cap_threads_warned(opts.threads);
 
     piscem_index_cmd
         .arg("--threads")
