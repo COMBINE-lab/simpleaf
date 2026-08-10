@@ -403,14 +403,19 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
         .arg("--min-reads")
         .arg(format!("{}", opts.min_reads));
 
-    // If the chemistry declares a sample-barcode orientation (e.g. 10x Flex v2
-    // where the whitelist is the RC of what appears on the read), forward it.
-    if let Some(c) = chem.as_ref() {
-        if let Some(sbc_info) = c.sample_bc_list.as_ref() {
-            if let Some(ori) = sbc_info.sample_bc_ori.as_deref() {
-                gpl_cmd.arg("--sample-bc-ori").arg(ori);
-            }
-        }
+    // Forward the sample-barcode orientation to alevin-fry. Precedence:
+    //   1. user-supplied --sample-bc-ori CLI override (`forward` / `reverse`,
+    //      matching alevin-fry's vocabulary and the preset JSON).
+    //   2. the chemistry preset's declared sample_bc_ori (e.g. 10x Flex v2
+    //      where the whitelist is the RC of what appears on the read).
+    //   3. omit the flag (alevin-fry default).
+    let sbc_ori_override = opts.sample_bc_ori.as_deref().or_else(|| {
+        chem.as_ref()
+            .and_then(|c| c.sample_bc_list.as_ref())
+            .and_then(|s| s.sample_bc_ori.as_deref())
+    });
+    if let Some(ori) = sbc_ori_override {
+        gpl_cmd.arg("--sample-bc-ori").arg(ori);
     }
 
     let gpl_cmd_str = prog_utils::get_cmd_line_string(&gpl_cmd);
