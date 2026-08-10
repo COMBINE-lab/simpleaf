@@ -9,14 +9,14 @@ Installation
 Recommended: installing from conda
 ----------------------------------
 
-We recommend all x86 (Linux or Mac) users to install ``simpleaf`` from bioconda, because all its dependencies are also available on conda, and will be automatically installed (except ``piscem``) when installing ``simpleaf``.
+We recommend that Linux and macOS users install ``simpleaf`` from bioconda, because all its dependencies are also available on conda, and will be automatically installed (except ``piscem``) when installing ``simpleaf``.
 
 .. code-block:: console
 
     conda install simpleaf piscem -c bioconda -c conda-forge
 
 
-**For Apple-silicon computers**, for example those with an Apple M-series chip, simpleaf should be installed under the x86 emulation layer, in other words, in shell with Rosetta2 enabled. See `this <https://combine-lab.github.io/alevin-fry-tutorials/2023/simpleaf-piscem/#:~:text=Attention%20Apple%20silicon%20computer%20users%3A>`_ for details. Furthermore, if one would like to use ``piscem`` on apple silicon, one has to either download the `pre-built piscem executable <https://github.com/COMBINE-lab/piscem/releases>`_ or build piscem from source **in the native shell (with Rosetta2 disabled)** using the commands described `here <https://github.com/COMBINE-lab/piscem#building>`_. Then, piscem can be executed from both Rosetta2 enabled and disabled shell.
+**Apple-silicon and ARM users** need no special handling. bioconda ships native ``osx-arm64`` and ``linux-aarch64`` packages for ``simpleaf``, ``piscem``, and ``alevin-fry``, so the command above works as-is in a native shell. Rosetta2 is not required, and installing under emulation is no longer recommended.
 
 Installing with cargo
 ---------------------
