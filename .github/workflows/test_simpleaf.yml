@@ -1,16 +1,19 @@
 name: simpleaf-check
 
 on:
+  # `dev`, not `develop`: the branch that exists, and the one that serves both
+  # the runtime chemistry registry and the ReadTheDocs build. Until this was
+  # corrected, nothing pushed to it was tested at all.
   push:
-    branches: [ main, develop ]
+    branches: [ main, dev ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, dev ]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check_formatting:
+  build_and_test:
     if: "!contains(github.event.head_commit.message, 'skip ci')"
     strategy:
       matrix:
@@ -27,8 +30,22 @@ jobs:
           override: true
           components: rustfmt
       
+      # Cheap and compiles nothing, so it runs first.
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
       - name: Build
         run: cargo build --verbose --release
+
+      # Deliberately `--release`: it reuses the artifacts the Build step just
+      # produced, which makes this ~30s. A debug `cargo test` would rebuild the
+      # whole dependency graph in a second profile — including HDF5, which is
+      # compiled from source — and cost minutes.
+      #
+      # This job previously ran neither this nor `cargo fmt`, which is how a
+      # test that did not compile, and a stale CLI snapshot, both reached main.
+      - name: Run cargo tests
+        run: cargo test --release --verbose
 
       - name: Install conda env
         uses: conda-incubator/setup-miniconda@v3
