@@ -196,7 +196,7 @@ be certain you intend to do this.",
     // remain that we have not seen, print out the appropriate
     // warning (or error) message. If the message is an error, then
     // bail after issuing it.
-    for (_cn, action) in expected_columns.iter() {
+    for action in expected_columns.values() {
         match action {
             HeaderFieldAction::Recommended(msg) => {
                 warn!("{}", msg);
@@ -780,7 +780,7 @@ impl SimpleafWorkflow {
         )?;
 
         // sort the cmd queue by its `step`.
-        cmd_queue.sort_by(|cmd1, cmd2| cmd1.step.cmp(&cmd2.step));
+        cmd_queue.sort_by_key(|cmd| cmd.step);
 
         Ok(SimpleafWorkflow {
             af_home_path: af_home_path.as_ref().to_owned(),
@@ -1448,7 +1448,7 @@ pub fn parse_manifest<T: AsRef<Path>>(manifest_path: &T) -> anyhow::Result<serde
     // Open the file in read-only mode with buffer.
     let manifest_path = manifest_path.as_ref();
     let file = File::open(manifest_path)
-        .with_context(|| format!("couldn't open manifest path {}", &manifest_path.display()))?;
+        .with_context(|| format!("couldn't open manifest path {}", manifest_path.display()))?;
     let reader = BufReader::new(file);
     let manifest = serde_json::from_reader(reader)?;
     Ok(manifest)
@@ -1836,7 +1836,7 @@ mod tests {
         } else {
             panic!(
                 "Expected {:?} to match WFCommand::ExternalCommand, but it didn't",
-                &cmd.cmd
+                cmd.cmd
             );
         }
 

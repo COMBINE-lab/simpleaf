@@ -17,14 +17,12 @@ pub(crate) fn piscem_index(af_home_path: &Path, opts: &IndexOpts) -> anyhow::Res
         .as_ref()
         .context("piscem program info is missing; please run `simpleaf set-paths`.")?;
 
-    match prog_utils::check_version_constraints(
+    let af_ver = prog_utils::check_version_constraints(
         "piscem",
         prog_utils::min_versions::PISCEM,
         &piscem_prog_info.version,
-    ) {
-        Ok(af_ver) => info!("found piscem version {:#}, proceeding", af_ver),
-        Err(e) => return Err(e),
-    }
+    )?;
+    info!("found piscem version {:#}, proceeding", af_ver);
 
     let output = opts.output.clone();
     let output_index_dir = output.join("index");

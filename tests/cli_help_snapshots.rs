@@ -115,7 +115,7 @@ fn cli_help_outputs_match_snapshots() {
         assert!(
             output.status.success(),
             "expected success for args {:?}, got status {:?}\nstderr:\n{}",
-            &args,
+            args,
             output.status.code(),
             String::from_utf8_lossy(&output.stderr)
         );
@@ -139,7 +139,7 @@ fn cli_help_outputs_match_snapshots() {
             "help output drifted for args {:?} against snapshot {}.\n\
              If this change is intended, regenerate with:\n    \
              UPDATE_CLI_SNAPSHOTS=1 cargo test --test cli_help_snapshots",
-            &args, snapshot_file
+            args, snapshot_file
         );
     }
 

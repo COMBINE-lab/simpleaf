@@ -210,6 +210,10 @@ fn main_catch(opts: Opts) -> anyhow::Result<String> {
     }
 }
 
+// `tla_opts()` hands back a jrsonnet map whose key type carries interior
+// mutability. The key is never mutated here -- and the type is jrsonnet's,
+// not ours to change -- so the lint has nothing to catch.
+#[allow(clippy::mutable_key_type)]
 fn main_real(opts: Opts) -> Result<String, Error> {
     let _gc_leak_guard = opts.gc.leak_on_exit();
     let _gc_print_stats = opts.gc.stats_printer();

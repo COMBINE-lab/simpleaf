@@ -532,7 +532,7 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
         let opath = anndata_path
             .as_ref()
             .expect("anndata_path must exist when --anndata-out is set");
-        af_anndata::convert_csr_to_anndata(&quant_output, &opath)?;
+        af_anndata::convert_csr_to_anndata(&quant_output, opath)?;
         convert_duration_secs = Some(convert_start.elapsed().as_secs_f64());
     }
 

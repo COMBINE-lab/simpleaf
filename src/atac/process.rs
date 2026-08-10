@@ -167,28 +167,24 @@ pub(crate) fn check_progs<P: AsRef<Path>>(
         .as_ref()
         .context("alevin-fry program info is missing; please run `simpleaf set-paths`.")?;
 
-    match prog_utils::check_version_constraints(
+    let af_ver = prog_utils::check_version_constraints(
         "alevin-fry",
         prog_utils::min_versions::ALEVIN_FRY,
         &af_prog_info.version,
-    ) {
-        Ok(af_ver) => info!("found alevin-fry version {:#}, proceeding", af_ver),
-        Err(e) => return Err(e),
-    }
+    )?;
+    info!("found alevin-fry version {:#}, proceeding", af_ver);
 
     let piscem_prog_info = rp
         .piscem
         .as_ref()
         .context("piscem program info is missing; please run `simpleaf set-paths`.")?;
 
-    match prog_utils::check_version_constraints(
+    let piscem_ver = prog_utils::check_version_constraints(
         "piscem",
         prog_utils::min_versions::PISCEM,
         &piscem_prog_info.version,
-    ) {
-        Ok(piscem_ver) => info!("found piscem version {:#}, proceeding", piscem_ver),
-        Err(e) => return Err(e),
-    }
+    )?;
+    info!("found piscem version {:#}, proceeding", piscem_ver);
 
     if opts.call_peaks {
         let macs_prog_info = rp
@@ -197,14 +193,12 @@ pub(crate) fn check_progs<P: AsRef<Path>>(
             .context(
                 "macs3 program info is missing; please run `simpleaf set-paths` before using `--call-peaks`.",
             )?;
-        match prog_utils::check_version_constraints(
+        let macs_ver = prog_utils::check_version_constraints(
             "macs3",
             prog_utils::min_versions::MACS3,
             &macs_prog_info.version,
-        ) {
-            Ok(macs_ver) => info!("found macs3 version {:#}, proceeding", macs_ver),
-            Err(e) => return Err(e),
-        }
+        )?;
+        info!("found macs3 version {:#}, proceeding", macs_ver);
     }
 
     Ok(())
@@ -225,7 +219,7 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
 
     // using a piscem index
     let mut piscem_map_cmd =
-        std::process::Command::new(format!("{}", &piscem_prog_info.exe_path.display()));
+        std::process::Command::new(format!("{}", piscem_prog_info.exe_path.display()));
     let index_path = format!("{}", index_base.display());
     piscem_map_cmd
         .arg("map-sc-atac")
@@ -305,8 +299,7 @@ fn macs_call_peaks(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<Ma
     let bedsuf = if opts.compress { ".bed.gz" } else { ".bed" };
     let bed_input = gpl_dir.join(format!("map{}", bedsuf));
     let peaks_output = gpl_dir.join("macs");
-    let mut macs_cmd =
-        std::process::Command::new(format!("{}", &macs_prog_info.exe_path.display()));
+    let mut macs_cmd = std::process::Command::new(format!("{}", macs_prog_info.exe_path.display()));
     macs_cmd
         .arg("callpeak")
         .arg("-f")
@@ -387,7 +380,7 @@ fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<SortStageO
 
     let gpl_dir = opts.output.join("af_process");
     let rad_dir = opts.output.join("af_map");
-    let mut af_sort = std::process::Command::new(format!("{}", &af_prog_info.exe_path.display()));
+    let mut af_sort = std::process::Command::new(format!("{}", af_prog_info.exe_path.display()));
     af_sort
         .arg("atac")
         .arg("sort")
@@ -559,7 +552,7 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<GplStageOut
     };
 
     let map_file = opts.output.join("af_map");
-    let mut af_gpl = std::process::Command::new(format!("{}", &af_prog_info.exe_path.display()));
+    let mut af_gpl = std::process::Command::new(format!("{}", af_prog_info.exe_path.display()));
     af_gpl
         .arg("atac")
         .arg("generate-permit-list")

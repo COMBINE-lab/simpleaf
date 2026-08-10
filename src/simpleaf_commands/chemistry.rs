@@ -159,7 +159,7 @@ fn get_chem_def_from_json(
         } else {
             bail!(
                 "Could not find chemistry definition for {} from the requested JSON {}",
-                &add_opts.name,
+                add_opts.name,
                 json_src
             );
         }
@@ -172,7 +172,7 @@ fn get_chem_def_from_json(
         } else {
             bail!(
                 "Could not properly parse the chemistry {} from the requested source JSON {}",
-                &add_opts.name,
+                add_opts.name,
                 json_src
             );
         }

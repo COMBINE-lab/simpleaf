@@ -410,7 +410,7 @@ fn run_mapping_stage(
                         "A piscem index is being used, but piscem program info is missing.",
                     )?;
                 let mut piscem_quant_cmd =
-                    std::process::Command::new(format!("{}", &piscem_prog_info.exe_path.display()));
+                    std::process::Command::new(format!("{}", piscem_prog_info.exe_path.display()));
                 let index_path = format!("{}", index_base.display());
                 piscem_quant_cmd
                     .arg("map-sc")
@@ -514,7 +514,7 @@ fn run_quant_stage(
         .context("Alevin-fry program info is missing; please run `simpleaf set-paths`.")?
         .exe_path
         .clone();
-    let mut alevin_gpl_cmd = std::process::Command::new(format!("{}", &alevin_fry.display()));
+    let mut alevin_gpl_cmd = std::process::Command::new(format!("{}", alevin_fry.display()));
     let gpl_threads = setup.threads.min(8);
     alevin_gpl_cmd.arg("generate-permit-list");
     alevin_gpl_cmd.arg("-i").arg(&mapping.map_output);
@@ -530,7 +530,7 @@ fn run_quant_stage(
     exec::run_checked(&mut alevin_gpl_cmd, "[generate permit list]")?;
     let gpl_duration = gpl_start.elapsed();
 
-    let mut alevin_collate_cmd = std::process::Command::new(format!("{}", &alevin_fry.display()));
+    let mut alevin_collate_cmd = std::process::Command::new(format!("{}", alevin_fry.display()));
     alevin_collate_cmd.arg("collate");
     alevin_collate_cmd.arg("-i").arg(&gpl_output);
     alevin_collate_cmd.arg("-r").arg(&mapping.map_output);
@@ -545,7 +545,7 @@ fn run_quant_stage(
     exec::run_checked(&mut alevin_collate_cmd, "[collate]")?;
     let collate_duration = collate_start.elapsed();
 
-    let mut alevin_quant_cmd = std::process::Command::new(format!("{}", &alevin_fry.display()));
+    let mut alevin_quant_cmd = std::process::Command::new(format!("{}", alevin_fry.display()));
     alevin_quant_cmd
         .arg("quant")
         .arg("-i")
