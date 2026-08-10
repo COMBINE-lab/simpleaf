@@ -130,10 +130,10 @@ mod tests {
         fs::write(
             idx_dir.join("simpleaf_index.json"),
             serde_json::to_string_pretty(&json!({
-            "index_type":"salmon",
-            "t2g_file":"t2g_3col.tsv"
-        }))
-        .expect("failed to serialize json"),
+                "index_type":"salmon",
+                "t2g_file":"t2g_3col.tsv"
+            }))
+            .expect("failed to serialize json"),
         )
         .expect("failed to write simpleaf_index.json");
         fs::write(idx_dir.join("gene_id_to_name.tsv"), "g1\tn1\n")

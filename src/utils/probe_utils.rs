@@ -75,10 +75,7 @@ pub fn insert_gene_name(
 
 /// Write a `gene_id -> gene_name` map as a 2-column TSV (rows sorted by `gene_id`,
 /// since the map is a `BTreeMap`). Shared by both probe-index build paths.
-pub fn write_gene_id_to_name(
-    map: &BTreeMap<String, String>,
-    path: &Path,
-) -> anyhow::Result<()> {
+pub fn write_gene_id_to_name(map: &BTreeMap<String, String>, path: &Path) -> anyhow::Result<()> {
     let mut writer = BufWriter::new(std::fs::File::create(path)?);
     for (gene_id, gene_name) in map {
         writeln!(writer, "{}\t{}", gene_id, gene_name)?;
@@ -213,7 +210,10 @@ Expected `spliced` or `unspliced`.",
     metadata.insert("num_excluded".to_string(), json!(num_excluded));
     metadata.insert("num_genes".to_string(), json!(genes.len()));
     metadata.insert("has_region".to_string(), json!(region_idx.is_some()));
-    metadata.insert("has_gene_symbol".to_string(), json!(gene_name_idx.is_some()));
+    metadata.insert(
+        "has_gene_symbol".to_string(),
+        json!(gene_name_idx.is_some()),
+    );
     if let Some(idx) = gene_name_idx {
         metadata.insert("gene_symbol_column".to_string(), json!(headers.get(idx)));
     }

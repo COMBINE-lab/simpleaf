@@ -39,13 +39,7 @@ fn test_piscem_known_chems() {
 fn test_no_index_known_chems() {
     let idx_type = IndexType::NoIndex;
     let custom_chem_p = PathBuf::from("resources").join("chemistries.json");
-    let cs = [
-        "10xv2",
-        "10xv3",
-        "10xv4-3p",
-        "10xv2-5p",
-        "10xv3-5p",
-    ];
+    let cs = ["10xv2", "10xv3", "10xv4-3p", "10xv2-5p", "10xv3-5p"];
 
     let dirs = vec![ExpectedOri::Forward; cs.len()];
 
@@ -125,4 +119,48 @@ fn test_custom_general_geometry_is_accepted_for_piscem() {
         Chemistry::Custom(custom) => assert_eq!(custom.geometry(), chem),
         other => panic!("expected custom chemistry, found {:?}", other),
     }
+}
+
+/// Every geometry in the shipped chemistry registry must parse and validate.
+///
+/// The other chemistry tests name a handful of protocols explicitly, so a
+/// preset added to `resources/chemistries.json` with a malformed geometry went
+/// entirely uncovered — it would only fail once a user selected it. Iterate
+/// over the whole registry instead, so adding a chemistry is enough to get it
+/// checked.
+///
+/// `__builtin` marks a protocol whose geometry is handled internally by piscem
+/// rather than expressed as a specifier string; `validate_geometry` accepts it.
+#[test]
+fn all_registry_geometries_validate() {
+    let p = PathBuf::from("resources").join("chemistries.json");
+    let txt = std::fs::read_to_string(&p)
+        .unwrap_or_else(|e| panic!("could not read {}: {e}", p.display()));
+    let registry: serde_json::Value =
+        serde_json::from_str(&txt).expect("chemistries.json is not valid JSON");
+
+    let mut failures = Vec::new();
+    let mut checked = 0usize;
+    for (name, body) in registry
+        .as_object()
+        .expect("chemistries.json must be a JSON object")
+    {
+        let Some(geo) = body.get("geometry").and_then(|g| g.as_str()) else {
+            continue;
+        };
+        checked += 1;
+        if let Err(e) = validate_geometry(geo) {
+            failures.push(format!("{name} ({geo}): {e}"));
+        }
+    }
+
+    assert!(
+        checked > 0,
+        "no chemistry in the registry declared a geometry"
+    );
+    assert!(
+        failures.is_empty(),
+        "invalid geometries in the chemistry registry:\n  {}",
+        failures.join("\n  ")
+    );
 }

@@ -479,9 +479,7 @@ being used by simpleaf"#,
                 })
             }
             IndexType::NoIndex => {
-                bail!(
-                    "Cannot perform mapping and quantification without a known piscem index."
-                );
+                bail!("Cannot perform mapping and quantification without a known piscem index.");
             }
         }
     } else {

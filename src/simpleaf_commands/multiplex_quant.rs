@@ -214,7 +214,11 @@ fn resolve_user_supplied_index(
         let sibling_dir = index.parent();
         let candidates = multiplex_t2g_candidates_for(None, sibling_dir, mode);
         let t2g = resolve_t2g_from_candidates(&candidates, output_dir, mode)?;
-        return Ok((index.to_path_buf(), t2g, gene_id_to_name_for_dir(sibling_dir)));
+        return Ok((
+            index.to_path_buf(),
+            t2g,
+            gene_id_to_name_for_dir(sibling_dir),
+        ));
     }
 
     bail!(
@@ -376,7 +380,8 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
     exec::run_checked(&mut piscem_cmd, "[piscem map-sc]")?;
     let map_duration = map_start.elapsed();
     info!("Mapping complete in {:.1}s", map_duration.as_secs_f64());
-    let mapping_log = prog_parsing_utils::construct_json_from_piscem_log(map_output.join("map_info.json"))?;
+    let mapping_log =
+        prog_parsing_utils::construct_json_from_piscem_log(map_output.join("map_info.json"))?;
     let map_info_path = quant_output.join("simpleaf_map_info.json");
     let map_info_file = std::fs::File::create(&map_info_path)?;
     serde_json::to_writer(map_info_file, &mapping_log)?;
@@ -602,16 +607,16 @@ fn resolve_probe_index(
     std::fs::create_dir_all(&cache_dir)?;
     let cache_key = probe_info.plist_name.as_deref().unwrap_or("unknown");
     let cached_index = cache_dir.join(format!("{}_{}", cache_key, opts.kmer_length));
-        let cached_probe_index_dir = cached_index.join("probe_index");
-        let cached_probe_index = cached_probe_index_dir.join("index");
-        if probe_index_base_exists(&cached_probe_index) {
-            let candidates = multiplex_t2g_candidates_for(None, Some(&cached_probe_index_dir), mode);
-            let t2g =
-                resolve_t2g_from_candidates(&candidates, &opts.output.join("resolved_t2g"), mode)?;
-            let gene_id_to_name = gene_id_to_name_for_dir(Some(&cached_probe_index_dir));
-            info!("Using cached probe index: {}", cached_probe_index.display());
-            return Ok((cached_probe_index, t2g, gene_id_to_name));
-        }
+    let cached_probe_index_dir = cached_index.join("probe_index");
+    let cached_probe_index = cached_probe_index_dir.join("index");
+    if probe_index_base_exists(&cached_probe_index) {
+        let candidates = multiplex_t2g_candidates_for(None, Some(&cached_probe_index_dir), mode);
+        let t2g =
+            resolve_t2g_from_candidates(&candidates, &opts.output.join("resolved_t2g"), mode)?;
+        let gene_id_to_name = gene_id_to_name_for_dir(Some(&cached_probe_index_dir));
+        info!("Using cached probe index: {}", cached_probe_index.display());
+        return Ok((cached_probe_index, t2g, gene_id_to_name));
+    }
 
     // Download and build
     if let Some(ref url) = probe_info.remote_url {
@@ -842,6 +847,7 @@ mod tests {
             organism: None,
             cell_bc_list: None,
             expected_ori: String::from("both"),
+            sample_bc_ori: None,
             sample_correction_mode: String::from("exact"),
             output: Path::new(".").to_path_buf(),
             threads: 1,

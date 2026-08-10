@@ -360,17 +360,11 @@ pub fn validate_geometry(geo: &str) -> Result<()> {
         Ok(())
     } else {
         match seq_geom_parser::parse_geometry(geo) {
-            Ok(fg) => {
-                seq_geom_parser::validate_geometry(&fg)
-                    .map_err(|e| anyhow!("Geometry validation failed for '{}': {}", geo, e))
-            }
+            Ok(fg) => seq_geom_parser::validate_geometry(&fg)
+                .map_err(|e| anyhow!("Geometry validation failed for '{}': {}", geo, e)),
             Err(errors) => {
                 let msg = seq_geom_parser::format_errors(geo, &errors);
-                bail!(
-                    "Could not parse geometry '{}'. Parse errors:\n{}",
-                    geo,
-                    msg
-                );
+                bail!("Could not parse geometry '{}'. Parse errors:\n{}", geo, msg);
             }
         }
     }

@@ -525,8 +525,8 @@ pub fn inspect_af_home(af_home_path: &Path) -> anyhow::Result<serde_json::Value>
 
 #[cfg(test)]
 mod tests {
-    use cmd_lib::run_fun;
     use super::{check_files_exist, check_piscem_index_files};
+    use cmd_lib::run_fun;
     use std::fs;
     use tempfile::tempdir;
 
