@@ -52,6 +52,41 @@ fn get_required_idx(headers: &csv::StringRecord, name: &str) -> anyhow::Result<u
         .with_context(|| format!("probe CSV is missing required column `{}`", name))
 }
 
+/// Record a `gene_id -> gene_name` association into `map`, erroring if a *different*
+/// name was already recorded for the same `gene_id` (an internally inconsistent probe
+/// set). Shared by the probe-set conversion (auto-build) and `simpleaf index --probe-csv`.
+pub fn insert_gene_name(
+    map: &mut BTreeMap<String, String>,
+    gene_id: &str,
+    gene_name: &str,
+) -> anyhow::Result<()> {
+    if let Some(prev) = map.insert(gene_id.to_string(), gene_name.to_string())
+        && prev != gene_name
+    {
+        bail!(
+            "probe CSV contains inconsistent gene annotations for `{}`: saw both `{}` and `{}`.",
+            gene_id,
+            prev,
+            gene_name,
+        );
+    }
+    Ok(())
+}
+
+/// Write a `gene_id -> gene_name` map as a 2-column TSV (rows sorted by `gene_id`,
+/// since the map is a `BTreeMap`). Shared by both probe-index build paths.
+pub fn write_gene_id_to_name(
+    map: &BTreeMap<String, String>,
+    path: &Path,
+) -> anyhow::Result<()> {
+    let mut writer = BufWriter::new(std::fs::File::create(path)?);
+    for (gene_id, gene_name) in map {
+        writeln!(writer, "{}\t{}", gene_id, gene_name)?;
+    }
+    writer.flush()?;
+    Ok(())
+}
+
 /// Convert a 10x probe set CSV file to a FASTA file suitable for indexing.
 ///
 /// Also generates a collapsed gene-level transcript-to-gene (t2g) map and, when
@@ -140,16 +175,7 @@ pub fn convert_probe_csv_to_reference_files(
             && let Some(gene_name) = record.get(gene_name_i).map(str::trim)
             && !gene_name.is_empty()
         {
-            if let Some(prev) = gene_id_to_name.insert(gene_id.to_string(), gene_name.to_string())
-                && prev != gene_name
-            {
-                bail!(
-                    "probe CSV contains inconsistent gene annotations for `{}`: saw both `{}` and `{}`.",
-                    gene_id,
-                    prev,
-                    gene_name,
-                );
-            }
+            insert_gene_name(&mut gene_id_to_name, gene_id, gene_name)?;
         }
 
         if let Some(region_i) = region_idx {
@@ -179,11 +205,7 @@ Expected `spliced` or `unspliced`.",
         writer.flush()?;
     }
     if let Some(ref path) = gene_id_to_name_path {
-        let mut writer = BufWriter::new(std::fs::File::create(path)?);
-        for (gene_id, gene_name) in &gene_id_to_name {
-            writeln!(writer, "{}\t{}", gene_id, gene_name)?;
-        }
-        writer.flush()?;
+        write_gene_id_to_name(&gene_id_to_name, path)?;
     }
 
     metadata.insert("num_probes".to_string(), json!(num_probes));
@@ -312,10 +334,29 @@ Provide a probe CSV with a `region` column (`spliced` / `unspliced`), or a pre-b
 mod tests {
     use super::{
         ProbeT2gMode, collapse_t2g_to_gene, convert_probe_csv_to_reference_files, ensure_t2g_mode,
-        t2g_has_usa_mapping,
+        insert_gene_name, t2g_has_usa_mapping,
     };
+    use std::collections::BTreeMap;
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn insert_gene_name_dedups_and_detects_conflicts() {
+        let mut m = BTreeMap::new();
+        insert_gene_name(&mut m, "G1", "GeneOne").expect("first insert ok");
+        insert_gene_name(&mut m, "G1", "GeneOne").expect("identical re-insert ok");
+        insert_gene_name(&mut m, "G2", "GeneTwo").expect("distinct gene ok");
+        assert_eq!(m.len(), 2);
+        assert_eq!(m.get("G1").map(String::as_str), Some("GeneOne"));
+
+        let err = insert_gene_name(&mut m, "G1", "Different")
+            .expect_err("conflicting name for same gene_id should error");
+        assert!(
+            format!("{:#}", err).contains("inconsistent gene annotations"),
+            "unexpected error: {:#}",
+            err
+        );
+    }
 
     #[test]
     fn convert_probe_csv_writes_gene_and_usa_t2g_files() {
