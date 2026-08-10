@@ -10,13 +10,14 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "af-anndata"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1da89ad6dfcfa9099e5bc2764335202229661e242407dad675916518395f93e"
+checksum = "492e870f18e170a3f3c103eb1dfb5718e1556fbd6f201c6ffba8f06339faf73d"
 dependencies = [
  "anndata",
  "anndata-hdf5",
  "anyhow",
+ "flate2",
  "hdf5-metno-src",
  "libsw",
  "nalgebra-sparse",
@@ -1520,9 +1521,9 @@ dependencies = [
 
 [[package]]
 name = "grangers"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28373765eabae9235f894ba134ce686e253306a6f54d240d0b1cbd7998e53476"
+checksum = "9458baa59e3df2cb65d0480221733424d95c30df86653610b46d310a84854547"
 dependencies = [
  "anyhow",
  "flate2",
@@ -4216,12 +4217,13 @@ dependencies = [
 
 [[package]]
 name = "roers"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68a3312e3778d04acc33b5025e90b9b5ef9cdc3a3c14a51d4afde74c44f8d8c9"
+checksum = "5c2805511d1d4c4399721e158686d005befa9c4d2041298761f2e2000162d3c9"
 dependencies = [
  "anyhow",
  "clap",
+ "flate2",
  "grangers",
  "itertools",
  "peak_alloc",

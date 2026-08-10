@@ -48,8 +48,8 @@ seq_geom_parser = "1.1"
 # Legacy seq_geom_parser 0.3.0 and seq_geom_xform removed — salmon single-cell
 # mapping is deprecated, and piscem handles geometry strings directly.
 # All geometry validation uses seq_geom_parser 1.0 (above).
-roers = { version = "0.5.0" }
-af-anndata = { version = "0.5.0" }
+roers = { version = "0.5.1" }
+af-anndata = { version = "0.5.1" }
 
 anyhow = "^1.0"
 clap = { version = "4.5.37", features = [
