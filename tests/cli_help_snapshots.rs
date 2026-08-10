@@ -84,10 +84,25 @@ fn snapshots_dir() -> PathBuf {
         .join("cli-help")
 }
 
+/// Rewrite the snapshots instead of asserting against them:
+///
+/// ```text
+/// UPDATE_CLI_SNAPSHOTS=1 cargo test --test cli_help_snapshots
+/// ```
+///
+/// Adding a flag legitimately changes this output, and without a documented way
+/// to regenerate it the snapshots simply drift out of date — which is how
+/// `--sample-bc-ori` landed with a failing test. Review the resulting diff
+/// before committing it; that review is the point of the snapshots.
+fn update_requested() -> bool {
+    std::env::var_os("UPDATE_CLI_SNAPSHOTS").is_some_and(|v| !v.is_empty() && v != "0")
+}
+
 #[test]
 fn cli_help_outputs_match_snapshots() {
     let binary = env!("CARGO_BIN_EXE_simpleaf");
     let af_home = tempdir().expect("unable to create temp ALEVIN_FRY_HOME");
+    let updating = update_requested();
 
     for (snapshot_file, args) in snapshot_cases() {
         let output = Command::new(binary)
@@ -107,14 +122,30 @@ fn cli_help_outputs_match_snapshots() {
 
         let actual = String::from_utf8(output.stdout).expect("stdout was not valid UTF-8");
         let expected_path = snapshots_dir().join(snapshot_file);
+
+        if updating {
+            fs::write(&expected_path, &actual).unwrap_or_else(|e| {
+                panic!("failed writing snapshot {}: {}", expected_path.display(), e)
+            });
+            continue;
+        }
+
         let expected = fs::read_to_string(&expected_path).unwrap_or_else(|e| {
             panic!("failed reading snapshot {}: {}", expected_path.display(), e)
         });
 
         assert_eq!(
             actual, expected,
-            "help output drifted for args {:?} against snapshot {}",
+            "help output drifted for args {:?} against snapshot {}.\n\
+             If this change is intended, regenerate with:\n    \
+             UPDATE_CLI_SNAPSHOTS=1 cargo test --test cli_help_snapshots",
             &args, snapshot_file
         );
     }
+
+    assert!(
+        !updating,
+        "snapshots were rewritten; re-run without UPDATE_CLI_SNAPSHOTS to verify, \
+         and review the diff before committing"
+    );
 }

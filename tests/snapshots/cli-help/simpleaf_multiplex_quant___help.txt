@@ -3,21 +3,29 @@ quantify a multiplexed sample (e.g. 10x Flex, or any custom multi-barcode protoc
 Usage: simpleaf multiplex-quant [OPTIONS] --output <OUTPUT>
 
 Options:
-  -c, --chemistry <CHEMISTRY>        Chemistry name (e.g. 10x-flexv1-gex-3p). Provides defaults for
-                                     geometry, cell BC whitelist, sample BC list, and probe set. All
-                                     can be overridden individually. If omitted, --geometry and
-                                     --cell-bc-list are required
-  -g, --geometry <GEOMETRY>          Override the read geometry string (e.g.
-                                     '1{b[16]u[12]x[0-3]hamming(f[TTGCTAGGACCG],1)s[10]x:}2{r:}')
-      --organism <ORGANISM>          Target organism for automatic probe set selection [possible
-                                     values: human, mouse]
-      --cell-bc-list <CELL_BC_LIST>  Path to cell barcode whitelist (one barcode per line, overrides
-                                     chemistry default)
-      --expected-ori <EXPECTED_ORI>  Expected read orientation: fw, rc, or both [default: both]
-  -o, --output <OUTPUT>              Path to output directory
-  -t, --threads <THREADS>            Number of threads to use [default: 16]
-  -h, --help                         Print help
-  -V, --version                      Print version
+  -c, --chemistry <CHEMISTRY>          Chemistry name (e.g. 10x-flexv1-gex-3p). Provides defaults
+                                       for geometry, cell BC whitelist, sample BC list, and probe
+                                       set. All can be overridden individually. If omitted,
+                                       --geometry and --cell-bc-list are required
+  -g, --geometry <GEOMETRY>            Override the read geometry string (e.g.
+                                       '1{b[16]u[12]x[0-3]hamming(f[TTGCTAGGACCG],1)s[10]x:}2{r:}')
+      --organism <ORGANISM>            Target organism for automatic probe set selection [possible
+                                       values: human, mouse]
+      --cell-bc-list <CELL_BC_LIST>    Path to cell barcode whitelist (one barcode per line,
+                                       overrides chemistry default)
+      --expected-ori <EXPECTED_ORI>    Expected read orientation: fw, rc, or both [default: both]
+      --sample-bc-ori <SAMPLE_BC_ORI>  Sample barcode orientation: `forward` (whitelist matches read
+                                       as-is) or `reverse` (reverse-complement the whitelist before
+                                       lookup). Overrides the chemistry preset's `sample_bc_ori`
+                                       when set. Useful for cycle-plan variants (e.g. 10x Flex
+                                       Configuration B) where the sample BC is read off the opposite
+                                       strand from the canonical preset. Vocabulary matches the
+                                       preset JSON and alevin-fry's `--sample-bc-ori` [possible
+                                       values: forward, reverse]
+  -o, --output <OUTPUT>                Path to output directory
+  -t, --threads <THREADS>              Number of threads to use [default: 16]
+  -h, --help                           Print help
+  -V, --version                        Print version
 
 Permit List Options:
       --sample-correction-mode <SAMPLE_CORRECTION_MODE>
