@@ -14,7 +14,7 @@ use std::fs;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::utils::jrsonnet_main::parse_jsonnet;
 use crate::utils::prog_utils;
@@ -500,7 +500,19 @@ pub fn get_template_version<T: AsRef<Path>>(
         ParseAction::Inspect,
     ) {
         Ok(v) => v,
-        Err(_) => return Ok(String::from("N/A*")),
+        Err(e) => {
+            // Not every template can be evaluated uninstantiated, so this is a
+            // normal outcome rather than a failure. Log the reason all the same:
+            // discarding it entirely meant a genuine regression in the jsonnet
+            // evaluator was indistinguishable from a template that simply needs
+            // arguments, and showed up only as "N/A*" in a table.
+            debug!(
+                "could not evaluate uninstantiated template {}: {:#}",
+                template_path.display(),
+                e
+            );
+            return Ok(String::from("N/A*"));
+        }
     };
 
     let workflow_json_value: Value = serde_json::from_str(workflow_json_string.as_str())?;
