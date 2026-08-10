@@ -264,8 +264,17 @@ pub fn check_version_constraints<S1: AsRef<str>>(
     req_string: S1,
     prog_ver_string: &str,
 ) -> Result<Version> {
-    let parsed_version = Version::parse(prog_ver_string).unwrap();
-    let req = VersionReq::parse(req_string.as_ref()).unwrap();
+    // A tool that prints something that is not a semantic version is a
+    // misconfigured install, not a bug in simpleaf; report it rather than
+    // panicking with an unwrap.
+    let parsed_version = Version::parse(prog_ver_string).with_context(|| {
+        format!(
+            "could not parse the version of {} (`{}`) as a semantic version",
+            prog_name, prog_ver_string
+        )
+    })?;
+    let req = VersionReq::parse(req_string.as_ref())
+        .with_context(|| format!("invalid version requirement `{}`", req_string.as_ref()))?;
     if req.matches(&parsed_version) {
         Ok(parsed_version)
     } else {
@@ -307,8 +316,18 @@ pub fn check_version_constraints_from_output<S1: AsRef<str>>(
                 } else {
                     version.to_string()
                 };
-                let parsed_version = Version::parse(&ver).unwrap();
-                let req = VersionReq::parse(req_string.as_ref()).unwrap();
+                // See the note in `check_version_constraints`: a tool printing
+                // something unparseable is a bad install, not a panic.
+                let parsed_version = Version::parse(&ver).with_context(|| {
+                    format!(
+                        "could not parse the version of {} (`{}`) as a semantic version; \
+                         the program reported: {:?}",
+                        prog_name, ver, version
+                    )
+                })?;
+                let req = VersionReq::parse(req_string.as_ref()).with_context(|| {
+                    format!("invalid version requirement `{}`", req_string.as_ref())
+                })?;
                 if req.matches(&parsed_version) {
                     return Ok(parsed_version);
                 } else {
@@ -437,7 +456,7 @@ pub fn get_required_progs() -> Result<ReqProgs> {
     // then check the path.
     let piscem_exe = Some(search_for_executable("PISCEM", "piscem")?);
     let alevin_fry_exe = Some(search_for_executable("ALEVIN_FRY", "alevin-fry")?);
-    let macs_exe = Some(search_for_executable("ALEVIN_FRY", "macs3")?);
+    let macs_exe = Some(search_for_executable("MACS3", "macs3")?);
 
     get_required_progs_from_paths(piscem_exe, alevin_fry_exe, macs_exe)
 }

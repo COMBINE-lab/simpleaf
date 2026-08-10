@@ -38,9 +38,10 @@ categories = ["command-line-utilities", "science"]
 [dependencies]
 cc = "1.2.20"
 
-# New seq_geom_parser 1.0 (chumsky-based, from piscem-rs workspace) — used for
-# geometry validation and flex-quant. Patched to GitHub in .cargo/config.toml
-# until published to crates.io.
+# seq_geom_parser (chumsky-based, from the piscem-rs workspace) — used for
+# geometry validation and multiplex-quant. Published on crates.io; the
+# `.cargo/config.toml` patch this comment used to describe is long gone (there
+# is no such file in this repository).
 seq_geom_parser = "1.1"
 # Old seq_geom_parser 0.3.0 (pest-based) — still used by simpleaf quant for
 # PiscemGeomDesc/SalmonGeomDesc command-line arg generation and FIFO transforms.

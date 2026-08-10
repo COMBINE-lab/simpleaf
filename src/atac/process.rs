@@ -74,6 +74,11 @@ fn push_advanced_piscem_options(
         .arg("--max-read-occ")
         .arg(opts.max_read_occ.to_string());
 
+    // `--thr` was accepted on simpleaf's command line and then dropped: it was
+    // never forwarded, so setting it silently did nothing and piscem always
+    // used its own default. piscem's `map-sc-atac` takes it, so pass it on.
+    piscem_map_cmd.arg("--thr").arg(opts.thr.to_string());
+
     Ok(())
 }
 

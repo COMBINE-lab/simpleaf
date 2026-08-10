@@ -282,6 +282,15 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
         })?
         .to_string();
 
+    // `quant` validates its geometry (via `add_chemistry_to_args_piscem`) but
+    // this path handed `-g` straight to piscem, so a typo in `--geometry`
+    // surfaced as a mapping failure partway through a run rather than as an
+    // error before any work started. The named-chemistry lookup that `quant`
+    // also performs does not apply here: presets in this path already store a
+    // full geometry string rather than a protocol name.
+    crate::utils::af_utils::validate_geometry(&geometry)
+        .with_context(|| format!("invalid geometry: {}", geometry))?;
+
     // Resolve expected orientation
     let expected_ori = &opts.expected_ori;
 
@@ -376,7 +385,7 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
     piscem_cmd.arg("-2").arg(r2_str.join(","));
 
     let map_cmd_str = prog_utils::get_cmd_line_string(&piscem_cmd);
-    info!("piscem map-scrna cmd: {}", map_cmd_str);
+    info!("piscem map-sc cmd: {}", map_cmd_str);
     let map_start = Instant::now();
     exec::run_checked(&mut piscem_cmd, "[piscem map-sc]")?;
     let map_duration = map_start.elapsed();
