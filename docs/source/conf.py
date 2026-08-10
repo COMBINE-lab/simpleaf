@@ -22,7 +22,19 @@ copyright = '2022-, Dongze He, Noor Pratap Singh, Rob Patro'
 author = 'Dongze He, Noor Pratap Singh, Rob Patro'
 
 # The full version, including alpha/beta/rc tags
-release = '0.25.0'
+release = '0.27.0'
+
+# These docs are frozen. Development continues at the Astro/Starlight site, and
+# rst_prolog is the one hook that reaches every page without touching each file.
+rst_prolog = """
+.. attention::
+
+   **These docs have moved.** The current simpleaf documentation lives at
+   https://combine-lab.github.io/simpleaf and is the only version that is
+   updated. This readthedocs site is a frozen snapshot of the 0.27.0 docs and
+   will not track later releases.
+"""
+
 
 master_doc = 'index'
 
