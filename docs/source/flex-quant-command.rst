@@ -13,19 +13,19 @@ The ``multiplex-quant`` command runs the end-to-end ``simpleaf`` pipeline for 10
 - multi-barcode permit-list generation with ``alevin-fry generate-permit-list``
 - ``alevin-fry collate`` and ``alevin-fry quant``
 
-At present, ``multiplex-quant`` expects a registered Flex chemistry such as ``10x-flexv1-gex-3p`` or ``10x-flexv2-gex-3p`` and requires ``piscem`` plus ``alevin-fry`` to be configured with :doc:`/set-paths`.
+``multiplex-quant`` typically runs against a registered Flex chemistry such as ``10x-flexv1-gex-3p`` or ``10x-flexv2-gex-3p``, in which case the geometry, cell BC whitelist, sample BC list, and orientations are auto-resolved from the preset. For chemistries not in the registry (or cycle-plan variants such as 10x Flex Configuration B), the preset can be replaced with manual overrides — at minimum ``--geometry`` and ``--cell-bc-list``, with optional ``--probe-set``, ``--sample-bc-list``, ``--expected-ori``, and ``--sample-bc-ori`` as needed. ``piscem`` and ``alevin-fry`` must be configured with :doc:`/set-paths`.
 
 Overview
 --------
 
 The command needs:
 
-1. a Flex chemistry name via ``--chemistry``
-2. an organism via ``--organism`` for automatic probe-set selection
-3. paired-end reads via ``--reads1`` and ``--reads2``
-4. an output directory via ``--output``
+1. paired-end reads via ``--reads1`` and ``--reads2``
+2. an output directory via ``--output``
+3. either a registered chemistry name via ``--chemistry``, or a manual ``--geometry`` string plus ``--cell-bc-list`` for chemistries not in the registry
+4. an organism via ``--organism`` when using automatic probe-set selection (i.e. when ``--probe-set`` is not provided)
 
-If the chemistry registry contains the needed metadata, ``simpleaf`` can automatically download and cache the probe set, the cell barcode whitelist, and the sample barcode list. If you already have local resources, you can override these defaults with ``--index``, ``--probe-set``, or ``--sample-bc-list``.
+If the chemistry registry contains the needed metadata, ``simpleaf`` can automatically download and cache the probe set, the cell barcode whitelist, and the sample barcode list. If you already have local resources, you can override these defaults with ``--index``, ``--probe-set``, ``--cell-bc-list``, or ``--sample-bc-list``.
 
 The default output is the standard Matrix Market directory under ``af_quant/alevin``. If you pass ``--anndata-out``, ``simpleaf`` will additionally write an AnnData ``.h5ad`` file at ``af_quant/alevin/quants.h5ad``.
 
@@ -48,14 +48,16 @@ The relevant options (which you can obtain by running ``simpleaf multiplex-quant
 
     Options:
       -c, --chemistry <CHEMISTRY>    Chemistry name (e.g. 10x-flexv1-gex-3p). Provides defaults for geometry, cell BC whitelist, sample BC list, and probe set. All can be overridden individually. If omitted, --geometry and --cell-bc-list are required
+      -g, --geometry <GEOMETRY>      Override the read geometry string (e.g. '1{b[16]u[12]x[0-3]hamming(f[TTGCTAGGACCG],1)s[10]x:}2{r:}')
           --organism <ORGANISM>      Target organism for automatic probe set selection [possible values: human, mouse]
           --cell-bc-list <CELL_BC_LIST>
                                       Path to cell barcode whitelist (one barcode per line, overrides chemistry default)
           --expected-ori <EXPECTED_ORI>
                                       Expected read orientation: fw, rc, or both [default: both]
+          --sample-bc-ori <SAMPLE_BC_ORI>
+                                      Sample barcode orientation override: ``forward`` (whitelist matches read as-is) or ``reverse`` (reverse-complement the whitelist before lookup). Overrides the chemistry preset's ``sample_bc_ori`` when set; otherwise the preset value (if any) is used. Vocabulary matches the chemistry preset JSON and ``alevin-fry --sample-bc-ori`` [possible values: forward, reverse]
       -o, --output <OUTPUT>          Path to output directory
       -t, --threads <THREADS>        Number of threads to use [default: 16]
-      -r, --resolution <RESOLUTION>  UMI resolution mode [default: cr-like] [possible values: cr-like, cr-like-em, parsimony, parsimony-em, parsimony-gene, parsimony-gene-em]
       -h, --help                     Print help
       -V, --version                  Print version
 
@@ -65,24 +67,89 @@ The relevant options (which you can obtain by running ``simpleaf multiplex-quant
       -2, --reads2 <READS2>  Comma-separated list of R2 FASTQ files
 
     Probe Set Options:
-          --probe-set <PROBE_SET>            Path to probe set CSV or FASTA (overrides auto-download)
-          --sample-bc-list <SAMPLE_BC_LIST>  Path to sample/probe barcode file with rotation mapping
-          --kmer-length <KMER_LENGTH>        k-mer length for probe index building [default: 23]
+          --probe-set <PROBE_SET>      Path to probe set CSV or FASTA (overrides auto-download)
+          --kmer-length <KMER_LENGTH>  k-mer length for probe index building [default: 23]
 
     Reference Options:
-      -m, --t2g-map <T2G_MAP>  Path to a transcript-to-gene map file
-          --usa                Resolve expression into separate spliced and unspliced counts. This requires splicing-aware probe annotations: either a probe CSV with a ``region`` column containing ``spliced`` / ``unspliced`` values, or a pre-built index with an adjacent 3-column t2g file
+      -m, --t2g-map <T2G_MAP>            Path to a transcript-to-gene map file
+          --usa                          Resolve expression into separate spliced and unspliced counts. This requires splicing-aware probe annotations: either a probe CSV with a ``region`` column containing ``spliced`` / ``unspliced`` values, or a pre-built index with an adjacent 3-column t2g file
+          --sample-bc-list <SAMPLE_BC_LIST>
+                                          Path to sample/probe barcode file with rotation mapping. 3-column TSV: observed, canonical, sample_name. Overrides the chemistry preset's auto-downloaded sample BC list.
 
     Piscem Mapping Options:
           --skipping-strategy <SKIPPING_STRATEGY>  The skipping strategy to use for k-mer collection [default: permissive] [possible values: permissive, strict]
           --struct-constraints                     If piscem >= 0.7.0, enable structural constraints
-          --max-ec-card <MAX_EC_CARD>             Maximum cardinality equivalence class to examine [default: 4096]
+          --max-ec-card <MAX_EC_CARD>              Maximum cardinality equivalence class to examine [default: 4096]
+          --dict <DICT>                            Piscem dictionary backend to use at map time: ``auto`` (default, honors the index's embedded choice), ``sshash``, or ``tiny`` [default: auto] [possible values: auto, sshash, tiny]
+
+    Quantification Options:
+      -r, --resolution <RESOLUTION>  UMI resolution mode [default: cr-like] [possible values: cr-like, cr-like-em, parsimony, parsimony-em, parsimony-gene, parsimony-gene-em]
 
     Permit List Options:
-          --min-reads <MIN_READS>  Minimum read count threshold for unfiltered permit list [default: 10]
+          --sample-correction-mode <SAMPLE_CORRECTION_MODE>
+                                       Sample barcode correction mode [default: exact] [possible values: exact, 1-edit]
+          --min-reads <MIN_READS>      Minimum read count threshold for unfiltered permit list [default: 10]
 
     Output Options:
           --anndata-out  Generate an anndata (h5ad format) count matrix from the standard (matrix-market format) output
+
+Chemistry preset structure
+--------------------------
+
+A registered chemistry name (e.g. ``10x-flexv1-gex-3p``) selects a JSON entry in simpleaf's chemistry registry (``chemistries.json``) that bundles every protocol-level parameter the pipeline needs. Each behavioral field has a corresponding CLI override; only a small set of internal metadata fields are not user-controllable.
+
+Fields stored in a chemistry preset:
+
+- ``geometry`` — piscem geometry string describing R1/R2 layout (cell BC, UMI, sample BC, biological-read offsets). CLI override: ``--geometry``.
+- ``expected_ori`` — orientation of the biological read relative to the reference (``fw`` / ``rc`` / ``both``). CLI override: ``--expected-ori``.
+- ``plist_name`` and ``remote_url`` — cached filename and download URL for the cell barcode whitelist. CLI override: ``--cell-bc-list`` (pass a local path; the URL itself is an internal detail).
+- ``sample_bc_list`` *(Flex only)* — a nested record with ``plist_name``, ``remote_url``, and ``sample_bc_ori``. CLI overrides: ``--sample-bc-list`` for the 3-column TSV path, and ``--sample-bc-ori`` (``forward`` / ``reverse``) for the orientation.
+- ``probe_sets`` *(Flex only)* — an organism-keyed dictionary, e.g. ``{ "human": {...}, "mouse": {...} }``. Each entry stores a probe-CSV download URL plus probe-set metadata. CLI overrides: ``--organism`` selects which entry is consulted, and ``--probe-set`` bypasses the lookup entirely by supplying a local CSV/FASTA.
+- ``version`` and ``meta`` — internal preset versioning and free-form metadata. Not exposed at the CLI; they do not affect pipeline behavior.
+
+How ``--chemistry`` and ``--organism`` together locate a Flex configuration:
+
+1. ``--chemistry`` resolves to a registered preset entry. That single lookup fixes the *protocol* parameters for the run: ``geometry``, ``expected_ori``, the cell barcode whitelist, the sample barcode list, and the sample barcode orientation. Any of these can be replaced individually with the corresponding CLI override flag listed above.
+2. For Flex presets the preset's ``probe_sets`` dict is keyed by organism. ``--organism`` (``human``, ``mouse``, …) selects which entry's probe CSV will be auto-downloaded. ``--probe-set`` supersedes the lookup, so when ``--probe-set`` is given ``--organism`` becomes optional.
+3. ``--chemistry`` itself can also be omitted. In that case you must supply ``--geometry`` and ``--cell-bc-list`` at the CLI (and, for sample-multiplexed runs, ``--sample-bc-list``, ``--sample-bc-ori``, and ``--probe-set`` as well), since there is no preset to draw defaults from.
+
+For non-Flex chemistries (presets without a ``probe_sets`` map), ``--organism`` is recorded in run metadata but is otherwise ignored.
+
+Running without ``--chemistry``
+-------------------------------
+
+``--chemistry`` can be omitted entirely when the protocol you want to run is not in the registry, or when you want full manual control over every resource. With no preset to draw defaults from, the pipeline requires you to supply every resource it would otherwise auto-resolve. simpleaf bails with an explicit error if any required input is missing.
+
+Required CLI flags when ``--chemistry`` is omitted:
+
+- ``--geometry`` — the piscem geometry string. Error: ``No geometry specified. Provide --geometry or --chemistry.``
+- ``--cell-bc-list`` — local path to the cell barcode whitelist (one barcode per line). Error: ``No cell barcode whitelist specified. Provide --cell-bc-list or --chemistry.``
+- ``--sample-bc-list`` — local path to the 3-column sample BC TSV (``observed<TAB>canonical<TAB>sample_name``). Error: ``Chemistry has no sample barcode list URL. Provide --sample-bc-list.``
+- ``--probe-set`` or ``--index`` — either a local probe-set CSV/FASTA or a pre-built piscem probe index. Without a preset, simpleaf cannot auto-download a probe set from a ``probe_sets`` dict. Error: ``No chemistry specified and no --probe-set or --index provided.``
+
+Optional CLI flags (defaults apply if unset):
+
+- ``--expected-ori`` — defaults to ``both``.
+- ``--sample-bc-ori`` — when unset, no ``--sample-bc-ori`` is forwarded to alevin-fry, so its own default (``forward``) takes effect.
+- ``--resolution`` — defaults to ``cr-like``.
+- ``--organism`` — irrelevant when ``--probe-set`` or ``--index`` is supplied (the preset's ``probe_sets`` lookup is skipped).
+
+Example: run a chemistry that is not yet in the registry (e.g. a 10x Flex v2 Configuration B variant) by supplying all resources manually:
+
+.. code-block:: console
+
+   $ simpleaf multiplex-quant \
+       --geometry '1{b[16]u[12]x:}2{r[50]f[CCCATATAAGAAAACCTGAATACGCGGTT]s[10]x:}' \
+       --expected-ori fw \
+       --sample-bc-ori forward \
+       --cell-bc-list /path/to/cell_bc_whitelist.txt \
+       --sample-bc-list /path/to/sample_bc_rotation.tsv \
+       --probe-set /path/to/probe_set.csv \
+       --reads1 sample_R1.fastq.gz \
+       --reads2 sample_R2.fastq.gz \
+       --output flex_out
+
+If your protocol becomes stable and reusable, consider proposing it as a chemistry preset upstream so future users can run it with just ``--chemistry``.
 
 Resource resolution
 -------------------
@@ -99,6 +166,8 @@ Resource resolution
   This is resolved from the selected chemistry's permit-list metadata in the registry.
 - Sample barcode list:
   This is resolved from ``--sample-bc-list`` if provided, otherwise from the selected chemistry's registry metadata.
+- Sample barcode orientation:
+  By default, ``simpleaf`` forwards the chemistry preset's declared ``sample_bc_ori`` (when present) to ``alevin-fry``. Pass ``--sample-bc-ori {forward,reverse}`` to override the preset value at the CLI level. This is useful for cycle-plan variants where the sample BC is read from the opposite strand vs the canonical preset — for example, 10x Flex Configuration B (R1=28 / R2=90) uses ``--sample-bc-ori forward`` whereas the default 10x Flex v2 Configuration A preset declares ``reverse``. The CLI value is forwarded verbatim to ``alevin-fry --sample-bc-ori``; if nothing is set on the CLI and the preset is silent, ``alevin-fry`` defaults to ``forward``.
 
 USA-mode requirements
 ---------------------
@@ -174,6 +243,19 @@ Request USA-mode probe quantification:
        --organism human \
        --probe-set /path/to/probe_set.csv \
        --usa \
+       --reads1 sample_R1.fastq.gz \
+       --reads2 sample_R2.fastq.gz \
+       --output flex_out
+
+Override the sample barcode orientation for a cycle-plan variant (e.g. 10x Flex v2 Configuration B, R1=28 / R2=90):
+
+.. code-block:: console
+
+   $ simpleaf multiplex-quant \
+       --chemistry 10x-flexv2-gex-3p \
+       --organism human \
+       --geometry '1{b[16]u[12]x:}2{r[50]f[CCCATATAAGAAAACCTGAATACGCGGTT]s[10]x:}' \
+       --sample-bc-ori forward \
        --reads1 sample_R1.fastq.gz \
        --reads2 sample_R2.fastq.gz \
        --output flex_out
