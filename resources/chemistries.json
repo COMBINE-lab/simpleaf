@@ -196,5 +196,33 @@
         "remote_url": "https://umd.box.com/shared/static/z21ofrtnj3t33fb0mti66dc319cgvnuq"
       }
     }
+  },
+  "10x-flexv2-gex-3p-config-b": {
+    "geometry": "1{b[16]u[12]x:}2{r[50]f[CCCATATAAGAAAACCTGAATACGCGGTT]s[10]x:}",
+    "expected_ori": "both",
+    "version": "0.1.0",
+    "plist_name": "dcb018db2e9d7023ac077eb2477b877163fa5dcef7b8e39e0826bc2560c29cf9",
+    "remote_url": "https://umd.box.com/shared/static/fei8u0tcve2wu73q4qxrskwl3gs7svj1",
+    "meta": {
+      "cr_filename": "737K-flex-v2.txt",
+      "protocol_type": "flex_gex"
+    },
+    "sample_bc_list": {
+      "plist_name": "5e7ef950ad43c35525e8d923423a7bb1abdce78ca2a8fe4ef9a2d69c5f22830b",
+      "remote_url": "https://umd.box.com/shared/static/4ogdlgooo1onjkrny9pfbyz4gdt5vktl",
+      "sample_bc_ori": "forward"
+    },
+    "probe_sets": {
+      "human": {
+        "name": "Chromium_Human_Transcriptome_Probe_Set_v2.0.0_GRCh38-2024-A",
+        "plist_name": "bfa53e2acde140d6bd90c3b21d65c48c5b04e3064adee7402d3016116db04958",
+        "remote_url": "https://umd.box.com/shared/static/2fd0tda0638wy0fclgh3ywdgul1g53pi"
+      },
+      "mouse": {
+        "name": "Chromium_Mouse_Transcriptome_Probe_Set_v2.0.0_GRCm39-2024-A",
+        "plist_name": "8e0ea460bc5a93df85cf5c4f321c62a3e50ad01b5589a8c0c9559bf554f6f276",
+        "remote_url": "https://umd.box.com/shared/static/z21ofrtnj3t33fb0mti66dc319cgvnuq"
+      }
+    }
   }
 }
