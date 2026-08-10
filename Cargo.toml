@@ -48,8 +48,8 @@ seq_geom_parser = "1.1"
 # Legacy seq_geom_parser 0.3.0 and seq_geom_xform removed — salmon single-cell
 # mapping is deprecated, and piscem handles geometry strings directly.
 # All geometry validation uses seq_geom_parser 1.0 (above).
-roers = { version = "0.4.0" }
-af-anndata = { version = "0.4.3" }
+roers = { version = "0.5.0" }
+af-anndata = { version = "0.5.0" }
 
 anyhow = "^1.0"
 clap = { version = "4.5.37", features = [
@@ -89,15 +89,14 @@ strum_macros = "0.28.0"
 niffler = { version = "3.0.0", default-features = false, features = ["gz"] }
 # simpleaf writes no gzip itself; this dependency exists to pin the backend for
 # the whole graph (anndata, grangers, niffler, noodles-bgzf, polars-io, ureq).
+# zlib-rs is pure Rust, so it drops the zlib-ng C build -- and its cmake
+# requirement -- and matches piscem-rs and alevin-fry.
 #
-# It cannot currently be moved to the pure-Rust `zlib-rs`, as piscem-rs and
-# alevin-fry have been: `grangers` (via `roers`) depends on flate2 with
-# `features = ["zlib-ng"]`, and cargo features are additive, so requesting
-# `zlib-rs` here does not turn zlib-ng off — it just compiles *both* backends.
-# grangers/roers/af-anndata are being moved to zlib-rs separately; once that
-# lands, flip this to `zlib-rs` and confirm `libz-ng-sys` leaves Cargo.lock.
-# Until then, matching grangers is what keeps exactly one zlib in the binary.
-flate2 = { version = "1.1.9", default-features = false, features = ["zlib-ng"] }
+# This only became possible once grangers 0.6 stopped requesting
+# `flate2/zlib-ng` explicitly: cargo features are additive, so while any crate
+# in the graph asked for zlib-ng, requesting zlib-rs here compiled *both*
+# backends rather than replacing one.
+flate2 = { version = "1.1.9", default-features = false, features = ["zlib-rs"] }
 blake3 = { version = "1.8.2", features = ["mmap", "serde"] }
 regex = { version = "1.11.1", default-features = false, features = [
   "perf",
