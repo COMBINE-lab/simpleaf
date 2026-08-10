@@ -842,6 +842,7 @@ mod tests {
             organism: None,
             cell_bc_list: None,
             expected_ori: String::from("both"),
+            sample_bc_ori: None,
             sample_correction_mode: String::from("exact"),
             output: Path::new(".").to_path_buf(),
             threads: 1,
