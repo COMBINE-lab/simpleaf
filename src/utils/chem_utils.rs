@@ -10,8 +10,6 @@ use std::path::Path;
 use strum::EnumIter;
 use strum::IntoEnumIterator;
 
-// TODO: Change to main repo when we are ready
-
 pub(crate) type CustomChemistryMap = HashMap<String, CustomChemistry>;
 
 static GEOMETRY_KEY: &str = "geometry";

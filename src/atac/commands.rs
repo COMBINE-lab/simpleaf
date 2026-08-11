@@ -369,8 +369,10 @@ pub struct ProcessOpts {
     #[arg(long, help_heading = "Advanced Options")]
     pub no_poison: bool,
 
-    /// use chromosomes as color
-    #[arg(long, help_heading = "Advanced Options")]
+    /// Deprecated no-op. piscem-rs does not implement this; piscem >= 0.22
+    /// accepts the flag for backward compatibility and warns that it is
+    /// ignored. Retained so existing command lines keep working.
+    #[arg(long, help_heading = "Advanced Options", hide = true)]
     pub use_chr: bool,
 
     /// threshold to be considered for pseudoalignment
@@ -389,10 +391,10 @@ pub struct ProcessOpts {
     #[arg(long, help_heading = "Advanced Options")]
     pub no_tn5_shift: bool,
 
-    /// Check if any mapping kmer exist for a mate which is not mapped,
-    /// but there exists mapping for the other read. If set to true and a
-    /// mapping kmer exists, then the pair would not be mapped
-    #[arg(long, help_heading = "Advanced Options")]
+    /// Deprecated no-op. piscem-rs does not implement this; piscem >= 0.22
+    /// accepts the flag for backward compatibility and warns that it is
+    /// ignored. Retained so existing command lines keep working.
+    #[arg(long, help_heading = "Advanced Options", hide = true)]
     pub check_kmer_orphan: bool,
 
     /// determines the maximum cardinality equivalence class (number of

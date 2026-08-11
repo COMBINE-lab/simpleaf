@@ -79,6 +79,15 @@ fn push_advanced_piscem_options(
     // used its own default. piscem's `map-sc-atac` takes it, so pass it on.
     piscem_map_cmd.arg("--thr").arg(opts.thr.to_string());
 
+    // Same story as `--thr`: `--barcode-length` was parsed and documented (with
+    // its own default of 16) and then never forwarded, so piscem fell back to
+    // its own default -- identical at 16, which is why this went unnoticed, but
+    // any user who set it got their value silently ignored. piscem spells it
+    // `--bclen`.
+    piscem_map_cmd
+        .arg("--bclen")
+        .arg(opts.barcode_length.to_string());
+
     Ok(())
 }
 
@@ -705,5 +714,76 @@ mod tests {
             "unexpected error: {:#}",
             err
         );
+    }
+
+    fn args_of(cmd: &std::process::Command) -> Vec<String> {
+        cmd.get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    /// Every scalar option that `atac process` accepts and hands to piscem must
+    /// actually appear on the child command line.
+    ///
+    /// Both `--thr` and `--barcode-length` were parsed, documented with their
+    /// own defaults, and then never forwarded. Neither failure was visible from
+    /// the outside: piscem's defaults happened to match, so the options simply
+    /// did nothing when set. This pins the pass-through so the next one is a
+    /// test failure rather than a silent no-op.
+    #[test]
+    fn advanced_piscem_options_reach_the_child_command() {
+        let mut opts = base_process_opts();
+        opts.thr = 0.55;
+        opts.barcode_length = 20;
+        opts.max_ec_card = 1234;
+        opts.max_hit_occ = 77;
+        opts.max_hit_occ_recover = 888;
+        opts.max_read_occ = 99;
+
+        let mut cmd = std::process::Command::new("echo");
+        push_advanced_piscem_options(&mut cmd, &opts).expect("should build args");
+        let args = args_of(&cmd);
+
+        for (flag, value) in [
+            ("--thr", "0.55"),
+            ("--bclen", "20"),
+            ("--max-ec-card", "1234"),
+            ("--max-hit-occ", "77"),
+            ("--max-hit-occ-recover", "888"),
+            ("--max-read-occ", "99"),
+        ] {
+            let pos = args.iter().position(|a| a == flag).unwrap_or_else(|| {
+                panic!("{} was never forwarded to piscem; args: {:?}", flag, args)
+            });
+            assert_eq!(
+                args.get(pos + 1).map(String::as_str),
+                Some(value),
+                "{} was forwarded with the wrong value; args: {:?}",
+                flag,
+                args
+            );
+        }
+    }
+
+    /// The boolean passthroughs are emitted only when set.
+    #[test]
+    fn boolean_piscem_options_are_conditional() {
+        let mut opts = base_process_opts();
+        opts.ignore_ambig_hits = false;
+        opts.no_poison = false;
+
+        let mut cmd = std::process::Command::new("echo");
+        push_advanced_piscem_options(&mut cmd, &opts).expect("should build args");
+        let args = args_of(&cmd);
+        assert!(!args.iter().any(|a| a == "--ignore-ambig-hits"));
+        assert!(!args.iter().any(|a| a == "--no-poison"));
+
+        opts.ignore_ambig_hits = true;
+        opts.no_poison = true;
+        let mut cmd = std::process::Command::new("echo");
+        push_advanced_piscem_options(&mut cmd, &opts).expect("should build args");
+        let args = args_of(&cmd);
+        assert!(args.iter().any(|a| a == "--ignore-ambig-hits"));
+        assert!(args.iter().any(|a| a == "--no-poison"));
     }
 }

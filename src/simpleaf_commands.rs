@@ -221,6 +221,16 @@ pub struct MapQuantOpts {
     #[arg(long, help_heading = "Piscem Mapping Options")]
     pub struct_constraints: bool,
 
+    /// Record the position of each mapped read in the RAD file.
+    ///
+    /// alevin-fry detects the positional record type from the RAD header and
+    /// adapts automatically, so no downstream option needs to change. The RAD
+    /// file is larger. Not available for `multiplex-quant`: there is no
+    /// multi-barcode positional record type, and the multi-barcode layout takes
+    /// precedence when the record type is resolved.
+    #[arg(long, help_heading = "Piscem Mapping Options")]
+    pub with_position: bool,
+
     /// Skip checking of the equivalence classes of k-mers that were too ambiguous to be otherwise
     /// considered (passing this flag can speed up mapping slightly, but may reduce specificity)
     #[arg(

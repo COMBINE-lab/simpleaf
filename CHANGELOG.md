@@ -27,6 +27,13 @@
   `multiplex-quant`, and `atac process`.
 * `--tmp-dir` and `--ram-limit-gib` are forwarded to `piscem build` from both
   index commands.
+* `--with-position` on `quant`, forwarded to piscem. Records each mapped read's
+  position in the RAD file; alevin-fry detects the positional record type from
+  the RAD header and adapts on its own, so no downstream option changes. The
+  RAD is larger (2.6 GB -> 4.5 GB on a 66.6 M-read set) and counts are
+  unchanged. Not offered on `multiplex-quant`: there is no multi-barcode
+  positional record type, and the multi-barcode layout wins when the record
+  type is resolved.
 * `--small-thresh` on `quant` and `multiplex-quant`, forwarded to alevin-fry.
   Cells below it are resolved by alevin-fry's tiny-cell fast path, which
   applies `cr-like` semantics regardless of `--resolution`; `--small-thresh 0`
@@ -41,6 +48,15 @@
 ### Bug fixes
 
 * `atac process --thr` was parsed and then never forwarded to piscem.
+* `atac process --barcode-length` was likewise never forwarded (piscem spells it
+  `--bclen`). Both defaults are 16, so it silently did nothing when set: any
+  non-16bp ATAC chemistry got a 16 bp barcode extracted, and because the length
+  is written into the RAD tags and read back by every later stage, the whole
+  pipeline agreed with itself and nothing looked wrong.
+* `atac process --use-chr` and `--check-kmer-orphan` are hidden and documented
+  as deprecated no-ops. piscem >= 0.22 accepts them for backward compatibility
+  and warns that they are ignored, so they were advertising behaviour that no
+  supported piscem implements.
 * `multiplex-quant` did not validate its `--geometry`, so a typo surfaced as a
   mapping failure partway through a run rather than as an error up front.
 * `multiplex-quant` logged its `map-sc` invocation as "piscem map-scrna cmd".

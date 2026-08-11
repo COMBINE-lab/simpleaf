@@ -99,9 +99,6 @@ Advanced Options:
           the mapping results will be identical to those obtained as if no poison table was added to
           the index
 
-      --use-chr
-          use chromosomes as color
-
       --thr <THR>
           threshold to be considered for pseudoalignment
           
@@ -119,11 +116,6 @@ Advanced Options:
 
       --no-tn5-shift
           do not apply Tn5 shift to mapped positions
-
-      --check-kmer-orphan
-          Check if any mapping kmer exist for a mate which is not mapped, but there exists mapping
-          for the other read. If set to true and a mapping kmer exists, then the pair would not be
-          mapped
 
       --max-ec-card <MAX_EC_CARD>
           determines the maximum cardinality equivalence class (number of (txp, orientation status)

@@ -215,6 +215,13 @@ fn push_advanced_piscem_options(
         piscem_quant_cmd.arg("--struct-constraints");
     }
 
+    // alevin-fry resolves the positional record type from the RAD header
+    // (KnownRecordType::RnaShortPos) and switches record types itself, so this
+    // needs no counterpart on the generate-permit-list / collate / quant calls.
+    if opts.with_position {
+        piscem_quant_cmd.arg("--with-position");
+    }
+
     piscem_quant_cmd
         .arg("--max-hit-occ")
         .arg(format!("{}", opts.max_hit_occ));
@@ -732,5 +739,70 @@ mod tests {
             "unexpected error: {:#}",
             err
         );
+    }
+
+    /// The piscem passthroughs on the RNA path must reach the child command.
+    ///
+    /// Same rationale as the ATAC-side test: `--thr` and `--barcode-length`
+    /// both rotted there by being parsed and never forwarded, which is
+    /// invisible from outside when the child's default happens to match.
+    #[test]
+    fn advanced_piscem_options_reach_the_child_command() {
+        let opts = parse_quant_opts(&[
+            "quant",
+            "-c",
+            "10xv3",
+            "-o",
+            "/tmp/out",
+            "-r",
+            "cr-like",
+            "--knee",
+            "--map-dir",
+            "/tmp/mapped",
+            "--with-position",
+            "--struct-constraints",
+            "--max-hit-occ",
+            "77",
+        ]);
+        let mut cmd = std::process::Command::new("echo");
+        push_advanced_piscem_options(&mut cmd, &opts).expect("should build args");
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+
+        assert!(
+            args.iter().any(|a| a == "--with-position"),
+            "--with-position was never forwarded; args: {:?}",
+            args
+        );
+        assert!(args.iter().any(|a| a == "--struct-constraints"));
+        let pos = args
+            .iter()
+            .position(|a| a == "--max-hit-occ")
+            .expect("flag");
+        assert_eq!(args.get(pos + 1).map(String::as_str), Some("77"));
+
+        // and the booleans stay off when not requested
+        let opts = parse_quant_opts(&[
+            "quant",
+            "-c",
+            "10xv3",
+            "-o",
+            "/tmp/out",
+            "-r",
+            "cr-like",
+            "--knee",
+            "--map-dir",
+            "/tmp/mapped",
+        ]);
+        let mut cmd = std::process::Command::new("echo");
+        push_advanced_piscem_options(&mut cmd, &opts).expect("should build args");
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(!args.iter().any(|a| a == "--with-position"));
+        assert!(!args.iter().any(|a| a == "--struct-constraints"));
     }
 }
