@@ -621,46 +621,45 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<GplStageOut
 mod tests {
     use std::fs;
 
-    use crate::atac::commands::{AtacChemistry, Macs3GenomeSize};
-
     use super::*;
 
+    /// Build `ProcessOpts` the way a user would: by parsing a command line.
+    /// A struct literal has to name every field, so adding an option to the
+    /// CLI breaks this file with an E0063 that only `--all-targets` surfaces
+    /// -- `cargo build` does not compile tests. Parsing instead lets new
+    /// options pick up their clap defaults, and anything genuinely required
+    /// fails loudly at parse time.
     fn base_process_opts() -> ProcessOpts {
-        ProcessOpts {
-            decode: crate::simpleaf_commands::PiscemDecoderOpts {
-                decoder: String::from("auto"),
-                thread_policy: None,
-            },
-            index: PathBuf::from("/tmp/index"),
-            reads1: None,
-            reads2: None,
-            reads: None,
-            barcode_reads: vec![],
-            chemistry: AtacChemistry::TenxV2,
-            barcode_length: 16,
-            output: PathBuf::from("/tmp/out"),
-            threads: 1,
-            call_peaks: false,
-            permit_barcode_ori: None,
-            unfiltered_pl: None,
-            min_reads: 10,
-            compress: false,
-            ignore_ambig_hits: false,
-            no_poison: false,
-            use_chr: false,
-            thr: 0.8,
-            bin_size: 50,
-            bin_overlap: 2,
-            no_tn5_shift: false,
-            check_kmer_orphan: false,
-            max_ec_card: 4096,
-            max_hit_occ: 64,
-            max_hit_occ_recover: 1024,
-            max_read_occ: 250,
-            gsize: Macs3GenomeSize::KnownOpt("hs"),
-            qvalue: 0.1,
-            extsize: 50,
-        }
+        use clap::Parser;
+        let cli_args = vec![
+            "simpleaf",
+            "atac",
+            "process",
+            "--index",
+            "/tmp/index",
+            "--output",
+            "/tmp/out",
+            "--chemistry",
+            "10x-v2",
+            "--barcode-reads",
+            "/tmp/bc.fastq",
+            "--threads",
+            "1",
+            // one of the read-input forms is required at parse time; the
+            // tests below supply their own, so clear it back out afterwards
+            // to keep the baseline these assertions were written against.
+            "--reads",
+            "/tmp/r.fastq",
+        ];
+        let mut opts = match crate::Cli::parse_from(cli_args).command {
+            crate::simpleaf_commands::Commands::Atac(
+                crate::atac::commands::AtacCommand::Process(opts),
+            ) => opts,
+            cmd => panic!("expected atac process command, found {:?}", cmd),
+        };
+        opts.reads = None;
+        opts.barcode_reads = vec![];
+        opts
     }
 
     #[test]

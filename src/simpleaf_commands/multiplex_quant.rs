@@ -783,6 +783,7 @@ mod tests {
     use super::{resolve_user_supplied_index, t2g_mode};
     use crate::simpleaf_commands::MultiplexQuantOpts;
     use crate::utils::probe_utils::ProbeT2gMode;
+    use clap::Parser;
     use serde_json::json;
     use std::fs;
     use std::path::Path;
@@ -857,40 +858,24 @@ mod tests {
         assert!(gene_id_to_name.is_none());
     }
 
+    /// Build `MultiplexQuantOpts` the way a user would: by parsing a command
+    /// line. A struct literal has to name every field, so adding an option to
+    /// the CLI breaks this file with an E0063 that only `--all-targets`
+    /// surfaces -- `cargo build` does not compile tests. Parsing instead lets
+    /// new options pick up their clap defaults, and anything genuinely
+    /// required fails loudly at parse time.
+    fn parse_multiplex_quant_opts(args: &[&str]) -> MultiplexQuantOpts {
+        let mut cli_args = vec!["simpleaf", "multiplex-quant"];
+        cli_args.extend_from_slice(args);
+        match crate::Cli::parse_from(cli_args).command {
+            crate::simpleaf_commands::Commands::MultiplexQuant(opts) => opts,
+            cmd => panic!("expected multiplex-quant command, found {:?}", cmd),
+        }
+    }
+
     #[test]
     fn usa_flag_maps_to_usa_mode() {
-        let opts = MultiplexQuantOpts {
-            chemistry: None,
-            geometry: None,
-            organism: None,
-            cell_bc_list: None,
-            expected_ori: String::from("both"),
-            sample_bc_ori: None,
-            decode: crate::simpleaf_commands::PiscemDecoderOpts {
-                decoder: String::from("auto"),
-                thread_policy: None,
-            },
-            sample_correction_mode: String::from("exact"),
-            output: Path::new(".").to_path_buf(),
-            threads: 1,
-            index: None,
-            probe_set: None,
-            t2g_map: None,
-            usa: true,
-            sample_bc_list: None,
-            reads1: Vec::new(),
-            reads2: Vec::new(),
-            resolution: String::from("cr-like"),
-            small_thresh: None,
-            kmer_length: 23,
-            skipping_strategy: String::from("permissive"),
-            struct_constraints: false,
-            max_ec_card: 4096,
-            dict: crate::simpleaf_commands::PiscemDict::Auto,
-            min_reads: 10,
-            anndata_out: false,
-        };
-
+        let opts = parse_multiplex_quant_opts(&["-o", ".", "--usa"]);
         assert_eq!(t2g_mode(&opts), ProbeT2gMode::Usa);
     }
 
