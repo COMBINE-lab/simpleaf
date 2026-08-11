@@ -27,6 +27,11 @@
   `multiplex-quant`, and `atac process`.
 * `--tmp-dir` and `--ram-limit-gib` are forwarded to `piscem build` from both
   index commands.
+* `--small-thresh` on `quant` and `multiplex-quant`, forwarded to alevin-fry.
+  Cells below it are resolved by alevin-fry's tiny-cell fast path, which
+  applies `cr-like` semantics regardless of `--resolution`; `--small-thresh 0`
+  resolves every cell with the requested strategy. Requires alevin-fry
+  >= 0.17.1 (earlier versions parse the option and ignore it).
 * `--sample-bc-ori {forward,reverse}` on `multiplex-quant` (#199).
 * `10x-flexv2-gex-3p-config-b` chemistry preset (#201).
 * `gene_id_to_name.tsv` emitted from probe sets that carry a gene-name column,

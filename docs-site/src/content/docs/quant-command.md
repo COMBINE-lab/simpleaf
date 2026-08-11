@@ -35,6 +35,40 @@ It is possible to have pieces of geometry repeated, in which case they will be e
 :::note
 If you use a custom geometry frequently, you can add it to the chemistries registry. For details on adding your own chemistry definition to the registry, please read about the [chemistry command](/simpleaf/chemistry-command/).
 :::
+## Tiny cells and `--small-thresh`
+
+`alevin-fry` resolves very small cells through a fast path that skips the
+equivalence-class machinery entirely. That path implements `cr-like`
+(winner-take-all) semantics, and it applies to cells below the threshold
+*regardless of what you pass to* `--resolution` — so under `parsimony-em`, a
+tiny cell whose UMIs are all gene-ambiguous is resolved by discarding them
+rather than by spreading them fractionally.
+
+This is deliberate. Cells that small carry on the order of one or two distinct
+UMIs, typically ambiguous between paralogous genes, and are removed by any
+reasonable QC filter whichever way they resolve. Skipping the full machinery
+for them is a large saving on datasets with many low-count barcodes.
+
+`--small-thresh` makes the behaviour visible and adjustable:
+
+```sh
+# resolve every cell with the requested strategy, however small
+simpleaf quant ... -r parsimony-em --small-thresh 0
+```
+
+Left unset, `alevin-fry`'s own default (currently 100 reads) applies. Which
+cells took the fast path is recorded in `af_quant/quant.json` as
+`num_tiny_cell_resolved` and `tiny_cell_resolved_cell_numbers`, so the choice
+is auditable after the fact.
+
+:::note
+This option requires **alevin-fry >= 0.17.1**. Earlier versions parse it and
+silently ignore it, so on 0.17.0 passing `--small-thresh 0` will have no
+effect. On a 73k-cell PBMC run, `--small-thresh 0` recovers about 0.53% of
+total UMI mass and empties no cells, against 132 zero-count cells at the
+default.
+:::
+
 ## Threads, and the shared decode budget
 
 As of `piscem` 0.22.0, the `-t`/`--threads` value is a single budget of execution
@@ -86,7 +120,7 @@ Mapping Options:
 
 Piscem Mapping Options:
       --struct-constraints
-          If piscem >= 0.7.0, enable structural constraints
+          Enable structural constraints when mapping
 
       --ignore-ambig-hits
           Skip checking of the equivalence classes of k-mers that were too ambiguous to be otherwise
@@ -188,6 +222,14 @@ UMI Resolution Options:
           
           [possible values: cr-like, cr-like-em, parsimony, parsimony-em, parsimony-gene,
           parsimony-gene-em]
+
+      --small-thresh <N>
+          Cells with fewer than this many reads are resolved by alevin-fry's tiny-cell fast path,
+          which applies `cr-like` (winner-take-all) semantics regardless of `--resolution`. Pass 0
+          to resolve every cell with the requested strategy.
+          
+          Left unset, alevin-fry's own default applies. Requires alevin-fry >= 0.17.1; earlier
+          versions parse the option and ignore it.
 
 Output Options:
       --anndata-out

@@ -555,6 +555,13 @@ fn run_quant_stage(
     alevin_quant_cmd.arg("-t").arg(format!("{}", setup.threads));
     alevin_quant_cmd.arg("-m").arg(setup.t2g_map_file.clone());
     alevin_quant_cmd.arg("-r").arg(&opts.resolution);
+    // Only forwarded when the user set it, so alevin-fry's own default stands
+    // otherwise. alevin-fry < 0.17.1 parses this and ignores it.
+    if let Some(small_thresh) = opts.small_thresh {
+        alevin_quant_cmd
+            .arg("--small-thresh")
+            .arg(small_thresh.to_string());
+    }
     let quant_cmd_string = prog_utils::get_cmd_line_string(&alevin_quant_cmd);
     info!("cmd : {:?}", alevin_quant_cmd);
     let input_files = vec![gpl_output.clone(), setup.t2g_map_file.clone()];

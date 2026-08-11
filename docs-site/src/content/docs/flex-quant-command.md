@@ -146,6 +146,14 @@ Quantification Options:
           [possible values: cr-like, cr-like-em, parsimony, parsimony-em, parsimony-gene,
           parsimony-gene-em]
 
+      --small-thresh <N>
+          Cells with fewer than this many reads are resolved by alevin-fry's tiny-cell fast path,
+          which applies `cr-like` (winner-take-all) semantics regardless of `--resolution`. Pass 0
+          to resolve every cell with the requested strategy.
+          
+          Left unset, alevin-fry's own default applies. Requires alevin-fry >= 0.17.1; earlier
+          versions parse the option and ignore it.
+
 Piscem Mapping Options:
       --skipping-strategy <SKIPPING_STRATEGY>
           The skipping strategy to use for k-mer collection
@@ -154,7 +162,7 @@ Piscem Mapping Options:
           [possible values: permissive, strict]
 
       --struct-constraints
-          If piscem >= 0.7.0, enable structural constraints
+          Enable structural constraints when mapping
 
       --max-ec-card <MAX_EC_CARD>
           Maximum cardinality equivalence class to examine

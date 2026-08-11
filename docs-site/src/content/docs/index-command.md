@@ -137,7 +137,6 @@ Piscem Index Options:
 
       --decoy-paths <DECOY_PATHS>
           Paths to decoy sequence FASTA files used to insert poison k-mer information into the index
-          (only if using piscem >= 0.7)
 
       --seed <HASH_SEED>
           The seed value to use in SSHash index construction (try changing this in the rare event

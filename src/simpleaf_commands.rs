@@ -330,6 +330,16 @@ pub struct MapQuantOpts {
     #[arg(short, long, help_heading = "UMI Resolution Options", value_parser = clap::builder::PossibleValuesParser::new(["cr-like", "cr-like-em", "parsimony", "parsimony-em", "parsimony-gene", "parsimony-gene-em"]))]
     pub resolution: String,
 
+    /// Cells with fewer than this many reads are resolved by alevin-fry's
+    /// tiny-cell fast path, which applies `cr-like` (winner-take-all) semantics
+    /// regardless of `--resolution`. Pass 0 to resolve every cell with the
+    /// requested strategy.
+    ///
+    /// Left unset, alevin-fry's own default applies. Requires alevin-fry
+    /// >= 0.17.1; earlier versions parse the option and ignore it.
+    #[arg(long, value_name = "N", help_heading = "UMI Resolution Options")]
+    pub small_thresh: Option<usize>,
+
     /// Generate an anndata (h5ad format) count matrix from the standard (matrix-market format)
     /// output.
     #[arg(long, help_heading = "Output Options")]
@@ -745,6 +755,16 @@ pub struct MultiplexQuantOpts {
             "parsimony-gene", "parsimony-gene-em"
         ]))]
     pub resolution: String,
+
+    /// Cells with fewer than this many reads are resolved by alevin-fry's
+    /// tiny-cell fast path, which applies `cr-like` (winner-take-all) semantics
+    /// regardless of `--resolution`. Pass 0 to resolve every cell with the
+    /// requested strategy.
+    ///
+    /// Left unset, alevin-fry's own default applies. Requires alevin-fry
+    /// >= 0.17.1; earlier versions parse the option and ignore it.
+    #[arg(long, value_name = "N", help_heading = "Quantification Options")]
+    pub small_thresh: Option<usize>,
 
     /// k-mer length for probe index building
     #[arg(long, default_value_t = 23, help_heading = "Probe Set Options")]

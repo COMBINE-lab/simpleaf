@@ -474,6 +474,14 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
         .arg(&opts.resolution)
         .arg("--use-mtx");
 
+    // Only forwarded when the user set it, so alevin-fry's own default stands
+    // otherwise. alevin-fry < 0.17.1 parses this and ignores it.
+    if let Some(small_thresh) = opts.small_thresh {
+        quant_cmd
+            .arg("--small-thresh")
+            .arg(small_thresh.to_string());
+    }
+
     let quant_cmd_str = prog_utils::get_cmd_line_string(&quant_cmd);
     info!("quant cmd: {}", quant_cmd_str);
     let quant_start = Instant::now();
@@ -873,6 +881,7 @@ mod tests {
             reads1: Vec::new(),
             reads2: Vec::new(),
             resolution: String::from("cr-like"),
+            small_thresh: None,
             kmer_length: 23,
             skipping_strategy: String::from("permissive"),
             struct_constraints: false,
