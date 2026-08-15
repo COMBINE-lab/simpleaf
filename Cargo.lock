@@ -4624,7 +4624,7 @@ checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
 
 [[package]]
 name = "simpleaf"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "af-anndata",
  "anyhow",
