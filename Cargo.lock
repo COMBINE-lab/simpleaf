@@ -4629,7 +4629,6 @@ dependencies = [
  "af-anndata",
  "anyhow",
  "blake3",
- "cc",
  "chrono",
  "clap",
  "cmd_lib",
