@@ -362,15 +362,26 @@ fn macs_call_peaks(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<Ma
 pub(crate) fn gen_bed(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
     let gpl = af_gpl(af_home_path, opts)?;
     let sort = af_sort(af_home_path, opts)?;
-    let macs = macs_call_peaks(af_home_path, opts)?;
-    info!(
-        "ATAC downstream stages completed (gpl: {:.2}s, sort: {:.2}s, macs: {:.2}s).",
-        gpl.gpl_duration_secs, sort.sort_duration_secs, macs.macs_duration_secs
-    );
-    info!(
-        "ATAC commands: gpl=`{}`, sort=`{}`, macs=`{}`",
-        gpl.gpl_cmd, sort.sort_cmd, macs.macs_cmd
-    );
+    if opts.call_peaks {
+        let macs = macs_call_peaks(af_home_path, opts)?;
+        info!(
+            "ATAC downstream stages completed (gpl: {:.2}s, sort: {:.2}s, macs: {:.2}s).",
+            gpl.gpl_duration_secs, sort.sort_duration_secs, macs.macs_duration_secs
+        );
+        info!(
+            "ATAC commands: gpl=`{}`, sort=`{}`, macs=`{}`",
+            gpl.gpl_cmd, sort.sort_cmd, macs.macs_cmd
+        );
+    } else {
+        info!(
+            "ATAC downstream stages completed (gpl: {:.2}s, sort: {:.2}s; peak calling not requested).",
+            gpl.gpl_duration_secs, sort.sort_duration_secs
+        );
+        info!(
+            "ATAC commands: gpl=`{}`, sort=`{}`",
+            gpl.gpl_cmd, sort.sort_cmd
+        );
+    }
     Ok(())
 }
 

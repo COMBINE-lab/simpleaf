@@ -30,6 +30,9 @@
 * Resolve the effective thread count once per pipeline and pass it consistently
   to mapping, permit-list generation, collation or ATAC sorting, and
   quantification.
+* Run MACS peak calling from `atac process` only when `--call-peaks` is set;
+  ordinary ATAC processing no longer fails after producing its BED merely
+  because MACS is not installed.
 * Retire the obsolete `release.sh`; `bump_and_publish.sh` is now the sole
   documented release entry point.
 
