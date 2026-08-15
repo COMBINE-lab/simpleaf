@@ -21,13 +21,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2.4.2
+        uses: actions/checkout@v6
 
       - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
           components: rustfmt
 
       # simpleaf has a large, stable dependency graph (notably Polars and
@@ -63,7 +61,7 @@ jobs:
         run: cargo doc --no-deps
 
       - name: Install conda env
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@v4
         with:
           channels: conda-forge,default,bioconda
           channel-priority: true
