@@ -6,16 +6,16 @@ Usage: simpleaf atac process [OPTIONS] --index <INDEX> --barcode-reads <BARCODE_
 Options:
   -c, --chemistry <CHEMISTRY>
           chemistry
-          
+
           [possible values: 10x-v1, 10x-v2, 10x-multi]
 
   -t, --threads <THREADS>
-          number of threads to use when running
-          
+          number of threads to use when running; values below two warn and use two
+
           [default: 16]
 
       --output <OUTPUT>
-          
+
 
       --call-peaks
           do peak calling after generating the bed file
@@ -45,23 +45,23 @@ Mapping Options:
       --barcode-length <BARCODE_LENGTH>
           the length of the barcode read from which to extract the barcode (usually this is the
           length of the entire read, and reads shorter than this will be discarded)
-          
+
           [default: 16]
 
 Piscem Mapping Options:
       --decoder <MODE>
           Gzip decoder selection passed to piscem: `auto`, `serial`, `parallel`, or `parallel=N`.
-          
+
           `auto` lets piscem adapt the mapping/decode split while the run proceeds. `serial` gives
           mapping the whole budget. `parallel` forces the parallel decoder where the input allows
           it; `parallel=N` fixes N decode slots per gzip input and stops the adaptation. Inputs that
           cannot be read positionally (FIFOs, process substitution) stay serial regardless.
-          
+
           [default: auto]
 
       --thread-policy <FILE>
           JSON file overriding piscem's thread and decoder policy.
-          
+
           Every field is optional and defaults to a measured value; an unrecognised field is an
           error rather than a silent no-op. Currently understood: `{"parallel_decode":
           {"min_threads_per_stream": 8}}`, the number of threads that must be free per gzip input
@@ -83,8 +83,24 @@ Permit List Generation Options:
       --min-reads <MIN_READS>
           minimum read count threshold for a cell to be retained/processed; only used with
           --unfiltered-pl
-          
+
           [default: 10]
+
+Advanced Barcode Correction Options:
+      --cell-bc-correction <CELL_BC_CORRECTION>
+          Cell-barcode collision policy (inherited default: unique)
+
+          [possible values: unique, frequency]
+
+      --cell-bc-neighborhood <CELL_BC_NEIGHBORHOOD>
+          One-error cell-barcode neighbourhood. When omitted, alevin-fry chooses the
+          protocol/filter-specific default
+
+          [possible values: hamming-1, substitution-or-shift-1]
+
+      --cell-bc-confidence <CONFIDENCE>
+          Frequency confidence as a decimal or exact fraction. The inherited default is 97.5% for
+          RNA and 90% for ATAC
 
 Advanced Options:
       --compress
@@ -101,17 +117,17 @@ Advanced Options:
 
       --thr <THR>
           threshold to be considered for pseudoalignment
-          
+
           [default: 0.7]
 
       --bin-size <BIN_SIZE>
           size of virtual color intervals
-          
+
           [default: 1000]
 
       --bin-overlap <BIN_OVERLAP>
           size for virtual color interval overlap
-          
+
           [default: 300]
 
       --no-tn5-shift
@@ -120,38 +136,38 @@ Advanced Options:
       --max-ec-card <MAX_EC_CARD>
           determines the maximum cardinality equivalence class (number of (txp, orientation status)
           pairs) to examine (cannot be used with --ignore-ambig-hits)
-          
+
           [default: 4096]
 
       --max-hit-occ <MAX_HIT_OCC>
           in the first pass, consider only k-mers having <= --max-hit-occ hits
-          
+
           [default: 256]
 
       --max-hit-occ-recover <MAX_HIT_OCC_RECOVER>
           if all k-mers have > --max-hit-occ hits, then make a second pass and consider k-mers
           having <= --max-hit-occ-recover hits
-          
+
           [default: 1024]
 
       --max-read-occ <MAX_READ_OCC>
           reads with more than this number of mappings will not have their mappings reported
-          
+
           [default: 2500]
 
 Peak Caller Options:
       --gsize <GSIZE>
           The value to be passed to the `macs3` `--gsize` (genome size) option. Possible values are
           "hs", "mm", "ce", "dm" or an unsigned integer
-          
+
           [default: hs]
 
       --qvalue <QVALUE>
           The value to be passed to the `macs3` `--qvalue` (minimum FDR cutoff) option
-          
+
           [default: 0.1]
 
       --extsize <EXTSIZE>
           The value to be passed to the `macs3` `--extsize` option
-          
+
           [default: 50]

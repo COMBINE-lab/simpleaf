@@ -1,5 +1,5 @@
 use crate::atac::commands::ProcessOpts;
-use crate::core::{context, exec, index_meta, io, runtime};
+use crate::core::{context, exec, index_meta, io};
 use crate::utils::chem_utils::ExpectedOri;
 use crate::utils::chem_utils::QueryInRegistry;
 use crate::utils::chem_utils::get_single_custom_chem_from_file;
@@ -241,14 +241,11 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
         .arg("--bin-overlap")
         .arg(opts.bin_overlap.to_string());
 
-    // if the user requested more threads than can be used
-    let threads = runtime::cap_threads_warned(opts.threads);
-
     // location of output directory, number of threads
     let map_output = opts.output.join("af_map");
     piscem_map_cmd
         .arg("--threads")
-        .arg(threads.to_string())
+        .arg(opts.threads.to_string())
         .arg("-o")
         .arg(&map_output);
 
@@ -365,15 +362,26 @@ fn macs_call_peaks(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<Ma
 pub(crate) fn gen_bed(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
     let gpl = af_gpl(af_home_path, opts)?;
     let sort = af_sort(af_home_path, opts)?;
-    let macs = macs_call_peaks(af_home_path, opts)?;
-    info!(
-        "ATAC downstream stages completed (gpl: {:.2}s, sort: {:.2}s, macs: {:.2}s).",
-        gpl.gpl_duration_secs, sort.sort_duration_secs, macs.macs_duration_secs
-    );
-    info!(
-        "ATAC commands: gpl=`{}`, sort=`{}`, macs=`{}`",
-        gpl.gpl_cmd, sort.sort_cmd, macs.macs_cmd
-    );
+    if opts.call_peaks {
+        let macs = macs_call_peaks(af_home_path, opts)?;
+        info!(
+            "ATAC downstream stages completed (gpl: {:.2}s, sort: {:.2}s, macs: {:.2}s).",
+            gpl.gpl_duration_secs, sort.sort_duration_secs, macs.macs_duration_secs
+        );
+        info!(
+            "ATAC commands: gpl=`{}`, sort=`{}`, macs=`{}`",
+            gpl.gpl_cmd, sort.sort_cmd, macs.macs_cmd
+        );
+    } else {
+        info!(
+            "ATAC downstream stages completed (gpl: {:.2}s, sort: {:.2}s; peak calling not requested).",
+            gpl.gpl_duration_secs, sort.sort_duration_secs
+        );
+        info!(
+            "ATAC commands: gpl=`{}`, sort=`{}`",
+            gpl.gpl_cmd, sort.sort_cmd
+        );
+    }
     Ok(())
 }
 
@@ -398,9 +406,7 @@ fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<SortStageO
         .arg("--rad-dir")
         .arg(rad_dir);
 
-    // if the user requested more threads than can be used
-    let threads = runtime::cap_threads_warned(opts.threads);
-    af_sort.arg("--threads").arg(threads.to_string());
+    af_sort.arg("--threads").arg(opts.threads.to_string());
 
     if opts.compress {
         af_sort.arg("--compress");
@@ -585,9 +591,8 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<GplStageOut
         bail!("unsupported filter method in atac-seq process.");
     }
 
-    // if the user requested more threads than can be used
-    let threads = runtime::cap_threads_warned(opts.threads);
-    af_gpl.arg("--threads").arg(format!("{}", threads));
+    af_gpl.arg("--threads").arg(opts.threads.to_string());
+    opts.cell_correction.append_to(&mut af_gpl);
 
     let gpl_cmd_string = prog_utils::get_cmd_line_string(&af_gpl);
     info!("gpl command : {}", gpl_cmd_string);
@@ -785,5 +790,29 @@ mod tests {
         let args = args_of(&cmd);
         assert!(args.iter().any(|a| a == "--ignore-ambig-hits"));
         assert!(args.iter().any(|a| a == "--no-poison"));
+    }
+
+    #[test]
+    fn atac_cell_correction_overrides_reach_gpl_arguments() {
+        let mut opts = base_process_opts();
+        opts.cell_correction.cell_bc_correction =
+            Some(crate::simpleaf_commands::CellBarcodeCorrection::Frequency);
+        opts.cell_correction.cell_bc_neighborhood =
+            Some(crate::simpleaf_commands::BarcodeNeighborhood::HammingOne);
+        opts.cell_correction.cell_bc_confidence = Some("0.90".to_string());
+
+        let mut command = std::process::Command::new("alevin-fry");
+        opts.cell_correction.append_to(&mut command);
+        assert_eq!(
+            args_of(&command),
+            [
+                "--cell-bc-correction",
+                "frequency",
+                "--cell-bc-neighborhood",
+                "hamming-1",
+                "--cell-bc-confidence",
+                "0.90",
+            ]
+        );
     }
 }

@@ -37,6 +37,7 @@ export default defineConfig({
             { label: "index", slug: "index-command" },
             { label: "quant", slug: "quant-command" },
             { label: "flex-quant", slug: "flex-quant-command" },
+            { label: "atac process", slug: "atac-process-command" },
             { label: "chemistry", slug: "chemistry-command" },
             { label: "inspect", slug: "inspect-command" },
           ],

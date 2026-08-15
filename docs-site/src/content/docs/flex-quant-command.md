@@ -29,6 +29,35 @@ If the chemistry registry contains the needed metadata, `simpleaf` can automatic
 
 The default output is the standard Matrix Market directory under `af_quant/alevin`. If you pass `--anndata-out`, `simpleaf` will additionally write an AnnData `.h5ad` file at `af_quant/alevin/quants.h5ad`.
 
+## Barcode-correction controls
+
+Correction decisions are made during `alevin-fry generate-permit-list` and
+reused by collation through its compiled correction plan. `simpleaf` exposes the
+same typed controls without duplicating alevin-fry's protocol defaults:
+
+| Option | Inherited default | Destination |
+| --- | --- | --- |
+| `--cell-bc-correction {unique,frequency}` | `unique` | permit-list generation |
+| `--cell-bc-neighborhood {hamming-1,substitution-or-shift-1}` | protocol/filter-specific | permit-list generation |
+| `--cell-bc-confidence <CONFIDENCE>` | `0.975` | permit-list generation |
+| `--sample-bc-correction {exact,unique,frequency}` | `exact` | permit-list generation |
+| `--sample-bc-neighborhood {hamming-1,substitution-or-shift-1}` | `hamming-1` for non-exact correction | permit-list generation |
+| `--sample-bc-confidence <CONFIDENCE>` | `0.975` | permit-list generation |
+| `--gpl-memory-limit <SIZE>` | `512 MiB` | deferred sample-Frequency buffers |
+| `--gpl-tmp-dir <DIR>` | permit-list output directory | compressed deferred runs |
+| `--collate-memory-limit <SIZE>` | `2 GiB` | collation buffers |
+
+Confidence accepts decimals or exact fractions such as `39/40`. Memory accepts
+human-readable values such as `512MiB`, `1GiB`, and `4GB`. Values are validated
+before mapping begins but forwarded in their original spelling. If an override
+is omitted, simpleaf emits no corresponding child flag and alevin-fry remains
+the source of truth for the default.
+
+The old hidden `--sample-correction-mode` option remains accepted for script
+compatibility. `exact` becomes `--sample-bc-correction exact`; `1-edit` becomes
+`--sample-bc-correction unique --sample-bc-neighborhood
+substitution-or-shift-1`. New scripts should use the explicit controls above.
+
 For multiplex output, the resulting AnnData object is intended to preserve the extra sample-level structure of the experiment:
 
 - `obs_names` are sample-qualified cell identifiers
@@ -57,7 +86,7 @@ Options:
 
       --organism <ORGANISM>
           Target organism for automatic probe set selection
-          
+
           [possible values: human, mouse]
 
       --cell-bc-list <CELL_BC_LIST>
@@ -65,7 +94,7 @@ Options:
 
       --expected-ori <EXPECTED_ORI>
           Expected read orientation: fw, rc, or both
-          
+
           [default: both]
 
       --sample-bc-ori <SAMPLE_BC_ORI>
@@ -74,7 +103,7 @@ Options:
           `sample_bc_ori` when set. Useful for cycle-plan variants (e.g. 10x Flex Configuration B)
           where the sample BC is read off the opposite strand from the canonical preset. Vocabulary
           matches the preset JSON and alevin-fry's `--sample-bc-ori`
-          
+
           [possible values: forward, reverse]
 
   -o, --output <OUTPUT>
@@ -82,7 +111,7 @@ Options:
 
   -t, --threads <THREADS>
           Number of threads to use
-          
+
           [default: 16]
 
   -h, --help
@@ -91,16 +120,51 @@ Options:
   -V, --version
           Print version
 
+Advanced Barcode Correction Options:
+      --cell-bc-correction <CELL_BC_CORRECTION>
+          Cell-barcode collision policy (inherited default: unique)
+
+          [possible values: unique, frequency]
+
+      --cell-bc-neighborhood <CELL_BC_NEIGHBORHOOD>
+          One-error cell-barcode neighbourhood. When omitted, alevin-fry chooses the
+          protocol/filter-specific default
+
+          [possible values: hamming-1, substitution-or-shift-1]
+
+      --cell-bc-confidence <CONFIDENCE>
+          Frequency confidence as a decimal or exact fraction. The inherited default is 97.5% for
+          RNA and 90% for ATAC
+
+      --sample-bc-correction <SAMPLE_BC_CORRECTION>
+          Sample-barcode correction policy (inherited default: exact)
+
+          [possible values: exact, unique, frequency]
+
+      --sample-bc-neighborhood <SAMPLE_BC_NEIGHBORHOOD>
+          Sample-barcode neighbourhood for non-exact correction (inherited default: Hamming-1)
+
+          [possible values: hamming-1, substitution-or-shift-1]
+
+      --sample-bc-confidence <CONFIDENCE>
+          Sample-Frequency confidence as a decimal or exact fraction (inherited default: 97.5%)
+
+Advanced Resource Options:
+      --gpl-memory-limit <SIZE>
+          Deferred GPL buffer budget (inherited default: 512 MiB)
+
+      --gpl-tmp-dir <DIR>
+          Temporary directory for compressed GPL correction runs (inherited default: the GPL output
+          directory)
+
+      --collate-memory-limit <SIZE>
+          Collation buffer budget (inherited default: 2 GiB)
+
 Permit List Options:
-      --sample-correction-mode <SAMPLE_CORRECTION_MODE>
-          Sample barcode correction mode
-          
-          [default: exact]
-          [possible values: exact, 1-edit]
 
       --min-reads <MIN_READS>
           Minimum read count threshold for unfiltered permit list
-          
+
           [default: 10]
 
 Mapping Options:
@@ -120,7 +184,7 @@ Probe Set Options:
 
       --kmer-length <KMER_LENGTH>
           k-mer length for probe index building
-          
+
           [default: 23]
 
 Reference Options:
@@ -141,7 +205,7 @@ Reference Options:
 Quantification Options:
   -r, --resolution <RESOLUTION>
           UMI resolution mode
-          
+
           [default: cr-like]
           [possible values: cr-like, cr-like-em, parsimony, parsimony-em, parsimony-gene,
           parsimony-gene-em]
@@ -150,14 +214,13 @@ Quantification Options:
           Cells with fewer than this many reads are resolved by alevin-fry's tiny-cell fast path,
           which applies `cr-like` (winner-take-all) semantics regardless of `--resolution`. Pass 0
           to resolve every cell with the requested strategy.
-          
-          Left unset, alevin-fry's own default applies. Requires alevin-fry >= 0.17.1; earlier
-          versions parse the option and ignore it.
+
+          Left unset, alevin-fry's own default applies
 
 Piscem Mapping Options:
       --skipping-strategy <SKIPPING_STRATEGY>
           The skipping strategy to use for k-mer collection
-          
+
           [default: permissive]
           [possible values: permissive, strict]
 
@@ -166,29 +229,29 @@ Piscem Mapping Options:
 
       --max-ec-card <MAX_EC_CARD>
           Maximum cardinality equivalence class to examine
-          
+
           [default: 4096]
 
       --dict <DICT>
           Piscem dictionary backend: `auto` (default), `sshash`, or `tiny`. Applies both to the
           auto-built probe index (build time) and to map-sc (map time)
-          
+
           [default: auto]
           [possible values: auto, sshash, tiny]
 
       --decoder <MODE>
           Gzip decoder selection passed to piscem: `auto`, `serial`, `parallel`, or `parallel=N`.
-          
+
           `auto` lets piscem adapt the mapping/decode split while the run proceeds. `serial` gives
           mapping the whole budget. `parallel` forces the parallel decoder where the input allows
           it; `parallel=N` fixes N decode slots per gzip input and stops the adaptation. Inputs that
           cannot be read positionally (FIFOs, process substitution) stay serial regardless.
-          
+
           [default: auto]
 
       --thread-policy <FILE>
           JSON file overriding piscem's thread and decoder policy.
-          
+
           Every field is optional and defaults to a measured value; an unrecognised field is an
           error rather than a silent no-op. Currently understood: `{"parallel_decode":
           {"min_threads_per_stream": 8}}`, the number of threads that must be free per gzip input

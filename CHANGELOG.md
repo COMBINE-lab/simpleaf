@@ -4,6 +4,46 @@
 > (2024-07-01); releases 0.18.0 through 0.26.2 are not recorded here. See the
 > git history and the GitHub releases page for that range.
 
+## [0.28.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.27.0...v0.28.0) (2026-08-15)
+
+### Features
+
+* Require alevin-fry 0.18.0 and expose its deterministic cell-barcode
+  correction policy, neighborhood, and confidence controls across ordinary
+  RNA, multiplex RNA, and ATAC processing.
+* Expose independent sample-barcode correction controls for multiplex assays,
+  including Exact, Unique, and Frequency policies.
+* Add stage-specific `--gpl-memory-limit`, `--gpl-tmp-dir`, and
+  `--collate-memory-limit` resource overrides. Omitted values remain omitted
+  from child commands so alevin-fry owns protocol defaults.
+* Validate confidence fractions/decimals and human-readable memory sizes before
+  mapping begins.
+
+### Compatibility and execution
+
+* Keep the deprecated `--sample-correction-mode` accepted but hidden. Its
+  `exact` and `1-edit` values translate to the corresponding new alevin-fry
+  arguments; deprecated child spellings are never emitted.
+* Use two threads as the practical minimum. Requests of zero or one warn, are
+  raised to two, and continue; a host report of one available thread also warns
+  and still attempts two.
+* Resolve the effective thread count once per pipeline and pass it consistently
+  to mapping, permit-list generation, collation or ATAC sorting, and
+  quantification.
+* Run MACS peak calling from `atac process` only when `--call-peaks` is set;
+  ordinary ATAC processing no longer fails after producing its BED merely
+  because MACS is not installed.
+* Retire the obsolete `release.sh`; `bump_and_publish.sh` is now the sole
+  documented release entry point.
+
+### Documentation and testing
+
+* Document barcode correction for standard RNA, multiplex/Flex, and ATAC, and
+  add strict rustdoc to CI.
+* Add typed command-building helpers and coverage for omitted defaults,
+  explicit forwarding, legacy translation, stage-specific resources, and the
+  thread floor.
+
 ## [0.27.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.26.2...v0.27.0)
 
 ### Breaking changes

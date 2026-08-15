@@ -1,6 +1,8 @@
 use crate::atac::defaults::{AtacIndexParams, DefaultAtacParams};
 use crate::defaults::{DefaultMappingParams, DefaultParams};
-use crate::simpleaf_commands::{PiscemBuildResourceOpts, PiscemDecoderOpts};
+use crate::simpleaf_commands::{
+    CellBarcodeCorrectionOpts, PiscemBuildResourceOpts, PiscemDecoderOpts,
+};
 use crate::utils::chem_utils::{ExpectedOri, QueryInRegistry};
 use clap::{
     Args, Subcommand, ValueEnum,
@@ -165,7 +167,7 @@ pub enum AtacCommand {
 #[derive(Args, Clone, Debug)]
 #[command(arg_required_else_help = true)]
 pub struct IndexOpts {
-    /// number of threads to use when running
+    /// number of threads to use when running; values below two warn and use two
     #[arg(short, long, default_value_t = 16, display_order = 5)]
     pub threads: u32,
 
@@ -305,7 +307,7 @@ pub struct ProcessOpts {
     #[arg(long = "output")]
     pub output: PathBuf,
 
-    /// number of threads to use when running
+    /// number of threads to use when running; values below two warn and use two
     #[arg(short, long, default_value_t = 16, display_order = 5)]
     pub threads: u32,
 
@@ -348,6 +350,9 @@ pub struct ProcessOpts {
         default_value_t = 10
     )]
     pub min_reads: usize,
+
+    #[command(flatten)]
+    pub cell_correction: CellBarcodeCorrectionOpts,
 
     /// compress the output mapping bed file.
     #[arg(long, help_heading = "Advanced Options")]
