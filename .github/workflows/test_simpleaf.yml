@@ -29,6 +29,15 @@ jobs:
           toolchain: stable
           override: true
           components: rustfmt
+
+      # simpleaf has a large, stable dependency graph (notably Polars and
+      # HDF5). Cache dependency artifacts separately for each runner/toolchain;
+      # rust-cache derives the remaining key from Cargo.lock and the Rust
+      # environment, and deliberately excludes simpleaf itself.
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       
       # Cheap and compiles nothing, so it runs first.
       - name: Check formatting
@@ -38,9 +47,9 @@ jobs:
         run: cargo build --verbose --release
 
       # Deliberately `--release`: it reuses the artifacts the Build step just
-      # produced, which makes this ~30s. A debug `cargo test` would rebuild the
-      # whole dependency graph in a second profile — including HDF5, which is
-      # compiled from source — and cost minutes.
+      # produced. A debug `cargo test` would rebuild the whole dependency graph
+      # in a second profile — including HDF5, which is compiled from source —
+      # and cost minutes.
       #
       # This job previously ran neither this nor `cargo fmt`, which is how a
       # test that did not compile, and a stale CLI snapshot, both reached main.

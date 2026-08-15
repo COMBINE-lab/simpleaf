@@ -36,8 +36,6 @@ categories = ["command-line-utilities", "science"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-cc = "1.2.20"
-
 # seq_geom_parser (chumsky-based, from the piscem-rs workspace) — used for
 # geometry validation and multiplex-quant. Published on crates.io; the
 # `.cargo/config.toml` patch this comment used to describe is long gone (there
@@ -107,11 +105,6 @@ tempfile = "3.19.1"
 ureq = { version = "3.0.11", features = ["json"] }
 file-requirements = "0.1.0"
 
-[profile.release]
-lto = "thin"
-opt-level = 3
-
 # The profile that 'cargo dist' will build with
 [profile.dist]
 inherits = "release"
-lto = "thin"
