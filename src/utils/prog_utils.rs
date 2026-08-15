@@ -32,9 +32,9 @@ pub mod min_versions {
     /// it does not recognise.
     pub const PISCEM: &str = ">=0.22.0, <1.0.0";
 
-    /// alevin-fry 0.17.0 carries the libradicl 0.17 reader work, the scATAC
-    /// collate/deduplicate fixes, and the `infer` matrix-type fix.
-    pub const ALEVIN_FRY: &str = ">=0.17.0, <1.0.0";
+    /// alevin-fry 0.18.0 provides deterministic compiled barcode-correction
+    /// plans and the correction/resource controls forwarded by simpleaf 0.28.
+    pub const ALEVIN_FRY: &str = ">=0.18.0, <1.0.0";
 
     /// Only consulted when peak calling is actually requested.
     pub const MACS3: &str = ">=3.0.2, <4.0.0";
@@ -72,7 +72,8 @@ pub fn shell<S: AsRef<OsStr>>(cmd: S) -> Command {
 }
 
 /// NOTE: the body of the JSON object we fetch cannot exceed 10MB
-/// this is a limitation put in place by `ureq` (see : https://docs.rs/ureq/3.0.0-rc4/ureq/struct.Body.html#method.read_json)
+/// this is a limitation put in place by `ureq` (see
+/// <https://docs.rs/ureq/3.0.0-rc4/ureq/struct.Body.html#method.read_json>).
 pub fn read_json_from_remote_url<T: AsRef<str>>(url: T) -> Result<serde_json::Value> {
     let url = url.as_ref();
 

@@ -522,13 +522,13 @@ fn run_quant_stage(
         .exe_path
         .clone();
     let mut alevin_gpl_cmd = std::process::Command::new(format!("{}", alevin_fry.display()));
-    let gpl_threads = setup.threads.min(8);
     alevin_gpl_cmd.arg("generate-permit-list");
     alevin_gpl_cmd.arg("-i").arg(&mapping.map_output);
     alevin_gpl_cmd.arg("-d").arg(setup.ori.as_str());
-    alevin_gpl_cmd.arg("-t").arg(format!("{}", gpl_threads));
+    alevin_gpl_cmd.arg("-t").arg(format!("{}", setup.threads));
     setup.filter_meth.add_to_args(&mut alevin_gpl_cmd);
     alevin_gpl_cmd.arg("-o").arg(&gpl_output);
+    opts.cell_correction.append_to(&mut alevin_gpl_cmd);
     let gpl_cmd_string = prog_utils::get_cmd_line_string(&alevin_gpl_cmd);
     info!("alevin-fry generate-permit-list cmd : {}", gpl_cmd_string);
     let input_files = vec![mapping.map_output.clone()];
@@ -544,6 +544,7 @@ fn run_quant_stage(
     alevin_collate_cmd
         .arg("-t")
         .arg(format!("{}", setup.threads));
+    opts.collation_resources.append_to(&mut alevin_collate_cmd);
     let collate_cmd_string = prog_utils::get_cmd_line_string(&alevin_collate_cmd);
     info!("alevin-fry collate cmd : {}", collate_cmd_string);
     let input_files = vec![gpl_output.clone(), mapping.map_output.clone()];
@@ -563,7 +564,7 @@ fn run_quant_stage(
     alevin_quant_cmd.arg("-m").arg(setup.t2g_map_file.clone());
     alevin_quant_cmd.arg("-r").arg(&opts.resolution);
     // Only forwarded when the user set it, so alevin-fry's own default stands
-    // otherwise. alevin-fry < 0.17.1 parses this and ignores it.
+    // otherwise.
     if let Some(small_thresh) = opts.small_thresh {
         alevin_quant_cmd
             .arg("--small-thresh")
@@ -804,5 +805,55 @@ mod tests {
             .collect();
         assert!(!args.iter().any(|a| a == "--with-position"));
         assert!(!args.iter().any(|a| a == "--struct-constraints"));
+    }
+
+    #[test]
+    fn barcode_and_collation_overrides_reach_their_child_arguments() {
+        let opts = parse_quant_opts(&[
+            "quant",
+            "-c",
+            "10xv3",
+            "-o",
+            "/tmp/out",
+            "-r",
+            "cr-like",
+            "--knee",
+            "--map-dir",
+            "/tmp/mapped",
+            "--cell-bc-correction",
+            "frequency",
+            "--cell-bc-neighborhood",
+            "hamming-1",
+            "--cell-bc-confidence",
+            "39/40",
+            "--collate-memory-limit",
+            "3GiB",
+        ]);
+
+        let mut gpl = std::process::Command::new("alevin-fry");
+        opts.cell_correction.append_to(&mut gpl);
+        let gpl_args: Vec<_> = gpl
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            gpl_args,
+            [
+                "--cell-bc-correction",
+                "frequency",
+                "--cell-bc-neighborhood",
+                "hamming-1",
+                "--cell-bc-confidence",
+                "39/40",
+            ]
+        );
+
+        let mut collate = std::process::Command::new("alevin-fry");
+        opts.collation_resources.append_to(&mut collate);
+        let collate_args: Vec<_> = collate
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(collate_args, ["--memory-limit", "3GiB"]);
     }
 }

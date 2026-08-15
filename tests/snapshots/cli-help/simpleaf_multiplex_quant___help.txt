@@ -9,12 +9,12 @@ Options:
           --geometry and --cell-bc-list are required
 
   -g, --geometry <GEOMETRY>
-          Override the read geometry string (e.g.
-          '1{b[16]u[12]x[0-3]hamming(f[TTGCTAGGACCG],1)s[10]x:}2{r:}')
+          Override the read geometry string (for example,
+          `1{b[16]u[12]x[0-3]hamming(f[TTGCTAGGACCG],1)s[10]x:}2{r:}`)
 
       --organism <ORGANISM>
           Target organism for automatic probe set selection
-          
+
           [possible values: human, mouse]
 
       --cell-bc-list <CELL_BC_LIST>
@@ -22,7 +22,7 @@ Options:
 
       --expected-ori <EXPECTED_ORI>
           Expected read orientation: fw, rc, or both
-          
+
           [default: both]
 
       --sample-bc-ori <SAMPLE_BC_ORI>
@@ -31,15 +31,15 @@ Options:
           `sample_bc_ori` when set. Useful for cycle-plan variants (e.g. 10x Flex Configuration B)
           where the sample BC is read off the opposite strand from the canonical preset. Vocabulary
           matches the preset JSON and alevin-fry's `--sample-bc-ori`
-          
+
           [possible values: forward, reverse]
 
   -o, --output <OUTPUT>
           Path to output directory
 
   -t, --threads <THREADS>
-          Number of threads to use
-          
+          Number of threads to use. Values below two warn and use two
+
           [default: 16]
 
   -h, --help
@@ -48,17 +48,45 @@ Options:
   -V, --version
           Print version
 
-Permit List Options:
-      --sample-correction-mode <SAMPLE_CORRECTION_MODE>
-          Sample barcode correction mode
-          
-          [default: exact]
-          [possible values: exact, 1-edit]
+Advanced Barcode Correction Options:
+      --cell-bc-correction <CELL_BC_CORRECTION>
+          Cell-barcode collision policy (inherited default: unique)
 
-      --min-reads <MIN_READS>
-          Minimum read count threshold for unfiltered permit list
-          
-          [default: 10]
+          [possible values: unique, frequency]
+
+      --cell-bc-neighborhood <CELL_BC_NEIGHBORHOOD>
+          One-error cell-barcode neighbourhood. When omitted, alevin-fry chooses the
+          protocol/filter-specific default
+
+          [possible values: hamming-1, substitution-or-shift-1]
+
+      --cell-bc-confidence <CONFIDENCE>
+          Frequency confidence as a decimal or exact fraction. The inherited default is 97.5% for
+          RNA and 90% for ATAC
+
+      --sample-bc-correction <SAMPLE_BC_CORRECTION>
+          Sample-barcode correction policy (inherited default: exact)
+
+          [possible values: exact, unique, frequency]
+
+      --sample-bc-neighborhood <SAMPLE_BC_NEIGHBORHOOD>
+          Sample-barcode neighbourhood for non-exact correction (inherited default: Hamming-1)
+
+          [possible values: hamming-1, substitution-or-shift-1]
+
+      --sample-bc-confidence <CONFIDENCE>
+          Sample-Frequency confidence as a decimal or exact fraction (inherited default: 97.5%)
+
+Advanced Resource Options:
+      --gpl-memory-limit <SIZE>
+          Deferred GPL buffer budget (inherited default: 512 MiB)
+
+      --gpl-tmp-dir <DIR>
+          Temporary directory for compressed GPL correction runs (inherited default: the GPL output
+          directory)
+
+      --collate-memory-limit <SIZE>
+          Collation buffer budget (inherited default: 2 GiB)
 
 Mapping Options:
   -i, --index <INDEX>
@@ -77,7 +105,7 @@ Probe Set Options:
 
       --kmer-length <KMER_LENGTH>
           k-mer length for probe index building
-          
+
           [default: 23]
 
 Reference Options:
@@ -98,7 +126,7 @@ Reference Options:
 Quantification Options:
   -r, --resolution <RESOLUTION>
           UMI resolution mode
-          
+
           [default: cr-like]
           [possible values: cr-like, cr-like-em, parsimony, parsimony-em, parsimony-gene,
           parsimony-gene-em]
@@ -107,14 +135,13 @@ Quantification Options:
           Cells with fewer than this many reads are resolved by alevin-fry's tiny-cell fast path,
           which applies `cr-like` (winner-take-all) semantics regardless of `--resolution`. Pass 0
           to resolve every cell with the requested strategy.
-          
-          Left unset, alevin-fry's own default applies. Requires alevin-fry >= 0.17.1; earlier
-          versions parse the option and ignore it.
+
+          Left unset, alevin-fry's own default applies.
 
 Piscem Mapping Options:
       --skipping-strategy <SKIPPING_STRATEGY>
           The skipping strategy to use for k-mer collection
-          
+
           [default: permissive]
           [possible values: permissive, strict]
 
@@ -123,33 +150,39 @@ Piscem Mapping Options:
 
       --max-ec-card <MAX_EC_CARD>
           Maximum cardinality equivalence class to examine
-          
+
           [default: 4096]
 
       --dict <DICT>
           Piscem dictionary backend: `auto` (default), `sshash`, or `tiny`. Applies both to the
           auto-built probe index (build time) and to map-sc (map time)
-          
+
           [default: auto]
           [possible values: auto, sshash, tiny]
 
       --decoder <MODE>
           Gzip decoder selection passed to piscem: `auto`, `serial`, `parallel`, or `parallel=N`.
-          
+
           `auto` lets piscem adapt the mapping/decode split while the run proceeds. `serial` gives
           mapping the whole budget. `parallel` forces the parallel decoder where the input allows
           it; `parallel=N` fixes N decode slots per gzip input and stops the adaptation. Inputs that
           cannot be read positionally (FIFOs, process substitution) stay serial regardless.
-          
+
           [default: auto]
 
       --thread-policy <FILE>
           JSON file overriding piscem's thread and decoder policy.
-          
+
           Every field is optional and defaults to a measured value; an unrecognised field is an
           error rather than a silent no-op. Currently understood: `{"parallel_decode":
           {"min_threads_per_stream": 8}}`, the number of threads that must be free per gzip input
           before the parallel decoder is engaged at all.
+
+Permit List Options:
+      --min-reads <MIN_READS>
+          Minimum read count threshold for unfiltered permit list
+
+          [default: 10]
 
 Output Options:
       --anndata-out

@@ -5,7 +5,7 @@ title: "Installation"
 `Simpleaf` can be installed from source, from [crates.io](https://crates.io/crates/simpleaf), or installed via [bioconda](https://bioconda.github.io/recipes/simpleaf/README.html). `simpleaf` requires [alevin-fry](https://github.com/COMBINE-lab/alevin-fry), [piscem](https://github.com/COMBINE-lab/piscem), and `wget`.
 
 :::caution
-This release requires **piscem >= 0.22.0** and **alevin-fry >= 0.17.0**. These are hard requirements, not recommendations: `simpleaf set-paths` will reject older binaries. `piscem` 0.22.0 changed the meaning of `-t` (see [Threads and decompression](/simpleaf/threads-and-decompression/)) and added the build options `simpleaf` now passes unconditionally, so an older `piscem` cannot run these commands. If you install from bioconda, check that the versions it resolves meet these floors.
+This release requires **piscem >= 0.22.0** and **alevin-fry >= 0.18.0**. These are hard requirements, not recommendations: `simpleaf set-paths` will reject older binaries. `piscem` 0.22.0 changed the meaning of `-t` (see [Threads and decompression](/simpleaf/threads-and-decompression/)), while alevin-fry 0.18.0 provides the deterministic correction and resource controls forwarded by simpleaf 0.28. If you install from bioconda, check that the versions it resolves meet these floors.
 :::
 
 ## Recommended: installing from conda

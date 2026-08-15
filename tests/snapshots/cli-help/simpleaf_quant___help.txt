@@ -11,8 +11,8 @@ Options:
           Path to the output directory
 
   -t, --threads <THREADS>
-          Number of threads to use when running
-          
+          Number of threads to use when running. Values below two warn and use two
+
           [default: 16]
 
   -h, --help
@@ -40,7 +40,7 @@ Piscem Mapping Options:
 
       --with-position
           Record the position of each mapped read in the RAD file.
-          
+
           alevin-fry detects the positional record type from the RAD header and adapts
           automatically, so no downstream option needs to change. The RAD file is larger. Not
           available for `multiplex-quant`: there is no multi-barcode positional record type, and the
@@ -57,53 +57,53 @@ Piscem Mapping Options:
 
       --skipping-strategy <SKIPPING_STRATEGY>
           The skipping strategy to use for k-mer collection
-          
+
           [default: permissive]
           [possible values: permissive, strict]
 
       --max-ec-card <MAX_EC_CARD>
           Determines the maximum cardinality equivalence class (number of (txp, orientation status)
           pairs) to examine (cannot be used with --ignore-ambig-hits)
-          
+
           [default: 4096]
 
       --max-hit-occ <MAX_HIT_OCC>
           In the first pass, consider only collected and matched k-mers of a read having <=
           --max-hit-occ hits
-          
+
           [default: 256]
 
       --max-hit-occ-recover <MAX_HIT_OCC_RECOVER>
           If all collected and matched k-mers of a read have > --max-hit-occ hits, then make a
           second pass and consider k-mers having <= --max-hit-occ-recover hits
-          
+
           [default: 1024]
 
       --max-read-occ <MAX_READ_OCC>
           Threshold for discarding reads with too many mappings
-          
+
           [default: 2500]
 
       --dict <DICT>
           Piscem dictionary backend to use at map time: `auto` (default, honors the index's embedded
           choice), `sshash`, or `tiny`
-          
+
           [default: auto]
           [possible values: auto, sshash, tiny]
 
       --decoder <MODE>
           Gzip decoder selection passed to piscem: `auto`, `serial`, `parallel`, or `parallel=N`.
-          
+
           `auto` lets piscem adapt the mapping/decode split while the run proceeds. `serial` gives
           mapping the whole budget. `parallel` forces the parallel decoder where the input allows
           it; `parallel=N` fixes N decode slots per gzip input and stops the adaptation. Inputs that
           cannot be read positionally (FIFOs, process substitution) stay serial regardless.
-          
+
           [default: auto]
 
       --thread-policy <FILE>
           JSON file overriding piscem's thread and decoder policy.
-          
+
           Every field is optional and defaults to a measured value; an unrecognised field is an
           error rather than a silent no-op. Currently understood: `{"parallel_decode":
           {"min_threads_per_stream": 8}}`, the number of threads that must be free per gzip input
@@ -128,14 +128,34 @@ Permit List Generation Options:
   -d, --expected-ori <EXPECTED_ORI>
           The expected direction/orientation of alignments in the chemistry being processed. If not
           provided, will default to `fw` for 10xv2/10xv3, otherwise `both`
-          
+
           [possible values: fw, rc, both]
 
       --min-reads <MIN_READS>
           Minimum read count threshold for a cell to be retained/processed; only use with
           --unfiltered-pl
-          
+
           [default: 10]
+
+Advanced Barcode Correction Options:
+      --cell-bc-correction <CELL_BC_CORRECTION>
+          Cell-barcode collision policy (inherited default: unique)
+
+          [possible values: unique, frequency]
+
+      --cell-bc-neighborhood <CELL_BC_NEIGHBORHOOD>
+          One-error cell-barcode neighbourhood. When omitted, alevin-fry chooses the
+          protocol/filter-specific default
+
+          [possible values: hamming-1, substitution-or-shift-1]
+
+      --cell-bc-confidence <CONFIDENCE>
+          Frequency confidence as a decimal or exact fraction. The inherited default is 97.5% for
+          RNA and 90% for ATAC
+
+Advanced Resource Options:
+      --collate-memory-limit <SIZE>
+          Collation buffer budget (inherited default: 2 GiB)
 
 UMI Resolution Options:
   -m, --t2g-map <T2G_MAP>
@@ -143,7 +163,7 @@ UMI Resolution Options:
 
   -r, --resolution <RESOLUTION>
           UMI resolution mode
-          
+
           [possible values: cr-like, cr-like-em, parsimony, parsimony-em, parsimony-gene,
           parsimony-gene-em]
 
@@ -151,9 +171,8 @@ UMI Resolution Options:
           Cells with fewer than this many reads are resolved by alevin-fry's tiny-cell fast path,
           which applies `cr-like` (winner-take-all) semantics regardless of `--resolution`. Pass 0
           to resolve every cell with the requested strategy.
-          
-          Left unset, alevin-fry's own default applies. Requires alevin-fry >= 0.17.1; earlier
-          versions parse the option and ignore it.
+
+          Left unset, alevin-fry's own default applies.
 
 Output Options:
       --anndata-out

@@ -1572,7 +1572,7 @@ pub fn get_protocol_estuary<T: AsRef<Path>>(
 }
 
 /// Copy all files from the src folder to the dst folder.\
-/// Adapted from https://stackoverflow.com/a/65192210.
+/// Adapted from <https://stackoverflow.com/a/65192210>.
 pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> anyhow::Result<()> {
     fs::create_dir_all(&dst)?;
     for entry in fs::read_dir(src)? {

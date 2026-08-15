@@ -38,6 +38,17 @@ fn t2g_mode(opts: &MultiplexQuantOpts) -> probe_utils::ProbeT2gMode {
     }
 }
 
+fn resolved_sample_bc_orientation<'a>(
+    opts: &'a MultiplexQuantOpts,
+    chemistry: Option<&'a CustomChemistry>,
+) -> Option<&'a str> {
+    opts.sample_bc_ori.as_deref().or_else(|| {
+        chemistry
+            .and_then(|chemistry| chemistry.sample_bc_list.as_ref())
+            .and_then(|sample_list| sample_list.sample_bc_ori.as_deref())
+    })
+}
+
 fn write_multiplex_metadata(
     output_dir: &Path,
     quant_output: &Path,
@@ -228,9 +239,10 @@ fn resolve_user_supplied_index(
 }
 
 /// Main entry point for the multiplex-quant pipeline.
-pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyhow::Result<()> {
+pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> anyhow::Result<()> {
     let start = Instant::now();
     info!("Starting multiplex quantification pipeline");
+    opts.threads = crate::core::runtime::cap_threads_warned(opts.threads);
 
     // Load runtime context (program paths)
     let rt = context::load_runtime_context(af_home)?;
@@ -408,15 +420,17 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
         .arg("-o")
         .arg(&quant_output)
         .arg("-t")
-        .arg(format!("{}", opts.threads.min(8)))
+        .arg(format!("{}", opts.threads))
         .arg("--unfiltered-pl")
         .arg(&cell_bc_path)
         .arg("--sample-bc-list")
         .arg(&sample_bc_path)
-        .arg("--sample-correction-mode")
-        .arg(&opts.sample_correction_mode)
         .arg("--min-reads")
         .arg(format!("{}", opts.min_reads));
+
+    opts.cell_correction.append_to(&mut gpl_cmd);
+    opts.sample_correction.append_to(&mut gpl_cmd);
+    opts.gpl_resources.append_to(&mut gpl_cmd);
 
     // Forward the sample-barcode orientation to alevin-fry. Precedence:
     //   1. user-supplied --sample-bc-ori CLI override (`forward` / `reverse`,
@@ -424,11 +438,7 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
     //   2. the chemistry preset's declared sample_bc_ori (e.g. 10x Flex v2
     //      where the whitelist is the RC of what appears on the read).
     //   3. omit the flag (alevin-fry default).
-    let sbc_ori_override = opts.sample_bc_ori.as_deref().or_else(|| {
-        chem.as_ref()
-            .and_then(|c| c.sample_bc_list.as_ref())
-            .and_then(|s| s.sample_bc_ori.as_deref())
-    });
+    let sbc_ori_override = resolved_sample_bc_orientation(&opts, chem.as_ref());
     if let Some(ori) = sbc_ori_override {
         gpl_cmd.arg("--sample-bc-ori").arg(ori);
     }
@@ -450,6 +460,7 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
         .arg(&map_output)
         .arg("-t")
         .arg(format!("{}", opts.threads));
+    opts.collation_resources.append_to(&mut collate_cmd);
 
     let collate_cmd_str = prog_utils::get_cmd_line_string(&collate_cmd);
     info!("collate cmd: {}", collate_cmd_str);
@@ -475,7 +486,7 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
         .arg("--use-mtx");
 
     // Only forwarded when the user set it, so alevin-fry's own default stands
-    // otherwise. alevin-fry < 0.17.1 parses this and ignores it.
+    // otherwise.
     if let Some(small_thresh) = opts.small_thresh {
         quant_cmd
             .arg("--small-thresh")
@@ -780,8 +791,9 @@ fn resolve_sample_bc_list(
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_user_supplied_index, t2g_mode};
+    use super::{resolve_user_supplied_index, resolved_sample_bc_orientation, t2g_mode};
     use crate::simpleaf_commands::MultiplexQuantOpts;
+    use crate::utils::chem_utils::{CustomChemistry, SampleBcListInfo};
     use crate::utils::probe_utils::ProbeT2gMode;
     use clap::Parser;
     use serde_json::json;
@@ -880,6 +892,30 @@ mod tests {
     }
 
     #[test]
+    fn sample_barcode_orientation_uses_cli_then_preset_then_child_default() {
+        let mut opts = parse_multiplex_quant_opts(&["-o", "."]);
+        let mut chemistry =
+            CustomChemistry::simple_custom("1{b[16]u[12]x:}2{r:}").expect("valid test geometry");
+        chemistry.sample_bc_list = Some(SampleBcListInfo {
+            plist_name: None,
+            remote_url: None,
+            sample_bc_ori: Some("reverse".to_string()),
+        });
+
+        assert_eq!(
+            resolved_sample_bc_orientation(&opts, Some(&chemistry)),
+            Some("reverse")
+        );
+        opts.sample_bc_ori = Some("forward".to_string());
+        assert_eq!(
+            resolved_sample_bc_orientation(&opts, Some(&chemistry)),
+            Some("forward")
+        );
+        opts.sample_bc_ori = None;
+        assert_eq!(resolved_sample_bc_orientation(&opts, None), None);
+    }
+
+    #[test]
     fn usa_mode_without_probe_regions_returns_helpful_error() {
         let files = super::ResolvedProbeSetFiles {
             fasta_path: Path::new("/tmp/custom_probes.fa").to_path_buf(),
@@ -894,6 +930,89 @@ mod tests {
         assert!(
             msg.contains("region") && msg.contains("rerun without `--usa`"),
             "unexpected error: {msg}",
+        );
+    }
+
+    #[test]
+    fn barcode_and_stage_resource_overrides_are_forwarded() {
+        let opts = parse_multiplex_quant_opts(&[
+            "-o",
+            ".",
+            "--cell-bc-correction",
+            "frequency",
+            "--cell-bc-neighborhood",
+            "hamming-1",
+            "--cell-bc-confidence",
+            "0.975",
+            "--sample-bc-correction",
+            "unique",
+            "--sample-bc-neighborhood",
+            "substitution-or-shift-1",
+            "--sample-bc-confidence",
+            "39/40",
+            "--gpl-memory-limit",
+            "1GiB",
+            "--gpl-tmp-dir",
+            "/tmp/gpl",
+            "--collate-memory-limit",
+            "4GiB",
+        ]);
+
+        let mut gpl = std::process::Command::new("alevin-fry");
+        opts.cell_correction.append_to(&mut gpl);
+        opts.sample_correction.append_to(&mut gpl);
+        opts.gpl_resources.append_to(&mut gpl);
+        let gpl_args: Vec<_> = gpl
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            gpl_args
+                .windows(2)
+                .any(|pair| pair == ["--cell-bc-correction", "frequency"])
+        );
+        assert!(
+            gpl_args
+                .windows(2)
+                .any(|pair| pair == ["--sample-bc-correction", "unique"])
+        );
+        assert!(
+            gpl_args
+                .windows(2)
+                .any(|pair| pair == ["--memory-limit", "1GiB"])
+        );
+        assert!(
+            gpl_args
+                .windows(2)
+                .any(|pair| pair == ["--tmp-dir", "/tmp/gpl"])
+        );
+
+        let mut collate = std::process::Command::new("alevin-fry");
+        opts.collation_resources.append_to(&mut collate);
+        let collate_args: Vec<_> = collate
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(collate_args, ["--memory-limit", "4GiB"]);
+    }
+
+    #[test]
+    fn legacy_sample_mode_is_hidden_but_still_translates() {
+        let opts = parse_multiplex_quant_opts(&["-o", ".", "--sample-correction-mode", "1-edit"]);
+        let mut command = std::process::Command::new("alevin-fry");
+        opts.sample_correction.append_to(&mut command);
+        let args: Vec<_> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args,
+            [
+                "--sample-bc-correction",
+                "unique",
+                "--sample-bc-neighborhood",
+                "substitution-or-shift-1",
+            ]
         );
     }
 }

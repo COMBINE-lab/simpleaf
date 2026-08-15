@@ -135,6 +135,295 @@ impl PiscemBuildResourceOpts {
     }
 }
 
+/// Collision policy for cell-barcode correction in alevin-fry.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CellBarcodeCorrection {
+    Unique,
+    Frequency,
+}
+
+impl CellBarcodeCorrection {
+    fn as_cli(self) -> &'static str {
+        match self {
+            Self::Unique => "unique",
+            Self::Frequency => "frequency",
+        }
+    }
+}
+
+/// One-error barcode neighbourhood searched by alevin-fry.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BarcodeNeighborhood {
+    #[value(name = "hamming-1")]
+    HammingOne,
+    #[value(name = "substitution-or-shift-1")]
+    SubstitutionOrShiftOne,
+}
+
+impl BarcodeNeighborhood {
+    fn as_cli(self) -> &'static str {
+        match self {
+            Self::HammingOne => "hamming-1",
+            Self::SubstitutionOrShiftOne => "substitution-or-shift-1",
+        }
+    }
+}
+
+/// Collision policy for sample/probe-barcode correction in alevin-fry.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SampleBarcodeCorrection {
+    Exact,
+    Unique,
+    Frequency,
+}
+
+impl SampleBarcodeCorrection {
+    fn as_cli(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::Unique => "unique",
+            Self::Frequency => "frequency",
+        }
+    }
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+enum LegacySampleCorrectionMode {
+    Exact,
+    #[value(name = "1-edit")]
+    OneEdit,
+}
+
+fn confidence_parser(value: &str) -> Result<String, String> {
+    let value = value.trim();
+    let (numerator, denominator) = if let Some((numerator, denominator)) = value.split_once('/') {
+        let numerator = numerator
+            .parse::<u64>()
+            .map_err(|_| format!("invalid barcode-correction confidence {value:?}"))?;
+        let denominator = denominator
+            .parse::<u64>()
+            .map_err(|_| format!("invalid barcode-correction confidence {value:?}"))?;
+        (numerator, denominator)
+    } else {
+        let (whole, fractional) = value.split_once('.').unwrap_or((value, ""));
+        if whole.is_empty() || !whole.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(format!("invalid barcode-correction confidence {value:?}"));
+        }
+        if !fractional.bytes().all(|byte| byte.is_ascii_digit()) || fractional.len() > 18 {
+            return Err(format!("invalid barcode-correction confidence {value:?}"));
+        }
+        let denominator = 10_u64
+            .checked_pow(fractional.len() as u32)
+            .ok_or_else(|| "barcode-correction confidence is too precise".to_string())?;
+        let whole = whole
+            .parse::<u64>()
+            .map_err(|_| format!("invalid barcode-correction confidence {value:?}"))?;
+        let fractional = if fractional.is_empty() {
+            0
+        } else {
+            fractional
+                .parse::<u64>()
+                .map_err(|_| format!("invalid barcode-correction confidence {value:?}"))?
+        };
+        let numerator = whole
+            .checked_mul(denominator)
+            .and_then(|whole| whole.checked_add(fractional))
+            .ok_or_else(|| "barcode-correction confidence is too large".to_string())?;
+        (numerator, denominator)
+    };
+
+    if denominator == 0 || numerator > denominator {
+        return Err(format!(
+            "barcode-correction confidence must be between zero and one (got {numerator}/{denominator})"
+        ));
+    }
+    Ok(value.to_string())
+}
+
+fn memory_size_parser(value: &str) -> Result<String, String> {
+    let value = value.trim();
+    let split = value
+        .find(|character: char| !character.is_ascii_digit() && character != '.')
+        .unwrap_or(value.len());
+    let (number, suffix) = value.split_at(split);
+    if number.is_empty() {
+        return Err("memory size must start with a positive number".to_string());
+    }
+    let number = number
+        .parse::<f64>()
+        .map_err(|_| format!("invalid memory size {value:?}"))?;
+    if !number.is_finite() || number <= 0.0 {
+        return Err("memory size must be positive and finite".to_string());
+    }
+    let multiplier = match suffix.trim().to_ascii_lowercase().as_str() {
+        "" | "b" => 1_u64,
+        "k" | "kb" => 1_000,
+        "ki" | "kib" => 1_u64 << 10,
+        "m" | "mb" => 1_000_000,
+        "mi" | "mib" => 1_u64 << 20,
+        "g" | "gb" => 1_000_000_000,
+        "gi" | "gib" => 1_u64 << 30,
+        "t" | "tb" => 1_000_000_000_000,
+        "ti" | "tib" => 1_u64 << 40,
+        other => return Err(format!("unsupported memory-size suffix {other:?}")),
+    };
+    if number * multiplier as f64 > u64::MAX as f64 {
+        return Err("memory size exceeds the supported range".to_string());
+    }
+    Ok(value.to_string())
+}
+
+/// Optional cell-barcode overrides shared by RNA, multiplex RNA, and ATAC.
+#[derive(Args, Clone, Debug, Default)]
+pub struct CellBarcodeCorrectionOpts {
+    /// Cell-barcode collision policy (inherited default: unique).
+    #[arg(long, value_enum, help_heading = "Advanced Barcode Correction Options")]
+    pub cell_bc_correction: Option<CellBarcodeCorrection>,
+
+    /// One-error cell-barcode neighbourhood. When omitted, alevin-fry chooses
+    /// the protocol/filter-specific default.
+    #[arg(long, value_enum, help_heading = "Advanced Barcode Correction Options")]
+    pub cell_bc_neighborhood: Option<BarcodeNeighborhood>,
+
+    /// Frequency confidence as a decimal or exact fraction. The inherited
+    /// default is 97.5% for RNA and 90% for ATAC.
+    #[arg(
+        long,
+        value_name = "CONFIDENCE",
+        value_parser = confidence_parser,
+        help_heading = "Advanced Barcode Correction Options"
+    )]
+    pub cell_bc_confidence: Option<String>,
+}
+
+impl CellBarcodeCorrectionOpts {
+    pub(crate) fn append_to(&self, command: &mut std::process::Command) {
+        if let Some(policy) = self.cell_bc_correction {
+            command.arg("--cell-bc-correction").arg(policy.as_cli());
+        }
+        if let Some(neighborhood) = self.cell_bc_neighborhood {
+            command
+                .arg("--cell-bc-neighborhood")
+                .arg(neighborhood.as_cli());
+        }
+        if let Some(confidence) = &self.cell_bc_confidence {
+            command.arg("--cell-bc-confidence").arg(confidence);
+        }
+    }
+}
+
+/// Optional collation resource override shared by RNA workflows.
+#[derive(Args, Clone, Debug, Default)]
+pub struct CollationResourceOpts {
+    /// Collation buffer budget (inherited default: 2 GiB).
+    #[arg(
+        long,
+        value_name = "SIZE",
+        value_parser = memory_size_parser,
+        help_heading = "Advanced Resource Options"
+    )]
+    pub collate_memory_limit: Option<String>,
+}
+
+impl CollationResourceOpts {
+    pub(crate) fn append_to(&self, command: &mut std::process::Command) {
+        if let Some(memory_limit) = &self.collate_memory_limit {
+            command.arg("--memory-limit").arg(memory_limit);
+        }
+    }
+}
+
+/// Optional sample/probe-barcode overrides for multiplex RNA.
+#[derive(Args, Clone, Debug, Default)]
+pub struct SampleBarcodeCorrectionOpts {
+    /// Sample-barcode correction policy (inherited default: exact).
+    #[arg(long, value_enum, help_heading = "Advanced Barcode Correction Options")]
+    pub sample_bc_correction: Option<SampleBarcodeCorrection>,
+
+    /// Sample-barcode neighbourhood for non-exact correction (inherited
+    /// default: Hamming-1).
+    #[arg(long, value_enum, help_heading = "Advanced Barcode Correction Options")]
+    pub sample_bc_neighborhood: Option<BarcodeNeighborhood>,
+
+    /// Sample-Frequency confidence as a decimal or exact fraction (inherited
+    /// default: 97.5%).
+    #[arg(
+        long,
+        value_name = "CONFIDENCE",
+        value_parser = confidence_parser,
+        help_heading = "Advanced Barcode Correction Options"
+    )]
+    pub sample_bc_confidence: Option<String>,
+
+    /// Deprecated compatibility alias for sample-barcode correction.
+    #[arg(
+        long,
+        value_enum,
+        hide = true,
+        conflicts_with_all = ["sample_bc_correction", "sample_bc_neighborhood"]
+    )]
+    sample_correction_mode: Option<LegacySampleCorrectionMode>,
+}
+
+impl SampleBarcodeCorrectionOpts {
+    pub(crate) fn append_to(&self, command: &mut std::process::Command) {
+        match self.sample_correction_mode {
+            Some(LegacySampleCorrectionMode::Exact) => {
+                command.arg("--sample-bc-correction").arg("exact");
+            }
+            Some(LegacySampleCorrectionMode::OneEdit) => {
+                command
+                    .arg("--sample-bc-correction")
+                    .arg("unique")
+                    .arg("--sample-bc-neighborhood")
+                    .arg("substitution-or-shift-1");
+            }
+            None => {
+                if let Some(policy) = self.sample_bc_correction {
+                    command.arg("--sample-bc-correction").arg(policy.as_cli());
+                }
+                if let Some(neighborhood) = self.sample_bc_neighborhood {
+                    command
+                        .arg("--sample-bc-neighborhood")
+                        .arg(neighborhood.as_cli());
+                }
+            }
+        }
+        if let Some(confidence) = &self.sample_bc_confidence {
+            command.arg("--sample-bc-confidence").arg(confidence);
+        }
+    }
+}
+
+/// Resource controls used only by deferred sample-Frequency GPL correction.
+#[derive(Args, Clone, Debug, Default)]
+pub struct GplResourceOpts {
+    /// Deferred GPL buffer budget (inherited default: 512 MiB).
+    #[arg(
+        long,
+        value_name = "SIZE",
+        value_parser = memory_size_parser,
+        help_heading = "Advanced Resource Options"
+    )]
+    pub gpl_memory_limit: Option<String>,
+
+    /// Temporary directory for compressed GPL correction runs (inherited
+    /// default: the GPL output directory).
+    #[arg(long, value_name = "DIR", help_heading = "Advanced Resource Options")]
+    pub gpl_tmp_dir: Option<PathBuf>,
+}
+
+impl GplResourceOpts {
+    pub(crate) fn append_to(&self, command: &mut std::process::Command) {
+        if let Some(memory_limit) = &self.gpl_memory_limit {
+            command.arg("--memory-limit").arg(memory_limit);
+        }
+        if let Some(tmp_dir) = &self.gpl_tmp_dir {
+            command.arg("--tmp-dir").arg(tmp_dir);
+        }
+    }
+}
+
 /// The type of references we might create
 /// to map against for quantification with
 /// alevin-fry.
@@ -175,7 +464,7 @@ pub struct MapQuantOpts {
     #[arg(short, long)]
     pub output: PathBuf,
 
-    /// Number of threads to use when running
+    /// Number of threads to use when running. Values below two warn and use two.
     #[arg(short, long, default_value_t = 16)]
     pub threads: u32,
 
@@ -332,6 +621,12 @@ pub struct MapQuantOpts {
     )]
     pub min_reads: usize,
 
+    #[command(flatten)]
+    pub cell_correction: CellBarcodeCorrectionOpts,
+
+    #[command(flatten)]
+    pub collation_resources: CollationResourceOpts,
+
     /// Path to a transcript to gene map file
     #[arg(short = 'm', long, help_heading = "UMI Resolution Options")]
     pub t2g_map: Option<PathBuf>,
@@ -345,8 +640,7 @@ pub struct MapQuantOpts {
     /// regardless of `--resolution`. Pass 0 to resolve every cell with the
     /// requested strategy.
     ///
-    /// Left unset, alevin-fry's own default applies. Requires alevin-fry
-    /// >= 0.17.1; earlier versions parse the option and ignore it.
+    /// Left unset, alevin-fry's own default applies.
     #[arg(long, value_name = "N", help_heading = "UMI Resolution Options")]
     pub small_thresh: Option<usize>,
 
@@ -671,7 +965,8 @@ pub struct MultiplexQuantOpts {
     #[arg(short, long)]
     pub chemistry: Option<String>,
 
-    /// Override the read geometry string (e.g. '1{b[16]u[12]x[0-3]hamming(f[TTGCTAGGACCG],1)s[10]x:}2{r:}')
+    /// Override the read geometry string (for example,
+    /// `1{b[16]u[12]x[0-3]hamming(f[TTGCTAGGACCG],1)s[10]x:}2{r:}`).
     #[arg(short, long)]
     pub geometry: Option<String>,
 
@@ -697,17 +992,23 @@ pub struct MultiplexQuantOpts {
         value_parser = clap::builder::PossibleValuesParser::new(["forward", "reverse"]))]
     pub sample_bc_ori: Option<String>,
 
-    /// Sample barcode correction mode
-    #[arg(long, default_value = "exact",
-        value_parser = clap::builder::PossibleValuesParser::new(["exact", "1-edit"]),
-        help_heading = "Permit List Options")]
-    pub sample_correction_mode: String,
+    #[command(flatten)]
+    pub cell_correction: CellBarcodeCorrectionOpts,
+
+    #[command(flatten)]
+    pub sample_correction: SampleBarcodeCorrectionOpts,
+
+    #[command(flatten)]
+    pub gpl_resources: GplResourceOpts,
+
+    #[command(flatten)]
+    pub collation_resources: CollationResourceOpts,
 
     /// Path to output directory
     #[arg(short, long)]
     pub output: PathBuf,
 
-    /// Number of threads to use
+    /// Number of threads to use. Values below two warn and use two.
     #[arg(short, long, default_value_t = 16)]
     pub threads: u32,
 
@@ -771,8 +1072,7 @@ pub struct MultiplexQuantOpts {
     /// regardless of `--resolution`. Pass 0 to resolve every cell with the
     /// requested strategy.
     ///
-    /// Left unset, alevin-fry's own default applies. Requires alevin-fry
-    /// >= 0.17.1; earlier versions parse the option and ignore it.
+    /// Left unset, alevin-fry's own default applies.
     #[arg(long, value_name = "N", help_heading = "Quantification Options")]
     pub small_thresh: Option<usize>,
 
@@ -995,4 +1295,127 @@ pub enum WorkflowCommands {
         )]
         skip_step: Option<Vec<u64>>,
     },
+}
+
+#[cfg(test)]
+mod barcode_forwarding_tests {
+    use super::*;
+
+    fn args_of(command: &std::process::Command) -> Vec<String> {
+        command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn omitted_barcode_and_resource_overrides_emit_no_arguments() {
+        let mut command = std::process::Command::new("alevin-fry");
+        CellBarcodeCorrectionOpts::default().append_to(&mut command);
+        SampleBarcodeCorrectionOpts::default().append_to(&mut command);
+        CollationResourceOpts::default().append_to(&mut command);
+        GplResourceOpts::default().append_to(&mut command);
+        assert!(args_of(&command).is_empty());
+    }
+
+    #[test]
+    fn explicit_overrides_are_forwarded_to_their_stage_spellings() {
+        let cell = CellBarcodeCorrectionOpts {
+            cell_bc_correction: Some(CellBarcodeCorrection::Frequency),
+            cell_bc_neighborhood: Some(BarcodeNeighborhood::HammingOne),
+            cell_bc_confidence: Some("39/40".to_string()),
+        };
+        let sample = SampleBarcodeCorrectionOpts {
+            sample_bc_correction: Some(SampleBarcodeCorrection::Frequency),
+            sample_bc_neighborhood: Some(BarcodeNeighborhood::SubstitutionOrShiftOne),
+            sample_bc_confidence: Some("0.975".to_string()),
+            sample_correction_mode: None,
+        };
+        let gpl = GplResourceOpts {
+            gpl_memory_limit: Some("1GiB".to_string()),
+            gpl_tmp_dir: Some(PathBuf::from("/tmp/gpl")),
+        };
+        let collate = CollationResourceOpts {
+            collate_memory_limit: Some("4GB".to_string()),
+        };
+
+        let mut gpl_command = std::process::Command::new("alevin-fry");
+        cell.append_to(&mut gpl_command);
+        sample.append_to(&mut gpl_command);
+        gpl.append_to(&mut gpl_command);
+        assert_eq!(
+            args_of(&gpl_command),
+            [
+                "--cell-bc-correction",
+                "frequency",
+                "--cell-bc-neighborhood",
+                "hamming-1",
+                "--cell-bc-confidence",
+                "39/40",
+                "--sample-bc-correction",
+                "frequency",
+                "--sample-bc-neighborhood",
+                "substitution-or-shift-1",
+                "--sample-bc-confidence",
+                "0.975",
+                "--memory-limit",
+                "1GiB",
+                "--tmp-dir",
+                "/tmp/gpl",
+            ]
+        );
+
+        let mut collate_command = std::process::Command::new("alevin-fry");
+        collate.append_to(&mut collate_command);
+        assert_eq!(args_of(&collate_command), ["--memory-limit", "4GB"]);
+    }
+
+    #[test]
+    fn legacy_sample_modes_translate_without_deprecated_child_arguments() {
+        for (legacy, expected) in [
+            (
+                LegacySampleCorrectionMode::Exact,
+                vec!["--sample-bc-correction", "exact"],
+            ),
+            (
+                LegacySampleCorrectionMode::OneEdit,
+                vec![
+                    "--sample-bc-correction",
+                    "unique",
+                    "--sample-bc-neighborhood",
+                    "substitution-or-shift-1",
+                ],
+            ),
+        ] {
+            let options = SampleBarcodeCorrectionOpts {
+                sample_correction_mode: Some(legacy),
+                ..Default::default()
+            };
+            let mut command = std::process::Command::new("alevin-fry");
+            options.append_to(&mut command);
+            assert_eq!(args_of(&command), expected);
+            assert!(
+                !args_of(&command)
+                    .iter()
+                    .any(|argument| argument == "--sample-correction-mode")
+            );
+        }
+    }
+
+    #[test]
+    fn confidence_and_memory_validation_match_alevin_fry_grammar() {
+        for confidence in ["0", "0.90", "0.975", "39/40", "1"] {
+            assert!(confidence_parser(confidence).is_ok(), "{confidence}");
+        }
+        for confidence in ["", "1.01", "40/39", "1/0", "NaN"] {
+            assert!(confidence_parser(confidence).is_err(), "{confidence}");
+        }
+
+        for memory in ["256MiB", "1GiB", "4GB", "512000000", "1.5G"] {
+            assert!(memory_size_parser(memory).is_ok(), "{memory}");
+        }
+        for memory in ["", "0", "NaN", "1XB"] {
+            assert!(memory_size_parser(memory).is_err(), "{memory}");
+        }
+    }
 }

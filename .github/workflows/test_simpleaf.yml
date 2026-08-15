@@ -47,6 +47,12 @@ jobs:
       - name: Run cargo tests
         run: cargo test --release --verbose
 
+      - name: Strict API documentation
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps
+
       - name: Install conda env
         uses: conda-incubator/setup-miniconda@v3
         with:

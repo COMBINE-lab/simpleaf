@@ -9,6 +9,13 @@ decompression**, rather than a mapping-thread count with decompression happening
 somewhere off the books. A broker inside `piscem` decides how to split that budget
 and re-solves the split while the run proceeds.
 
+`simpleaf` and `alevin-fry` use two threads as a practical minimum. A request of
+zero or one is accepted, accompanied by a prominent warning, and raised to two.
+If the operating system reports only one available execution slot, simpleaf
+warns about that discrepancy and still attempts two. The effective value is
+resolved once per pipeline and reused by mapping, permit-list generation,
+collation or ATAC sorting, and quantification.
+
 This page explains the two options that steer it. Both are forwarded verbatim to
 `piscem`, and both are available on [quant](/simpleaf/quant-command/),
 [multiplex-quant](/simpleaf/flex-quant-command/), and `simpleaf atac process`.

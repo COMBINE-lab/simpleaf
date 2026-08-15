@@ -11,7 +11,7 @@ Options:
           path to output directory (will be created if it doesn't exist)
 
   -t, --threads <THREADS>
-          number of threads to use when running
+          number of threads to use when running; values below two warn and use two
           
           [default: 16]
 
