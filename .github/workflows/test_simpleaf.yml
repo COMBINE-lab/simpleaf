@@ -61,9 +61,35 @@ jobs:
           activate-environment: anaconda-client-env
           environment-file: simpleaf_conda_env.yml
 
+      # The bioconda package can lag a newly published alevin-fry release.
+      # Exercise simpleaf against the release artifact that satisfies the
+      # version contract instead of silently testing an older conda package.
+      - name: Install alevin-fry 0.18.0 release artifact
+        shell: bash -l {0}
+        run: |
+          case "$(uname -s)-$(uname -m)" in
+            Linux-x86_64) target=x86_64-unknown-linux-gnu ;;
+            Linux-aarch64) target=aarch64-unknown-linux-gnu ;;
+            Darwin-x86_64) target=x86_64-apple-darwin ;;
+            Darwin-arm64) target=aarch64-apple-darwin ;;
+            *) echo "unsupported CI platform: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+          esac
+
+          archive="alevin-fry-${target}.tar.xz"
+          install_dir="${RUNNER_TEMP}/alevin-fry-0.18.0"
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            "https://github.com/COMBINE-lab/alevin-fry/releases/download/v0.18.0/${archive}" \
+            -o "${RUNNER_TEMP}/${archive}"
+          mkdir -p "${install_dir}"
+          tar -xJf "${RUNNER_TEMP}/${archive}" \
+            --strip-components=1 -C "${install_dir}"
+          "${install_dir}/alevin-fry" --version
+          echo "${install_dir}" >> "${GITHUB_PATH}"
+
       - name: Test simpleaf
         shell: bash -l {0}
         run: |
+          export PATH="${RUNNER_TEMP}/alevin-fry-0.18.0:${PATH}"
           cd scripts
           chmod +x test_simpleaf.sh
           ulimit -n 2048
