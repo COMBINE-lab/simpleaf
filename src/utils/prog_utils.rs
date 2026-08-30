@@ -25,12 +25,15 @@ use file_requirements::{FileRequirementBuildError, FileRequirementBuilder};
 /// Keep `simpleaf_conda_env.yml` in step when these change; it pins the same
 /// programs for CI and cannot read these constants.
 pub mod min_versions {
-    /// piscem 0.22.0 is the first release built against piscem-rs 0.9.x, which
-    /// is where `--decoder` and `--thread-policy` appear, and where `-t` became
-    /// a budget shared between mapping and gzip decoding. simpleaf forwards
-    /// those options unconditionally, so an older piscem would be handed flags
-    /// it does not recognise.
-    pub const PISCEM: &str = ">=0.22.0, <1.0.0";
+    /// piscem 0.23.0 is the first release built against piscem-rs 0.10
+    /// (sshash-lib 0.7, the unified canonical minimizer scheme): its index
+    /// format is incompatible with earlier releases in BOTH directions —
+    /// 0.23 rejects old indexes with a rebuild message, and older piscem
+    /// cannot read 0.23-built indexes. Requiring >=0.23 keeps the piscem
+    /// simpleaf indexes with and the piscem it maps with format-consistent.
+    /// (0.22.0 introduced `--decoder`/`--thread-policy` and the shared `-t`
+    /// budget, which simpleaf forwards unconditionally.)
+    pub const PISCEM: &str = ">=0.23.0, <1.0.0";
 
     /// alevin-fry 0.18.0 provides deterministic compiled barcode-correction
     /// plans and the correction/resource controls forwarded by simpleaf 0.28.
