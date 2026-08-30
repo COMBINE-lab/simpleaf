@@ -9,7 +9,7 @@ die() {
 usage() {
     cat <<'EOF'
 Usage:
-  ./bump_and_publish.sh <version> [--publish] [--dry-run]
+  ./bump_and_publish.sh <version> [--publish] [--dry-run] [--allow-same-version]
   ./bump_and_publish.sh [--publish] [--dry-run] <version>
 
 Options:
@@ -189,6 +189,7 @@ compare_semver() {
 VERSION=""
 PUBLISH=false
 DRY_RUN=false
+ALLOW_SAME_VERSION=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -197,6 +198,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dry-run)
             DRY_RUN=true
+            ;;
+        --allow-same-version)
+            ALLOW_SAME_VERSION=true
             ;;
         -h|--help)
             usage
@@ -285,8 +289,12 @@ CURRENT_VERSION="$(
 is_valid_semver "$CURRENT_VERSION" || die "current crate version '$CURRENT_VERSION' is not valid SemVer"
 
 CMP="$(compare_semver "$VERSION" "$CURRENT_VERSION")"
-if [[ "$CMP" -le 0 ]]; then
-    die "new version '$VERSION' must be greater than current version '$CURRENT_VERSION'"
+SAME_VERSION=false
+if [[ "$CMP" -eq 0 && "$ALLOW_SAME_VERSION" == true ]]; then
+    SAME_VERSION=true
+    echo "Crate already at $VERSION; skipping bump edits (--allow-same-version)"
+elif [[ "$CMP" -le 0 ]]; then
+    die "new version '$VERSION' must be greater than current version '$CURRENT_VERSION' (pass --allow-same-version to release the current version as-is)"
 fi
 
 if git rev-parse "$TAG" >/dev/null 2>&1; then
@@ -340,7 +348,7 @@ echo "  version: $CURRENT_VERSION -> $VERSION"
 echo "Updating $LOCKFILE"
 echo "  package entry version: $CURRENT_VERSION -> $VERSION"
 
-if [[ "$DRY_RUN" == false ]]; then
+if [[ "$DRY_RUN" == false && "$SAME_VERSION" == false ]]; then
     MANIFEST_BACKUP="$(mktemp "${TMPDIR:-/tmp}/simpleaf-Cargo.toml.XXXXXX")"
     LOCKFILE_BACKUP="$(mktemp "${TMPDIR:-/tmp}/simpleaf-Cargo.lock.XXXXXX")"
     cp "$ROOT_CARGO" "$MANIFEST_BACKUP"
@@ -359,7 +367,7 @@ fi
 
 UPDATED_VERSION="$CURRENT_VERSION"
 UPDATED_LOCK_VERSION="$CURRENT_VERSION"
-if [[ "$DRY_RUN" == false ]]; then
+if [[ "$DRY_RUN" == false && "$SAME_VERSION" == false ]]; then
     UPDATED_VERSION="$(
         awk '
             /^\[package\]/ { in_package=1; next }
@@ -397,8 +405,12 @@ else
     fi
 fi
 
-run git add "$ROOT_CARGO" "$LOCKFILE"
-run git commit -m "chore(release): bump ${CRATE_NAME} to v${VERSION}"
+if [[ "$SAME_VERSION" == false ]]; then
+    run git add "$ROOT_CARGO" "$LOCKFILE"
+    run git commit -m "chore(release): bump ${CRATE_NAME} to v${VERSION}"
+else
+    echo "Skipping bump commit (crate already at v${VERSION})"
+fi
 
 if [[ "$DRY_RUN" == false ]]; then
     COMMIT_CREATED=true
