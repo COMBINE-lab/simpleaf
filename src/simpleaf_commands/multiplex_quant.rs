@@ -779,15 +779,17 @@ fn resolve_sample_bc_list(
     let plist_dir = af_home.join("plist");
     std::fs::create_dir_all(&plist_dir)?;
 
-    if let Some(ref hash) = sbc_info.plist_name {
-        let cached = plist_dir.join(hash);
-        if cached.exists() {
-            info!("Sample barcode list cached: {}", cached.display());
-            return Ok(cached);
-        }
-    }
-
-    if let Some(ref url) = sbc_info.remote_url {
+    // Resolve the chemistry's registry sample-barcode file (all samples, every
+    // spelling), from cache or by download.
+    let registry_path = if let Some(cached) = sbc_info
+        .plist_name
+        .as_ref()
+        .map(|hash| plist_dir.join(hash))
+        .filter(|p| p.exists())
+    {
+        info!("Sample barcode list cached: {}", cached.display());
+        cached
+    } else if let Some(ref url) = sbc_info.remote_url {
         let dest = if let Some(ref hash) = sbc_info.plist_name {
             plist_dir.join(hash)
         } else {
@@ -796,15 +798,126 @@ fn resolve_sample_bc_list(
         info!("Downloading sample barcode list...");
         prog_utils::download_to_file(url, &dest)?;
         info!("Downloaded to {}", dest.display());
-        Ok(dest)
+        dest
     } else {
         bail!("Chemistry has no sample barcode list URL. Provide --sample-bc-list.");
+    };
+
+    // With a sample sheet, select and rename a subset of the samples, taking the
+    // barcode sequences (every spelling) from the registry file so the caller
+    // never transcribes them.
+    match opts.samples {
+        Some(ref sheet) => derive_sample_bc_list(&registry_path, sheet, &opts.output),
+        None => Ok(registry_path),
     }
+}
+
+/// Build a sample-barcode list for a caller-selected, caller-named subset of the
+/// chemistry's samples, without hand-transcribing any barcode sequence.
+///
+/// `registry_path` is the chemistry's 3-column file (`observed  canonical
+/// sample_id`) holding every spelling of every sample. `sheet_path` maps a
+/// registry `sample_id` to the caller's name (one or two tab-separated columns;
+/// a single column keeps the id as the name). The result is the registry rows
+/// for the requested ids only, with the sample-name column replaced by the
+/// caller's name — every spelling preserved, so no spelling can be dropped.
+fn derive_sample_bc_list(
+    registry_path: &Path,
+    sheet_path: &Path,
+    output_dir: &Path,
+) -> anyhow::Result<PathBuf> {
+    use std::io::{BufRead, BufReader, BufWriter, Write};
+
+    // Parse the sheet: id -> name (name defaults to id), preserving first-seen
+    // order for stable, informative errors.
+    let sheet = std::fs::File::open(sheet_path)
+        .with_context(|| format!("couldn't open sample sheet: {}", sheet_path.display()))?;
+    let mut requested_order: Vec<String> = Vec::new();
+    let mut name_by_id: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    for line in BufReader::new(sheet).lines() {
+        let line = line?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let mut cols = trimmed.split('\t');
+        let id = cols.next().unwrap().trim().to_string();
+        let name = cols
+            .next()
+            .map(|n| n.trim().to_string())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| id.clone());
+        if name_by_id.insert(id.clone(), name).is_none() {
+            requested_order.push(id);
+        }
+    }
+    if requested_order.is_empty() {
+        bail!("sample sheet {} contained no samples", sheet_path.display());
+    }
+
+    // Rewrite the registry rows for the requested ids with the caller's names.
+    std::fs::create_dir_all(output_dir)?;
+    let registry = std::fs::File::open(registry_path).with_context(|| {
+        format!(
+            "couldn't open registry sample barcode list: {}",
+            registry_path.display()
+        )
+    })?;
+    let out_path = output_dir.join("sample_bc_list.derived.tsv");
+    let mut out = BufWriter::new(std::fs::File::create(&out_path)?);
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut spellings = 0usize;
+    for line in BufReader::new(registry).lines() {
+        let line = line?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let parts: Vec<&str> = trimmed.split('\t').collect();
+        if parts.len() < 3 {
+            bail!(
+                "registry sample barcode list {} is not the expected 3-column \
+                 (observed, canonical, sample_id) format",
+                registry_path.display()
+            );
+        }
+        if let Some(name) = name_by_id.get(parts[2]) {
+            writeln!(out, "{}\t{}\t{}", parts[0], parts[1], name)?;
+            seen.insert(parts[2].to_string());
+            spellings += 1;
+        }
+    }
+    out.flush()?;
+
+    // Every requested id must exist, or a typo would silently drop a sample.
+    let missing: Vec<&str> = requested_order
+        .iter()
+        .filter(|id| !seen.contains(*id))
+        .map(String::as_str)
+        .collect();
+    if !missing.is_empty() {
+        bail!(
+            "sample sheet requests id(s) absent from the chemistry's registry \
+             sample barcode list: {}. Check the ids against the chemistry preset.",
+            missing.join(", ")
+        );
+    }
+    info!(
+        "Derived sample barcode list for {} sample(s) ({} spellings) at {}",
+        seen.len(),
+        spellings,
+        out_path.display()
+    );
+    Ok(out_path)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_user_supplied_index, resolved_sample_bc_orientation, t2g_mode};
+    use super::{
+        derive_sample_bc_list, resolve_user_supplied_index, resolved_sample_bc_orientation,
+        t2g_mode,
+    };
     use crate::simpleaf_commands::MultiplexQuantOpts;
     use crate::utils::chem_utils::{CustomChemistry, SampleBcListInfo};
     use crate::utils::probe_utils::ProbeT2gMode;
@@ -813,6 +926,75 @@ mod tests {
     use std::fs;
     use std::path::Path;
     use tempfile::tempdir;
+
+    /// A registry file in the shipped 3-column format: two samples, each with
+    /// several spellings mapping to one canonical barcode.
+    const REGISTRY: &str = "\
+ACTTTAGG\tACTTTAGG\tBC001
+CTTTAGGC\tACTTTAGG\tBC001
+CGAGGGTA\tACTTTAGG\tBC001
+TGGACTAT\tTGGACTAT\tBC002
+GGACTATC\tTGGACTAT\tBC002
+GATCCTCT\tGATCCTCT\tBC003
+";
+
+    fn derived_lines(dir: &Path) -> Vec<String> {
+        fs::read_to_string(dir.join("sample_bc_list.derived.tsv"))
+            .unwrap()
+            .lines()
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn sample_sheet_selects_subset_and_renames_keeping_all_spellings() {
+        let dir = tempdir().unwrap();
+        let reg = dir.path().join("registry.tsv");
+        fs::write(&reg, REGISTRY).unwrap();
+        // select BC003 and BC001 (out of order), rename BC001, keep BC003's id.
+        let sheet = dir.path().join("samples.tsv");
+        fs::write(&sheet, "BC003\tkidney\nBC001\n").unwrap();
+
+        let out = derive_sample_bc_list(&reg, &sheet, dir.path()).unwrap();
+        let lines = derived_lines(out.parent().unwrap());
+        // BC002 dropped; BC001 keeps all 3 spellings (named by its id); BC003 renamed.
+        assert_eq!(
+            lines,
+            vec![
+                "ACTTTAGG\tACTTTAGG\tBC001",
+                "CTTTAGGC\tACTTTAGG\tBC001",
+                "CGAGGGTA\tACTTTAGG\tBC001",
+                "GATCCTCT\tGATCCTCT\tkidney",
+            ]
+        );
+    }
+
+    #[test]
+    fn sample_sheet_two_column_renames() {
+        let dir = tempdir().unwrap();
+        let reg = dir.path().join("registry.tsv");
+        fs::write(&reg, REGISTRY).unwrap();
+        let sheet = dir.path().join("samples.tsv");
+        fs::write(&sheet, "BC002\tlung\n").unwrap();
+        derive_sample_bc_list(&reg, &sheet, dir.path()).unwrap();
+        assert_eq!(
+            derived_lines(dir.path()),
+            vec!["TGGACTAT\tTGGACTAT\tlung", "GGACTATC\tTGGACTAT\tlung"]
+        );
+    }
+
+    #[test]
+    fn sample_sheet_unknown_id_is_an_error() {
+        let dir = tempdir().unwrap();
+        let reg = dir.path().join("registry.tsv");
+        fs::write(&reg, REGISTRY).unwrap();
+        let sheet = dir.path().join("samples.tsv");
+        fs::write(&sheet, "BC001\ta\nBC999\tb\n").unwrap();
+        let err = derive_sample_bc_list(&reg, &sheet, dir.path())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("BC999"), "{err}");
+    }
 
     fn write_piscem_index(prefix: &Path) {
         fs::write(prefix.with_extension("ctab"), "").expect("failed to write ctab");

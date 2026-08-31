@@ -101,8 +101,7 @@ pub struct PiscemDecoderOpts {
 /// and stay serial below its bar (no low-budget regression). This is applied
 /// only on the Flex (`multiplex-quant`) path; standard scRNA keeps piscem's
 /// default until a full-index experiment justifies changing it there.
-pub const FLEX_DECODE_THREAD_POLICY: &str =
-    r#"{"parallel_decode": {"min_threads_per_stream": 4}}"#;
+pub const FLEX_DECODE_THREAD_POLICY: &str = r#"{"parallel_decode": {"min_threads_per_stream": 4}}"#;
 
 impl PiscemDecoderOpts {
     /// Append these options to a piscem `map-*` invocation.
@@ -1077,6 +1076,21 @@ pub struct MultiplexQuantOpts {
     /// (overrides auto-download). 3-column TSV: observed, canonical, sample_name.
     #[arg(long, help_heading = "Reference Options")]
     pub sample_bc_list: Option<PathBuf>,
+
+    /// Select and name a subset of the chemistry's samples without hand-writing
+    /// barcodes. TSV mapping a registry sample id to your name, one per line
+    /// (e.g. `BC001<TAB>kidney`); a single-column line keeps the registry id as
+    /// the name. The barcode sequences — every spelling — always come from the
+    /// chemistry's registry list, so omitting a spelling (the usual cause of
+    /// silent demultiplexing loss) is impossible. Requires --chemistry; cannot be
+    /// combined with --sample-bc-list.
+    #[arg(
+        long,
+        value_name = "SHEET",
+        conflicts_with = "sample_bc_list",
+        help_heading = "Reference Options"
+    )]
+    pub samples: Option<PathBuf>,
 
     /// Comma-separated list of R1 FASTQ files
     #[arg(
