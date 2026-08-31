@@ -101,13 +101,14 @@ Piscem Mapping Options:
 
           [default: auto]
 
-      --thread-policy <FILE>
-          JSON file overriding piscem's thread and decoder policy.
+      --thread-policy <JSON_OR_PATH>
+          Piscem thread and decoder policy, as inline JSON or a path to a JSON file.
 
-          Every field is optional and defaults to a measured value; an unrecognised field is an
-          error rather than a silent no-op. Currently understood: `{"parallel_decode":
-          {"min_threads_per_stream": 8}}`, the number of threads that must be free per gzip input
-          before the parallel decoder is engaged at all.
+          A value beginning with `{` is parsed as inline JSON; anything else is a path. Every field
+          is optional and defaults to a measured value; an unrecognised field is an error rather
+          than a silent no-op. Currently understood: `{"parallel_decode": {"min_threads_per_stream":
+          8}}`, the number of threads that must be free per gzip input before the parallel decoder
+          is engaged at all.
 
 Permit List Generation Options:
   -k, --knee

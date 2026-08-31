@@ -123,6 +123,14 @@ Reference Options:
           Path to sample/probe barcode file with rotation mapping (overrides auto-download).
           3-column TSV: observed, canonical, sample_name
 
+      --samples <SHEET>
+          Select and name a subset of the chemistry's samples without hand-writing barcodes. TSV
+          mapping a registry sample id to your name, one per line (e.g. `BC001<TAB>kidney`); a
+          single-column line keeps the registry id as the name. The barcode sequences — every
+          spelling — always come from the chemistry's registry list, so omitting a spelling (the
+          usual cause of silent demultiplexing loss) is impossible. Requires --chemistry; cannot be
+          combined with --sample-bc-list
+
 Quantification Options:
   -r, --resolution <RESOLUTION>
           UMI resolution mode
@@ -170,13 +178,14 @@ Piscem Mapping Options:
 
           [default: auto]
 
-      --thread-policy <FILE>
-          JSON file overriding piscem's thread and decoder policy.
+      --thread-policy <JSON_OR_PATH>
+          Piscem thread and decoder policy, as inline JSON or a path to a JSON file.
 
-          Every field is optional and defaults to a measured value; an unrecognised field is an
-          error rather than a silent no-op. Currently understood: `{"parallel_decode":
-          {"min_threads_per_stream": 8}}`, the number of threads that must be free per gzip input
-          before the parallel decoder is engaged at all.
+          A value beginning with `{` is parsed as inline JSON; anything else is a path. Every field
+          is optional and defaults to a measured value; an unrecognised field is an error rather
+          than a silent no-op. Currently understood: `{"parallel_decode": {"min_threads_per_stream":
+          8}}`, the number of threads that must be free per gzip input before the parallel decoder
+          is engaged at all.
 
 Permit List Options:
       --min-reads <MIN_READS>
