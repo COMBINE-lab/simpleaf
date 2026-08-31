@@ -106,30 +106,16 @@ pub const FLEX_DECODE_THREAD_POLICY: &str = r#"{"parallel_decode": {"min_threads
 impl PiscemDecoderOpts {
     /// Append these options to a piscem `map-*` invocation.
     ///
-    /// `--thread-policy` is only passed when the user supplied one, so piscem's
-    /// own measured defaults apply otherwise.
+    /// `--thread-policy` is passed through only when the user supplied one (so
+    /// piscem's own defaults apply otherwise), and only as a path — the value
+    /// reaches piscem unchanged. Callers that inject a default policy or need to
+    /// accept inline JSON (the Flex `multiplex-quant` path) resolve the policy to
+    /// a file themselves before building the command; see
+    /// `multiplex_quant::materialize_thread_policy` and [`FLEX_DECODE_THREAD_POLICY`].
     pub fn append_to(&self, cmd: &mut std::process::Command) {
-        self.append_to_with_default_policy(cmd, None);
-    }
-
-    /// Like [`append_to`](Self::append_to), but supplies a `default_policy` when
-    /// the user did not set `--thread-policy`.
-    ///
-    /// A user-supplied policy always wins; the default only fills the gap. This
-    /// lets a workload with a known decode-to-map ratio (Flex — see
-    /// [`FLEX_DECODE_THREAD_POLICY`]) ship a tuned engagement threshold without
-    /// changing piscem's cross-workload default or overriding an explicit choice.
-    pub fn append_to_with_default_policy(
-        &self,
-        cmd: &mut std::process::Command,
-        default_policy: Option<&str>,
-    ) {
         cmd.arg("--decoder").arg(&self.decoder);
-        match self.thread_policy.as_deref().or(default_policy) {
-            Some(policy) => {
-                cmd.arg("--thread-policy").arg(policy);
-            }
-            None => {}
+        if let Some(policy) = self.thread_policy.as_deref() {
+            cmd.arg("--thread-policy").arg(policy);
         }
     }
 }

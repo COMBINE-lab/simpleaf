@@ -49,6 +49,25 @@ fn resolved_sample_bc_orientation<'a>(
     })
 }
 
+/// Return a filesystem path for a thread-policy value. Inline JSON (a value
+/// whose first non-whitespace byte is `{`) is written into `output_dir` and its
+/// path returned; anything else is treated as an already-existing path. piscem's
+/// `--thread-policy` accepts a path on every release simpleaf targets today, so
+/// this keeps the Flex default (and any user-supplied inline value) working
+/// without requiring a newer piscem. A path is passed through unchanged and
+/// works with every piscem.
+fn materialize_thread_policy(policy: &str, output_dir: &Path) -> anyhow::Result<PathBuf> {
+    if policy.trim_start().starts_with('{') {
+        std::fs::create_dir_all(output_dir)?;
+        let path = output_dir.join("thread_policy.json");
+        std::fs::write(&path, policy)
+            .with_context(|| format!("could not write thread policy to {}", path.display()))?;
+        Ok(path)
+    } else {
+        Ok(PathBuf::from(policy))
+    }
+}
+
 fn write_multiplex_metadata(
     output_dir: &Path,
     quant_output: &Path,
@@ -385,16 +404,21 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
     // the parallel decoder pays much earlier than piscem's cross-workload
     // default assumes. Engage it earlier here unless the user set their own
     // policy. See `FLEX_DECODE_THREAD_POLICY`.
+    piscem_cmd.arg("--decoder").arg(&opts.decode.decoder);
+    let effective_policy = opts
+        .decode
+        .thread_policy
+        .as_deref()
+        .unwrap_or(crate::simpleaf_commands::FLEX_DECODE_THREAD_POLICY);
     if opts.decode.thread_policy.is_none() {
-        info!(
-            "Flex default decoder engagement: {}",
-            crate::simpleaf_commands::FLEX_DECODE_THREAD_POLICY
-        );
+        info!("Flex default decoder engagement: {effective_policy}");
     }
-    opts.decode.append_to_with_default_policy(
-        &mut piscem_cmd,
-        Some(crate::simpleaf_commands::FLEX_DECODE_THREAD_POLICY),
-    );
+    // The piscem releases simpleaf targets today accept only a path for
+    // --thread-policy, so materialise an inline-JSON policy (the Flex default,
+    // or a user-supplied inline value) to a file first. A path is passed
+    // through unchanged and works with every piscem.
+    let thread_policy_path = materialize_thread_policy(effective_policy, output_dir)?;
+    piscem_cmd.arg("--thread-policy").arg(&thread_policy_path);
 
     let r1_str: Vec<String> = opts
         .reads1
@@ -915,8 +939,8 @@ fn derive_sample_bc_list(
 #[cfg(test)]
 mod tests {
     use super::{
-        derive_sample_bc_list, resolve_user_supplied_index, resolved_sample_bc_orientation,
-        t2g_mode,
+        derive_sample_bc_list, materialize_thread_policy, resolve_user_supplied_index,
+        resolved_sample_bc_orientation, t2g_mode,
     };
     use crate::simpleaf_commands::MultiplexQuantOpts;
     use crate::utils::chem_utils::{CustomChemistry, SampleBcListInfo};
@@ -981,6 +1005,25 @@ GATCCTCT\tGATCCTCT\tBC003
             derived_lines(dir.path()),
             vec!["TGGACTAT\tTGGACTAT\tlung", "GGACTATC\tTGGACTAT\tlung"]
         );
+    }
+
+    #[test]
+    fn inline_thread_policy_is_written_to_a_file() {
+        let dir = tempdir().unwrap();
+        let policy = r#"{"parallel_decode": {"min_threads_per_stream": 4}}"#;
+        let path = materialize_thread_policy(policy, dir.path()).unwrap();
+        assert!(path.starts_with(dir.path()));
+        assert_eq!(fs::read_to_string(&path).unwrap(), policy);
+    }
+
+    #[test]
+    fn path_thread_policy_is_passed_through_unchanged() {
+        let dir = tempdir().unwrap();
+        // A non-`{` value is treated as an existing path and returned as-is; no
+        // file is written into the output dir.
+        let path = materialize_thread_policy("/some/where/policy.json", dir.path()).unwrap();
+        assert_eq!(path, Path::new("/some/where/policy.json"));
+        assert!(!dir.path().join("thread_policy.json").exists());
     }
 
     #[test]
