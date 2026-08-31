@@ -1,5 +1,5 @@
 use crate::atac::commands::ProcessOpts;
-use crate::core::{context, exec, index_meta, io, runtime};
+use crate::core::{context, exec, index_meta, io};
 use crate::utils::chem_utils::ExpectedOri;
 use crate::utils::chem_utils::QueryInRegistry;
 use crate::utils::chem_utils::get_single_custom_chem_from_file;
@@ -73,6 +73,20 @@ fn push_advanced_piscem_options(
     piscem_map_cmd
         .arg("--max-read-occ")
         .arg(opts.max_read_occ.to_string());
+
+    // `--thr` was accepted on simpleaf's command line and then dropped: it was
+    // never forwarded, so setting it silently did nothing and piscem always
+    // used its own default. piscem's `map-sc-atac` takes it, so pass it on.
+    piscem_map_cmd.arg("--thr").arg(opts.thr.to_string());
+
+    // Same story as `--thr`: `--barcode-length` was parsed and documented (with
+    // its own default of 16) and then never forwarded, so piscem fell back to
+    // its own default -- identical at 16, which is why this went unnoticed, but
+    // any user who set it got their value silently ignored. piscem spells it
+    // `--bclen`.
+    piscem_map_cmd
+        .arg("--bclen")
+        .arg(opts.barcode_length.to_string());
 
     Ok(())
 }
@@ -162,28 +176,24 @@ pub(crate) fn check_progs<P: AsRef<Path>>(
         .as_ref()
         .context("alevin-fry program info is missing; please run `simpleaf set-paths`.")?;
 
-    match prog_utils::check_version_constraints(
+    let af_ver = prog_utils::check_version_constraints(
         "alevin-fry",
-        ">=0.16.1, <1.0.0",
+        prog_utils::min_versions::ALEVIN_FRY,
         &af_prog_info.version,
-    ) {
-        Ok(af_ver) => info!("found alevin-fry version {:#}, proceeding", af_ver),
-        Err(e) => return Err(e),
-    }
+    )?;
+    info!("found alevin-fry version {:#}, proceeding", af_ver);
 
     let piscem_prog_info = rp
         .piscem
         .as_ref()
         .context("piscem program info is missing; please run `simpleaf set-paths`.")?;
 
-    match prog_utils::check_version_constraints(
+    let piscem_ver = prog_utils::check_version_constraints(
         "piscem",
-        ">=0.18.0, <1.0.0",
+        prog_utils::min_versions::PISCEM,
         &piscem_prog_info.version,
-    ) {
-        Ok(piscem_ver) => info!("found piscem version {:#}, proceeding", piscem_ver),
-        Err(e) => return Err(e),
-    }
+    )?;
+    info!("found piscem version {:#}, proceeding", piscem_ver);
 
     if opts.call_peaks {
         let macs_prog_info = rp
@@ -192,14 +202,12 @@ pub(crate) fn check_progs<P: AsRef<Path>>(
             .context(
                 "macs3 program info is missing; please run `simpleaf set-paths` before using `--call-peaks`.",
             )?;
-        match prog_utils::check_version_constraints(
+        let macs_ver = prog_utils::check_version_constraints(
             "macs3",
-            ">=3.0.2, <4.0.0",
+            prog_utils::min_versions::MACS3,
             &macs_prog_info.version,
-        ) {
-            Ok(macs_ver) => info!("found macs3 version {:#}, proceeding", macs_ver),
-            Err(e) => return Err(e),
-        }
+        )?;
+        info!("found macs3 version {:#}, proceeding", macs_ver);
     }
 
     Ok(())
@@ -220,7 +228,7 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
 
     // using a piscem index
     let mut piscem_map_cmd =
-        std::process::Command::new(format!("{}", &piscem_prog_info.exe_path.display()));
+        std::process::Command::new(format!("{}", piscem_prog_info.exe_path.display()));
     let index_path = format!("{}", index_base.display());
     piscem_map_cmd
         .arg("map-sc-atac")
@@ -233,48 +241,22 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
         .arg("--bin-overlap")
         .arg(opts.bin_overlap.to_string());
 
-    // if the user requested more threads than can be used
-    let (threads, capped_at) = runtime::cap_threads(opts.threads);
-    if let Some(max_threads) = capped_at {
-        warn!(
-            "The maximum available parallelism is {}, but {} threads were requested.",
-            max_threads, opts.threads
-        );
-        warn!("setting number of threads to {}", max_threads);
-    }
-
     // location of output directory, number of threads
     let map_output = opts.output.join("af_map");
     piscem_map_cmd
         .arg("--threads")
-        .arg(threads.to_string())
+        .arg(opts.threads.to_string())
         .arg("-o")
         .arg(&map_output);
 
     // add either the paired-end or single-end read arguments
     add_read_args(&mut piscem_map_cmd, opts)?;
 
-    // if the user is requesting a mapping option that required
-    // piscem version >= 0.18.0, ensure we have that
-    match prog_utils::check_version_constraints(
-        "piscem",
-        ">=0.18.0, <1.0.0",
-        &piscem_prog_info.version,
-    ) {
-        Ok(_piscem_ver) => {
-            push_advanced_piscem_options(&mut piscem_map_cmd, opts)?;
-        }
-        Err(_) => {
-            info!(
-                r#"
-Simpleaf is currently using piscem version {}, but you must be using version >= 0.18.0 in order to use the
-mapping options specific to this, or later versions. If you wish to use these options, please upgrade your
-piscem version or, if you believe you have a sufficiently new version installed, update the executable
-being used by simpleaf"#,
-                &piscem_prog_info.version
-            );
-        }
-    }
+    // No version gate here any more: `set-paths` refuses a piscem older than
+    // `min_versions::PISCEM`, so the branch that quietly dropped these options
+    // for pre-0.18.0 piscem could never be taken.
+    push_advanced_piscem_options(&mut piscem_map_cmd, opts)?;
+    opts.decode.append_to(&mut piscem_map_cmd);
 
     let map_cmd_string = prog_utils::get_cmd_line_string(&piscem_map_cmd);
     info!("map command : {}", map_cmd_string);
@@ -323,8 +305,7 @@ fn macs_call_peaks(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<Ma
     let bedsuf = if opts.compress { ".bed.gz" } else { ".bed" };
     let bed_input = gpl_dir.join(format!("map{}", bedsuf));
     let peaks_output = gpl_dir.join("macs");
-    let mut macs_cmd =
-        std::process::Command::new(format!("{}", &macs_prog_info.exe_path.display()));
+    let mut macs_cmd = std::process::Command::new(format!("{}", macs_prog_info.exe_path.display()));
     macs_cmd
         .arg("callpeak")
         .arg("-f")
@@ -381,15 +362,26 @@ fn macs_call_peaks(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<Ma
 pub(crate) fn gen_bed(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<()> {
     let gpl = af_gpl(af_home_path, opts)?;
     let sort = af_sort(af_home_path, opts)?;
-    let macs = macs_call_peaks(af_home_path, opts)?;
-    info!(
-        "ATAC downstream stages completed (gpl: {:.2}s, sort: {:.2}s, macs: {:.2}s).",
-        gpl.gpl_duration_secs, sort.sort_duration_secs, macs.macs_duration_secs
-    );
-    info!(
-        "ATAC commands: gpl=`{}`, sort=`{}`, macs=`{}`",
-        gpl.gpl_cmd, sort.sort_cmd, macs.macs_cmd
-    );
+    if opts.call_peaks {
+        let macs = macs_call_peaks(af_home_path, opts)?;
+        info!(
+            "ATAC downstream stages completed (gpl: {:.2}s, sort: {:.2}s, macs: {:.2}s).",
+            gpl.gpl_duration_secs, sort.sort_duration_secs, macs.macs_duration_secs
+        );
+        info!(
+            "ATAC commands: gpl=`{}`, sort=`{}`, macs=`{}`",
+            gpl.gpl_cmd, sort.sort_cmd, macs.macs_cmd
+        );
+    } else {
+        info!(
+            "ATAC downstream stages completed (gpl: {:.2}s, sort: {:.2}s; peak calling not requested).",
+            gpl.gpl_duration_secs, sort.sort_duration_secs
+        );
+        info!(
+            "ATAC commands: gpl=`{}`, sort=`{}`",
+            gpl.gpl_cmd, sort.sort_cmd
+        );
+    }
     Ok(())
 }
 
@@ -405,7 +397,7 @@ fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<SortStageO
 
     let gpl_dir = opts.output.join("af_process");
     let rad_dir = opts.output.join("af_map");
-    let mut af_sort = std::process::Command::new(format!("{}", &af_prog_info.exe_path.display()));
+    let mut af_sort = std::process::Command::new(format!("{}", af_prog_info.exe_path.display()));
     af_sort
         .arg("atac")
         .arg("sort")
@@ -414,16 +406,7 @@ fn af_sort(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<SortStageO
         .arg("--rad-dir")
         .arg(rad_dir);
 
-    // if the user requested more threads than can be used
-    let (threads, capped_at) = runtime::cap_threads(opts.threads);
-    if let Some(max_threads) = capped_at {
-        warn!(
-            "The maximum available parallelism is {}, but {} threads were requested.",
-            max_threads, opts.threads
-        );
-        warn!("setting number of threads to {}", max_threads);
-    }
-    af_sort.arg("--threads").arg(threads.to_string());
+    af_sort.arg("--threads").arg(opts.threads.to_string());
 
     if opts.compress {
         af_sort.arg("--compress");
@@ -584,7 +567,7 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<GplStageOut
     };
 
     let map_file = opts.output.join("af_map");
-    let mut af_gpl = std::process::Command::new(format!("{}", &af_prog_info.exe_path.display()));
+    let mut af_gpl = std::process::Command::new(format!("{}", af_prog_info.exe_path.display()));
     af_gpl
         .arg("atac")
         .arg("generate-permit-list")
@@ -608,16 +591,8 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<GplStageOut
         bail!("unsupported filter method in atac-seq process.");
     }
 
-    // if the user requested more threads than can be used
-    let (threads, capped_at) = runtime::cap_threads(opts.threads);
-    if let Some(max_threads) = capped_at {
-        warn!(
-            "The maximum available parallelism is {}, but {} threads were requested.",
-            max_threads, opts.threads
-        );
-        warn!("setting number of threads to {}", max_threads);
-    }
-    af_gpl.arg("--threads").arg(format!("{}", threads));
+    af_gpl.arg("--threads").arg(opts.threads.to_string());
+    opts.cell_correction.append_to(&mut af_gpl);
 
     let gpl_cmd_string = prog_utils::get_cmd_line_string(&af_gpl);
     info!("gpl command : {}", gpl_cmd_string);
@@ -660,42 +635,45 @@ fn af_gpl(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Result<GplStageOut
 mod tests {
     use std::fs;
 
-    use crate::atac::commands::{AtacChemistry, Macs3GenomeSize};
-
     use super::*;
 
+    /// Build `ProcessOpts` the way a user would: by parsing a command line.
+    /// A struct literal has to name every field, so adding an option to the
+    /// CLI breaks this file with an E0063 that only `--all-targets` surfaces
+    /// -- `cargo build` does not compile tests. Parsing instead lets new
+    /// options pick up their clap defaults, and anything genuinely required
+    /// fails loudly at parse time.
     fn base_process_opts() -> ProcessOpts {
-        ProcessOpts {
-            index: PathBuf::from("/tmp/index"),
-            reads1: None,
-            reads2: None,
-            reads: None,
-            barcode_reads: vec![],
-            chemistry: AtacChemistry::TenxV2,
-            barcode_length: 16,
-            output: PathBuf::from("/tmp/out"),
-            threads: 1,
-            call_peaks: false,
-            permit_barcode_ori: None,
-            unfiltered_pl: None,
-            min_reads: 10,
-            compress: false,
-            ignore_ambig_hits: false,
-            no_poison: false,
-            use_chr: false,
-            thr: 0.8,
-            bin_size: 50,
-            bin_overlap: 2,
-            no_tn5_shift: false,
-            check_kmer_orphan: false,
-            max_ec_card: 4096,
-            max_hit_occ: 64,
-            max_hit_occ_recover: 1024,
-            max_read_occ: 250,
-            gsize: Macs3GenomeSize::KnownOpt("hs"),
-            qvalue: 0.1,
-            extsize: 50,
-        }
+        use clap::Parser;
+        let cli_args = vec![
+            "simpleaf",
+            "atac",
+            "process",
+            "--index",
+            "/tmp/index",
+            "--output",
+            "/tmp/out",
+            "--chemistry",
+            "10x-v2",
+            "--barcode-reads",
+            "/tmp/bc.fastq",
+            "--threads",
+            "1",
+            // one of the read-input forms is required at parse time; the
+            // tests below supply their own, so clear it back out afterwards
+            // to keep the baseline these assertions were written against.
+            "--reads",
+            "/tmp/r.fastq",
+        ];
+        let mut opts = match crate::Cli::parse_from(cli_args).command {
+            crate::simpleaf_commands::Commands::Atac(
+                crate::atac::commands::AtacCommand::Process(opts),
+            ) => opts,
+            cmd => panic!("expected atac process command, found {:?}", cmd),
+        };
+        opts.reads = None;
+        opts.barcode_reads = vec![];
+        opts
     }
 
     #[test]
@@ -740,6 +718,101 @@ mod tests {
             format!("{:#}", err).contains("Cannot proceed"),
             "unexpected error: {:#}",
             err
+        );
+    }
+
+    fn args_of(cmd: &std::process::Command) -> Vec<String> {
+        cmd.get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    /// Every scalar option that `atac process` accepts and hands to piscem must
+    /// actually appear on the child command line.
+    ///
+    /// Both `--thr` and `--barcode-length` were parsed, documented with their
+    /// own defaults, and then never forwarded. Neither failure was visible from
+    /// the outside: piscem's defaults happened to match, so the options simply
+    /// did nothing when set. This pins the pass-through so the next one is a
+    /// test failure rather than a silent no-op.
+    #[test]
+    fn advanced_piscem_options_reach_the_child_command() {
+        let mut opts = base_process_opts();
+        opts.thr = 0.55;
+        opts.barcode_length = 20;
+        opts.max_ec_card = 1234;
+        opts.max_hit_occ = 77;
+        opts.max_hit_occ_recover = 888;
+        opts.max_read_occ = 99;
+
+        let mut cmd = std::process::Command::new("echo");
+        push_advanced_piscem_options(&mut cmd, &opts).expect("should build args");
+        let args = args_of(&cmd);
+
+        for (flag, value) in [
+            ("--thr", "0.55"),
+            ("--bclen", "20"),
+            ("--max-ec-card", "1234"),
+            ("--max-hit-occ", "77"),
+            ("--max-hit-occ-recover", "888"),
+            ("--max-read-occ", "99"),
+        ] {
+            let pos = args.iter().position(|a| a == flag).unwrap_or_else(|| {
+                panic!("{} was never forwarded to piscem; args: {:?}", flag, args)
+            });
+            assert_eq!(
+                args.get(pos + 1).map(String::as_str),
+                Some(value),
+                "{} was forwarded with the wrong value; args: {:?}",
+                flag,
+                args
+            );
+        }
+    }
+
+    /// The boolean passthroughs are emitted only when set.
+    #[test]
+    fn boolean_piscem_options_are_conditional() {
+        let mut opts = base_process_opts();
+        opts.ignore_ambig_hits = false;
+        opts.no_poison = false;
+
+        let mut cmd = std::process::Command::new("echo");
+        push_advanced_piscem_options(&mut cmd, &opts).expect("should build args");
+        let args = args_of(&cmd);
+        assert!(!args.iter().any(|a| a == "--ignore-ambig-hits"));
+        assert!(!args.iter().any(|a| a == "--no-poison"));
+
+        opts.ignore_ambig_hits = true;
+        opts.no_poison = true;
+        let mut cmd = std::process::Command::new("echo");
+        push_advanced_piscem_options(&mut cmd, &opts).expect("should build args");
+        let args = args_of(&cmd);
+        assert!(args.iter().any(|a| a == "--ignore-ambig-hits"));
+        assert!(args.iter().any(|a| a == "--no-poison"));
+    }
+
+    #[test]
+    fn atac_cell_correction_overrides_reach_gpl_arguments() {
+        let mut opts = base_process_opts();
+        opts.cell_correction.cell_bc_correction =
+            Some(crate::simpleaf_commands::CellBarcodeCorrection::Frequency);
+        opts.cell_correction.cell_bc_neighborhood =
+            Some(crate::simpleaf_commands::BarcodeNeighborhood::HammingOne);
+        opts.cell_correction.cell_bc_confidence = Some("0.90".to_string());
+
+        let mut command = std::process::Command::new("alevin-fry");
+        opts.cell_correction.append_to(&mut command);
+        assert_eq!(
+            args_of(&command),
+            [
+                "--cell-bc-correction",
+                "frequency",
+                "--cell-bc-neighborhood",
+                "hamming-1",
+                "--cell-bc-confidence",
+                "0.90",
+            ]
         );
     }
 }

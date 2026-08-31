@@ -1,5 +1,8 @@
 use crate::atac::defaults::{AtacIndexParams, DefaultAtacParams};
 use crate::defaults::{DefaultMappingParams, DefaultParams};
+use crate::simpleaf_commands::{
+    CellBarcodeCorrectionOpts, PiscemBuildResourceOpts, PiscemDecoderOpts,
+};
 use crate::utils::chem_utils::{ExpectedOri, QueryInRegistry};
 use clap::{
     Args, Subcommand, ValueEnum,
@@ -164,9 +167,12 @@ pub enum AtacCommand {
 #[derive(Args, Clone, Debug)]
 #[command(arg_required_else_help = true)]
 pub struct IndexOpts {
-    /// number of threads to use when running
+    /// number of threads to use when running; values below two warn and use two
     #[arg(short, long, default_value_t = 16, display_order = 5)]
     pub threads: u32,
+
+    #[command(flatten)]
+    pub build_resources: PiscemBuildResourceOpts,
 
     /// the value of k to be used to construct the index
     #[arg(
@@ -206,7 +212,7 @@ pub struct IndexOpts {
     pub work_dir: PathBuf,
 
     /// path to (optional) decoy sequence used to insert poison
-    /// k-mer information into the index (only if using piscem >= 0.7).
+    /// k-mer information into the index.
     #[arg(
         long,
         help_heading = "Piscem Index Options",
@@ -301,9 +307,12 @@ pub struct ProcessOpts {
     #[arg(long = "output")]
     pub output: PathBuf,
 
-    /// number of threads to use when running
+    /// number of threads to use when running; values below two warn and use two
     #[arg(short, long, default_value_t = 16, display_order = 5)]
     pub threads: u32,
+
+    #[command(flatten)]
+    pub decode: PiscemDecoderOpts,
 
     /// do peak calling after generating the bed file
     #[arg(long)]
@@ -342,6 +351,9 @@ pub struct ProcessOpts {
     )]
     pub min_reads: usize,
 
+    #[command(flatten)]
+    pub cell_correction: CellBarcodeCorrectionOpts,
+
     /// compress the output mapping bed file.
     #[arg(long, help_heading = "Advanced Options")]
     pub compress: bool,
@@ -362,8 +374,10 @@ pub struct ProcessOpts {
     #[arg(long, help_heading = "Advanced Options")]
     pub no_poison: bool,
 
-    /// use chromosomes as color
-    #[arg(long, help_heading = "Advanced Options")]
+    /// Deprecated no-op. piscem-rs does not implement this; piscem >= 0.22
+    /// accepts the flag for backward compatibility and warns that it is
+    /// ignored. Retained so existing command lines keep working.
+    #[arg(long, help_heading = "Advanced Options", hide = true)]
     pub use_chr: bool,
 
     /// threshold to be considered for pseudoalignment
@@ -382,10 +396,10 @@ pub struct ProcessOpts {
     #[arg(long, help_heading = "Advanced Options")]
     pub no_tn5_shift: bool,
 
-    /// Check if any mapping kmer exist for a mate which is not mapped,
-    /// but there exists mapping for the other read. If set to true and a
-    /// mapping kmer exists, then the pair would not be mapped
-    #[arg(long, help_heading = "Advanced Options")]
+    /// Deprecated no-op. piscem-rs does not implement this; piscem >= 0.22
+    /// accepts the flag for backward compatibility and warns that it is
+    /// ignored. Retained so existing command lines keep working.
+    #[arg(long, help_heading = "Advanced Options", hide = true)]
     pub check_kmer_orphan: bool,
 
     /// determines the maximum cardinality equivalence class (number of

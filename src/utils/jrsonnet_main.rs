@@ -210,6 +210,10 @@ fn main_catch(opts: Opts) -> anyhow::Result<String> {
     }
 }
 
+// `tla_opts()` hands back a jrsonnet map whose key type carries interior
+// mutability. The key is never mutated here -- and the type is jrsonnet's,
+// not ours to change -- so the lint has nothing to catch.
+#[allow(clippy::mutable_key_type)]
 fn main_real(opts: Opts) -> Result<String, Error> {
     let _gc_leak_guard = opts.gc.leak_on_exit();
     let _gc_print_stats = opts.gc.stats_printer();
@@ -225,11 +229,25 @@ fn main_real(opts: Opts) -> Result<String, Error> {
     }
     let s = state_builder.build();
 
+    // jrsonnet 0.5.0-pre98 resolves the evaluation state from a thread-local
+    // rather than taking it as an argument. `apply_tla` no longer receives the
+    // `State`, so it looks the current one up itself — and if none has been
+    // entered it silently falls back to `DEFAULT_STATE`, which carries no
+    // import resolver. Our TLA argument is `--tla-code-file workflow=<path>`,
+    // an import, so without this guard every template fails with "imports are
+    // not supported" and the caller only sees a missing version.
+    //
+    // The guard must outlive the `apply_tla` call below; it un-installs the
+    // state on drop.
+    let _state_guard = s.enter();
+
     let input = opts.input.input.ok_or(Error::MissingInputArgument)?;
-    let val = s.import(input)?;
+    // jrsonnet 0.5.0-pre98: `import` takes `impl AsPathLike`, which `str`
+    // implements but `String` does not.
+    let val = s.import(input.as_str())?;
 
     let tla = opts.tla.tla_opts()?;
-    let val = apply_tla(s.clone(), &tla, val)?;
+    let val = apply_tla(&tla, val)?;
 
     let manifest_format = opts.manifest.manifest_format();
     let output = val.manifest(manifest_format)?;
@@ -238,5 +256,73 @@ fn main_real(opts: Opts) -> Result<String, Error> {
         Ok(output)
     } else {
         Err(Error::EmptyJSON)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ParseAction, parse_jsonnet};
+    use std::io::Write;
+
+    /// `parse_jsonnet` must be able to resolve imports while applying the
+    /// top-level argument.
+    ///
+    /// The workflow template is handed to jsonnet as
+    /// `--tla-code-file workflow=<path>`, which is an *import* performed during
+    /// the TLA call. jrsonnet 0.5.0-pre98 stopped passing the evaluation state
+    /// into `apply_tla` and now looks it up from a thread-local instead; if no
+    /// state has been entered it quietly falls back to a default that has no
+    /// import resolver. Every template then fails with "imports are not
+    /// supported", which `get_template_version` swallows into a bare "N/A*" in
+    /// a table — a regression with no error message anywhere.
+    ///
+    /// This builds a miniature protocol estuary so the check needs no network,
+    /// and asserts on a value that can only have come through the TLA import.
+    #[test]
+    fn parse_jsonnet_resolves_imports_during_tla() {
+        let dir = tempfile::tempdir().expect("could not create temp dir");
+        let utils_dir = dir.path().join("utils");
+        std::fs::create_dir_all(&utils_dir).unwrap();
+
+        // Stand-ins for the estuary's own files. `main.jsonnet` takes the
+        // workflow as a top-level argument and returns it, which is the
+        // smallest thing that still forces the import to be resolved.
+        let mut main = std::fs::File::create(utils_dir.join("main.jsonnet")).unwrap();
+        writeln!(main, "function(workflow,patch=false,json={{}}) workflow").unwrap();
+
+        // Imported via `--ext-code __utils=import '...'`, so it has to exist on
+        // the jpath even though this stub is empty.
+        let mut lib =
+            std::fs::File::create(utils_dir.join("simpleaf_workflow_utils.libsonnet")).unwrap();
+        writeln!(lib, "{{}}").unwrap();
+
+        let template_path = dir.path().join("template.jsonnet");
+        let mut template = std::fs::File::create(&template_path).unwrap();
+        writeln!(
+            template,
+            r#"{{ meta_info: {{ template_version: "9.9.9" }}, value: 42 }}"#
+        )
+        .unwrap();
+
+        let out = parse_jsonnet(
+            &template_path,
+            Some(std::path::PathBuf::from(".")),
+            &utils_dir,
+            &None,
+            &None,
+            &None,
+            ParseAction::Inspect,
+        )
+        .expect("parse_jsonnet failed; imports during the TLA call are most likely unresolved");
+
+        let v: serde_json::Value =
+            serde_json::from_str(&out).expect("parse_jsonnet did not return JSON");
+        assert_eq!(
+            v.pointer("/meta_info/template_version")
+                .and_then(|x| x.as_str()),
+            Some("9.9.9"),
+            "template contents did not survive the TLA import: {out}"
+        );
+        assert_eq!(v.pointer("/value").and_then(|x| x.as_i64()), Some(42));
     }
 }

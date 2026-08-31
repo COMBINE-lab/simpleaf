@@ -38,6 +38,36 @@ fn t2g_mode(opts: &MultiplexQuantOpts) -> probe_utils::ProbeT2gMode {
     }
 }
 
+fn resolved_sample_bc_orientation<'a>(
+    opts: &'a MultiplexQuantOpts,
+    chemistry: Option<&'a CustomChemistry>,
+) -> Option<&'a str> {
+    opts.sample_bc_ori.as_deref().or_else(|| {
+        chemistry
+            .and_then(|chemistry| chemistry.sample_bc_list.as_ref())
+            .and_then(|sample_list| sample_list.sample_bc_ori.as_deref())
+    })
+}
+
+/// Return a filesystem path for a thread-policy value. Inline JSON (a value
+/// whose first non-whitespace byte is `{`) is written into `output_dir` and its
+/// path returned; anything else is treated as an already-existing path. piscem's
+/// `--thread-policy` accepts a path on every release simpleaf targets today, so
+/// this keeps the Flex default (and any user-supplied inline value) working
+/// without requiring a newer piscem. A path is passed through unchanged and
+/// works with every piscem.
+fn materialize_thread_policy(policy: &str, output_dir: &Path) -> anyhow::Result<PathBuf> {
+    if policy.trim_start().starts_with('{') {
+        std::fs::create_dir_all(output_dir)?;
+        let path = output_dir.join("thread_policy.json");
+        std::fs::write(&path, policy)
+            .with_context(|| format!("could not write thread policy to {}", path.display()))?;
+        Ok(path)
+    } else {
+        Ok(PathBuf::from(policy))
+    }
+}
+
 fn write_multiplex_metadata(
     output_dir: &Path,
     quant_output: &Path,
@@ -228,9 +258,10 @@ fn resolve_user_supplied_index(
 }
 
 /// Main entry point for the multiplex-quant pipeline.
-pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyhow::Result<()> {
+pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> anyhow::Result<()> {
     let start = Instant::now();
     info!("Starting multiplex quantification pipeline");
+    opts.threads = crate::core::runtime::cap_threads_warned(opts.threads);
 
     // Load runtime context (program paths)
     let rt = context::load_runtime_context(af_home)?;
@@ -281,6 +312,15 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
             anyhow::anyhow!("No geometry specified. Provide --geometry or --chemistry.")
         })?
         .to_string();
+
+    // `quant` validates its geometry (via `add_chemistry_to_args_piscem`) but
+    // this path handed `-g` straight to piscem, so a typo in `--geometry`
+    // surfaced as a mapping failure partway through a run rather than as an
+    // error before any work started. The named-chemistry lookup that `quant`
+    // also performs does not apply here: presets in this path already store a
+    // full geometry string rather than a protocol name.
+    crate::utils::af_utils::validate_geometry(&geometry)
+        .with_context(|| format!("invalid geometry: {}", geometry))?;
 
     // Resolve expected orientation
     let expected_ori = &opts.expected_ori;
@@ -360,6 +400,25 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
         .arg(format!("{}", opts.max_ec_card))
         .arg("--dict")
         .arg(opts.dict.as_cli());
+    // Flex maps cheap probe reads against a tiny index, so decode dominates and
+    // the parallel decoder pays much earlier than piscem's cross-workload
+    // default assumes. Engage it earlier here unless the user set their own
+    // policy. See `FLEX_DECODE_THREAD_POLICY`.
+    piscem_cmd.arg("--decoder").arg(&opts.decode.decoder);
+    let effective_policy = opts
+        .decode
+        .thread_policy
+        .as_deref()
+        .unwrap_or(crate::simpleaf_commands::FLEX_DECODE_THREAD_POLICY);
+    if opts.decode.thread_policy.is_none() {
+        info!("Flex default decoder engagement: {effective_policy}");
+    }
+    // The piscem releases simpleaf targets today accept only a path for
+    // --thread-policy, so materialise an inline-JSON policy (the Flex default,
+    // or a user-supplied inline value) to a file first. A path is passed
+    // through unchanged and works with every piscem.
+    let thread_policy_path = materialize_thread_policy(effective_policy, output_dir)?;
+    piscem_cmd.arg("--thread-policy").arg(&thread_policy_path);
 
     let r1_str: Vec<String> = opts
         .reads1
@@ -375,7 +434,7 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
     piscem_cmd.arg("-2").arg(r2_str.join(","));
 
     let map_cmd_str = prog_utils::get_cmd_line_string(&piscem_cmd);
-    info!("piscem map-scrna cmd: {}", map_cmd_str);
+    info!("piscem map-sc cmd: {}", map_cmd_str);
     let map_start = Instant::now();
     exec::run_checked(&mut piscem_cmd, "[piscem map-sc]")?;
     let map_duration = map_start.elapsed();
@@ -398,15 +457,17 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
         .arg("-o")
         .arg(&quant_output)
         .arg("-t")
-        .arg(format!("{}", opts.threads.min(8)))
+        .arg(format!("{}", opts.threads))
         .arg("--unfiltered-pl")
         .arg(&cell_bc_path)
         .arg("--sample-bc-list")
         .arg(&sample_bc_path)
-        .arg("--sample-correction-mode")
-        .arg(&opts.sample_correction_mode)
         .arg("--min-reads")
         .arg(format!("{}", opts.min_reads));
+
+    opts.cell_correction.append_to(&mut gpl_cmd);
+    opts.sample_correction.append_to(&mut gpl_cmd);
+    opts.gpl_resources.append_to(&mut gpl_cmd);
 
     // Forward the sample-barcode orientation to alevin-fry. Precedence:
     //   1. user-supplied --sample-bc-ori CLI override (`forward` / `reverse`,
@@ -414,11 +475,7 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
     //   2. the chemistry preset's declared sample_bc_ori (e.g. 10x Flex v2
     //      where the whitelist is the RC of what appears on the read).
     //   3. omit the flag (alevin-fry default).
-    let sbc_ori_override = opts.sample_bc_ori.as_deref().or_else(|| {
-        chem.as_ref()
-            .and_then(|c| c.sample_bc_list.as_ref())
-            .and_then(|s| s.sample_bc_ori.as_deref())
-    });
+    let sbc_ori_override = resolved_sample_bc_orientation(&opts, chem.as_ref());
     if let Some(ori) = sbc_ori_override {
         gpl_cmd.arg("--sample-bc-ori").arg(ori);
     }
@@ -440,6 +497,7 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
         .arg(&map_output)
         .arg("-t")
         .arg(format!("{}", opts.threads));
+    opts.collation_resources.append_to(&mut collate_cmd);
 
     let collate_cmd_str = prog_utils::get_cmd_line_string(&collate_cmd);
     info!("collate cmd: {}", collate_cmd_str);
@@ -463,6 +521,14 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
         .arg("-r")
         .arg(&opts.resolution)
         .arg("--use-mtx");
+
+    // Only forwarded when the user set it, so alevin-fry's own default stands
+    // otherwise.
+    if let Some(small_thresh) = opts.small_thresh {
+        quant_cmd
+            .arg("--small-thresh")
+            .arg(small_thresh.to_string());
+    }
 
     let quant_cmd_str = prog_utils::get_cmd_line_string(&quant_cmd);
     info!("quant cmd: {}", quant_cmd_str);
@@ -522,7 +588,7 @@ pub fn multiplex_map_and_quant(af_home: &Path, opts: MultiplexQuantOpts) -> anyh
         let opath = anndata_path
             .as_ref()
             .expect("anndata_path must exist when --anndata-out is set");
-        af_anndata::convert_csr_to_anndata(&quant_output, &opath)?;
+        af_anndata::convert_csr_to_anndata(&quant_output, opath)?;
         convert_duration_secs = Some(convert_start.elapsed().as_secs_f64());
     }
 
@@ -737,15 +803,17 @@ fn resolve_sample_bc_list(
     let plist_dir = af_home.join("plist");
     std::fs::create_dir_all(&plist_dir)?;
 
-    if let Some(ref hash) = sbc_info.plist_name {
-        let cached = plist_dir.join(hash);
-        if cached.exists() {
-            info!("Sample barcode list cached: {}", cached.display());
-            return Ok(cached);
-        }
-    }
-
-    if let Some(ref url) = sbc_info.remote_url {
+    // Resolve the chemistry's registry sample-barcode file (all samples, every
+    // spelling), from cache or by download.
+    let registry_path = if let Some(cached) = sbc_info
+        .plist_name
+        .as_ref()
+        .map(|hash| plist_dir.join(hash))
+        .filter(|p| p.exists())
+    {
+        info!("Sample barcode list cached: {}", cached.display());
+        cached
+    } else if let Some(ref url) = sbc_info.remote_url {
         let dest = if let Some(ref hash) = sbc_info.plist_name {
             plist_dir.join(hash)
         } else {
@@ -754,21 +822,222 @@ fn resolve_sample_bc_list(
         info!("Downloading sample barcode list...");
         prog_utils::download_to_file(url, &dest)?;
         info!("Downloaded to {}", dest.display());
-        Ok(dest)
+        dest
     } else {
         bail!("Chemistry has no sample barcode list URL. Provide --sample-bc-list.");
+    };
+
+    // With a sample sheet, select and rename a subset of the samples, taking the
+    // barcode sequences (every spelling) from the registry file so the caller
+    // never transcribes them.
+    match opts.samples {
+        Some(ref sheet) => derive_sample_bc_list(&registry_path, sheet, &opts.output),
+        None => Ok(registry_path),
     }
+}
+
+/// Build a sample-barcode list for a caller-selected, caller-named subset of the
+/// chemistry's samples, without hand-transcribing any barcode sequence.
+///
+/// `registry_path` is the chemistry's 3-column file (`observed  canonical
+/// sample_id`) holding every spelling of every sample. `sheet_path` maps a
+/// registry `sample_id` to the caller's name (one or two tab-separated columns;
+/// a single column keeps the id as the name). The result is the registry rows
+/// for the requested ids only, with the sample-name column replaced by the
+/// caller's name — every spelling preserved, so no spelling can be dropped.
+fn derive_sample_bc_list(
+    registry_path: &Path,
+    sheet_path: &Path,
+    output_dir: &Path,
+) -> anyhow::Result<PathBuf> {
+    use std::io::{BufRead, BufReader, BufWriter, Write};
+
+    // Parse the sheet: id -> name (name defaults to id), preserving first-seen
+    // order for stable, informative errors.
+    let sheet = std::fs::File::open(sheet_path)
+        .with_context(|| format!("couldn't open sample sheet: {}", sheet_path.display()))?;
+    let mut requested_order: Vec<String> = Vec::new();
+    let mut name_by_id: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    for line in BufReader::new(sheet).lines() {
+        let line = line?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let mut cols = trimmed.split('\t');
+        let id = cols.next().unwrap().trim().to_string();
+        let name = cols
+            .next()
+            .map(|n| n.trim().to_string())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| id.clone());
+        if name_by_id.insert(id.clone(), name).is_none() {
+            requested_order.push(id);
+        }
+    }
+    if requested_order.is_empty() {
+        bail!("sample sheet {} contained no samples", sheet_path.display());
+    }
+
+    // Rewrite the registry rows for the requested ids with the caller's names.
+    std::fs::create_dir_all(output_dir)?;
+    let registry = std::fs::File::open(registry_path).with_context(|| {
+        format!(
+            "couldn't open registry sample barcode list: {}",
+            registry_path.display()
+        )
+    })?;
+    let out_path = output_dir.join("sample_bc_list.derived.tsv");
+    let mut out = BufWriter::new(std::fs::File::create(&out_path)?);
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut spellings = 0usize;
+    for line in BufReader::new(registry).lines() {
+        let line = line?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let parts: Vec<&str> = trimmed.split('\t').collect();
+        if parts.len() < 3 {
+            bail!(
+                "registry sample barcode list {} is not the expected 3-column \
+                 (observed, canonical, sample_id) format",
+                registry_path.display()
+            );
+        }
+        if let Some(name) = name_by_id.get(parts[2]) {
+            writeln!(out, "{}\t{}\t{}", parts[0], parts[1], name)?;
+            seen.insert(parts[2].to_string());
+            spellings += 1;
+        }
+    }
+    out.flush()?;
+
+    // Every requested id must exist, or a typo would silently drop a sample.
+    let missing: Vec<&str> = requested_order
+        .iter()
+        .filter(|id| !seen.contains(*id))
+        .map(String::as_str)
+        .collect();
+    if !missing.is_empty() {
+        bail!(
+            "sample sheet requests id(s) absent from the chemistry's registry \
+             sample barcode list: {}. Check the ids against the chemistry preset.",
+            missing.join(", ")
+        );
+    }
+    info!(
+        "Derived sample barcode list for {} sample(s) ({} spellings) at {}",
+        seen.len(),
+        spellings,
+        out_path.display()
+    );
+    Ok(out_path)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_user_supplied_index, t2g_mode};
+    use super::{
+        derive_sample_bc_list, materialize_thread_policy, resolve_user_supplied_index,
+        resolved_sample_bc_orientation, t2g_mode,
+    };
     use crate::simpleaf_commands::MultiplexQuantOpts;
+    use crate::utils::chem_utils::{CustomChemistry, SampleBcListInfo};
     use crate::utils::probe_utils::ProbeT2gMode;
+    use clap::Parser;
     use serde_json::json;
     use std::fs;
     use std::path::Path;
     use tempfile::tempdir;
+
+    /// A registry file in the shipped 3-column format: two samples, each with
+    /// several spellings mapping to one canonical barcode.
+    const REGISTRY: &str = "\
+ACTTTAGG\tACTTTAGG\tBC001
+CTTTAGGC\tACTTTAGG\tBC001
+CGAGGGTA\tACTTTAGG\tBC001
+TGGACTAT\tTGGACTAT\tBC002
+GGACTATC\tTGGACTAT\tBC002
+GATCCTCT\tGATCCTCT\tBC003
+";
+
+    fn derived_lines(dir: &Path) -> Vec<String> {
+        fs::read_to_string(dir.join("sample_bc_list.derived.tsv"))
+            .unwrap()
+            .lines()
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn sample_sheet_selects_subset_and_renames_keeping_all_spellings() {
+        let dir = tempdir().unwrap();
+        let reg = dir.path().join("registry.tsv");
+        fs::write(&reg, REGISTRY).unwrap();
+        // select BC003 and BC001 (out of order), rename BC001, keep BC003's id.
+        let sheet = dir.path().join("samples.tsv");
+        fs::write(&sheet, "BC003\tkidney\nBC001\n").unwrap();
+
+        let out = derive_sample_bc_list(&reg, &sheet, dir.path()).unwrap();
+        let lines = derived_lines(out.parent().unwrap());
+        // BC002 dropped; BC001 keeps all 3 spellings (named by its id); BC003 renamed.
+        assert_eq!(
+            lines,
+            vec![
+                "ACTTTAGG\tACTTTAGG\tBC001",
+                "CTTTAGGC\tACTTTAGG\tBC001",
+                "CGAGGGTA\tACTTTAGG\tBC001",
+                "GATCCTCT\tGATCCTCT\tkidney",
+            ]
+        );
+    }
+
+    #[test]
+    fn sample_sheet_two_column_renames() {
+        let dir = tempdir().unwrap();
+        let reg = dir.path().join("registry.tsv");
+        fs::write(&reg, REGISTRY).unwrap();
+        let sheet = dir.path().join("samples.tsv");
+        fs::write(&sheet, "BC002\tlung\n").unwrap();
+        derive_sample_bc_list(&reg, &sheet, dir.path()).unwrap();
+        assert_eq!(
+            derived_lines(dir.path()),
+            vec!["TGGACTAT\tTGGACTAT\tlung", "GGACTATC\tTGGACTAT\tlung"]
+        );
+    }
+
+    #[test]
+    fn inline_thread_policy_is_written_to_a_file() {
+        let dir = tempdir().unwrap();
+        let policy = r#"{"parallel_decode": {"min_threads_per_stream": 4}}"#;
+        let path = materialize_thread_policy(policy, dir.path()).unwrap();
+        assert!(path.starts_with(dir.path()));
+        assert_eq!(fs::read_to_string(&path).unwrap(), policy);
+    }
+
+    #[test]
+    fn path_thread_policy_is_passed_through_unchanged() {
+        let dir = tempdir().unwrap();
+        // A non-`{` value is treated as an existing path and returned as-is; no
+        // file is written into the output dir.
+        let path = materialize_thread_policy("/some/where/policy.json", dir.path()).unwrap();
+        assert_eq!(path, Path::new("/some/where/policy.json"));
+        assert!(!dir.path().join("thread_policy.json").exists());
+    }
+
+    #[test]
+    fn sample_sheet_unknown_id_is_an_error() {
+        let dir = tempdir().unwrap();
+        let reg = dir.path().join("registry.tsv");
+        fs::write(&reg, REGISTRY).unwrap();
+        let sheet = dir.path().join("samples.tsv");
+        fs::write(&sheet, "BC001\ta\nBC999\tb\n").unwrap();
+        let err = derive_sample_bc_list(&reg, &sheet, dir.path())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("BC999"), "{err}");
+    }
 
     fn write_piscem_index(prefix: &Path) {
         fs::write(prefix.with_extension("ctab"), "").expect("failed to write ctab");
@@ -839,36 +1108,49 @@ mod tests {
         assert!(gene_id_to_name.is_none());
     }
 
+    /// Build `MultiplexQuantOpts` the way a user would: by parsing a command
+    /// line. A struct literal has to name every field, so adding an option to
+    /// the CLI breaks this file with an E0063 that only `--all-targets`
+    /// surfaces -- `cargo build` does not compile tests. Parsing instead lets
+    /// new options pick up their clap defaults, and anything genuinely
+    /// required fails loudly at parse time.
+    fn parse_multiplex_quant_opts(args: &[&str]) -> MultiplexQuantOpts {
+        let mut cli_args = vec!["simpleaf", "multiplex-quant"];
+        cli_args.extend_from_slice(args);
+        match crate::Cli::parse_from(cli_args).command {
+            crate::simpleaf_commands::Commands::MultiplexQuant(opts) => opts,
+            cmd => panic!("expected multiplex-quant command, found {:?}", cmd),
+        }
+    }
+
     #[test]
     fn usa_flag_maps_to_usa_mode() {
-        let opts = MultiplexQuantOpts {
-            chemistry: None,
-            geometry: None,
-            organism: None,
-            cell_bc_list: None,
-            expected_ori: String::from("both"),
-            sample_bc_ori: None,
-            sample_correction_mode: String::from("exact"),
-            output: Path::new(".").to_path_buf(),
-            threads: 1,
-            index: None,
-            probe_set: None,
-            t2g_map: None,
-            usa: true,
-            sample_bc_list: None,
-            reads1: Vec::new(),
-            reads2: Vec::new(),
-            resolution: String::from("cr-like"),
-            kmer_length: 23,
-            skipping_strategy: String::from("permissive"),
-            struct_constraints: false,
-            max_ec_card: 4096,
-            dict: crate::simpleaf_commands::PiscemDict::Auto,
-            min_reads: 10,
-            anndata_out: false,
-        };
-
+        let opts = parse_multiplex_quant_opts(&["-o", ".", "--usa"]);
         assert_eq!(t2g_mode(&opts), ProbeT2gMode::Usa);
+    }
+
+    #[test]
+    fn sample_barcode_orientation_uses_cli_then_preset_then_child_default() {
+        let mut opts = parse_multiplex_quant_opts(&["-o", "."]);
+        let mut chemistry =
+            CustomChemistry::simple_custom("1{b[16]u[12]x:}2{r:}").expect("valid test geometry");
+        chemistry.sample_bc_list = Some(SampleBcListInfo {
+            plist_name: None,
+            remote_url: None,
+            sample_bc_ori: Some("reverse".to_string()),
+        });
+
+        assert_eq!(
+            resolved_sample_bc_orientation(&opts, Some(&chemistry)),
+            Some("reverse")
+        );
+        opts.sample_bc_ori = Some("forward".to_string());
+        assert_eq!(
+            resolved_sample_bc_orientation(&opts, Some(&chemistry)),
+            Some("forward")
+        );
+        opts.sample_bc_ori = None;
+        assert_eq!(resolved_sample_bc_orientation(&opts, None), None);
     }
 
     #[test]
@@ -886,6 +1168,89 @@ mod tests {
         assert!(
             msg.contains("region") && msg.contains("rerun without `--usa`"),
             "unexpected error: {msg}",
+        );
+    }
+
+    #[test]
+    fn barcode_and_stage_resource_overrides_are_forwarded() {
+        let opts = parse_multiplex_quant_opts(&[
+            "-o",
+            ".",
+            "--cell-bc-correction",
+            "frequency",
+            "--cell-bc-neighborhood",
+            "hamming-1",
+            "--cell-bc-confidence",
+            "0.975",
+            "--sample-bc-correction",
+            "unique",
+            "--sample-bc-neighborhood",
+            "substitution-or-shift-1",
+            "--sample-bc-confidence",
+            "39/40",
+            "--gpl-memory-limit",
+            "1GiB",
+            "--gpl-tmp-dir",
+            "/tmp/gpl",
+            "--collate-memory-limit",
+            "4GiB",
+        ]);
+
+        let mut gpl = std::process::Command::new("alevin-fry");
+        opts.cell_correction.append_to(&mut gpl);
+        opts.sample_correction.append_to(&mut gpl);
+        opts.gpl_resources.append_to(&mut gpl);
+        let gpl_args: Vec<_> = gpl
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            gpl_args
+                .windows(2)
+                .any(|pair| pair == ["--cell-bc-correction", "frequency"])
+        );
+        assert!(
+            gpl_args
+                .windows(2)
+                .any(|pair| pair == ["--sample-bc-correction", "unique"])
+        );
+        assert!(
+            gpl_args
+                .windows(2)
+                .any(|pair| pair == ["--memory-limit", "1GiB"])
+        );
+        assert!(
+            gpl_args
+                .windows(2)
+                .any(|pair| pair == ["--tmp-dir", "/tmp/gpl"])
+        );
+
+        let mut collate = std::process::Command::new("alevin-fry");
+        opts.collation_resources.append_to(&mut collate);
+        let collate_args: Vec<_> = collate
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(collate_args, ["--memory-limit", "4GiB"]);
+    }
+
+    #[test]
+    fn legacy_sample_mode_is_hidden_but_still_translates() {
+        let opts = parse_multiplex_quant_opts(&["-o", ".", "--sample-correction-mode", "1-edit"]);
+        let mut command = std::process::Command::new("alevin-fry");
+        opts.sample_correction.append_to(&mut command);
+        let args: Vec<_> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args,
+            [
+                "--sample-bc-correction",
+                "unique",
+                "--sample-bc-neighborhood",
+                "substitution-or-shift-1",
+            ]
         );
     }
 }

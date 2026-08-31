@@ -7,7 +7,7 @@ use cmd_lib::run_fun;
 use serde_json::json;
 use std::path::Path;
 use std::time::Instant;
-use tracing::{info, warn};
+use tracing::info;
 
 pub(crate) fn piscem_index(af_home_path: &Path, opts: &IndexOpts) -> anyhow::Result<()> {
     let rp: ReqProgs = context::load_required_programs(af_home_path)?;
@@ -17,14 +17,12 @@ pub(crate) fn piscem_index(af_home_path: &Path, opts: &IndexOpts) -> anyhow::Res
         .as_ref()
         .context("piscem program info is missing; please run `simpleaf set-paths`.")?;
 
-    match prog_utils::check_version_constraints(
+    let af_ver = prog_utils::check_version_constraints(
         "piscem",
-        ">=0.18.0, <1.0.0",
+        prog_utils::min_versions::PISCEM,
         &piscem_prog_info.version,
-    ) {
-        Ok(af_ver) => info!("found piscem version {:#}, proceeding", af_ver),
-        Err(e) => return Err(e),
-    }
+    )?;
+    info!("found piscem version {:#}, proceeding", af_ver);
 
     let output = opts.output.clone();
     let output_index_dir = output.join("index");
@@ -56,18 +54,13 @@ pub(crate) fn piscem_index(af_home_path: &Path, opts: &IndexOpts) -> anyhow::Res
         piscem_index_cmd.arg("--overwrite");
     }
 
-    let (threads, capped_at) = runtime::cap_threads(opts.threads);
-    if let Some(max_threads) = capped_at {
-        warn!(
-            "The maximum available parallelism is {}, but {} threads were requested.",
-            max_threads, opts.threads
-        );
-        warn!("setting number of threads to {}", max_threads);
-    }
+    let threads = runtime::cap_threads_warned(opts.threads);
 
     piscem_index_cmd
         .arg("--threads")
         .arg(format!("{}", threads));
+
+    opts.build_resources.append_to(&mut piscem_index_cmd);
 
     // if the user is requesting a poison k-mer table, ensure the
     // piscem version is at least 0.7.0

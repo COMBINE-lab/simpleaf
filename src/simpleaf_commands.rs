@@ -47,6 +47,406 @@ impl PiscemDict {
     }
 }
 
+/// How piscem should split its thread budget between mapping and gzip decoding.
+///
+/// From piscem 0.22.0 (piscem-rs 0.9.x), `-t` is a single execution-slot budget
+/// shared by mapping and decompression, and a live broker solves the split
+/// during the run. These two options steer that; simpleaf only forwards them.
+///
+/// Flattened into every subcommand that invokes a piscem `map-*`, so the help
+/// text is written once.
+#[derive(Args, Clone, Debug)]
+pub struct PiscemDecoderOpts {
+    /// Gzip decoder selection passed to piscem: `auto`, `serial`, `parallel`,
+    /// or `parallel=N`.
+    ///
+    /// `auto` lets piscem adapt the mapping/decode split while the run
+    /// proceeds. `serial` gives mapping the whole budget. `parallel` forces the
+    /// parallel decoder where the input allows it; `parallel=N` fixes N decode
+    /// slots per gzip input and stops the adaptation. Inputs that cannot be
+    /// read positionally (FIFOs, process substitution) stay serial regardless.
+    #[arg(
+        long,
+        default_value = "auto",
+        value_name = "MODE",
+        help_heading = "Piscem Mapping Options"
+    )]
+    pub decoder: String,
+
+    /// Piscem thread and decoder policy, as inline JSON or a path to a JSON file.
+    ///
+    /// A value beginning with `{` is parsed as inline JSON; anything else is a
+    /// path. Every field is optional and defaults to a measured value; an
+    /// unrecognised field is an error rather than a silent no-op. Currently
+    /// understood: `{"parallel_decode": {"min_threads_per_stream": 8}}`, the
+    /// number of threads that must be free per gzip input before the parallel
+    /// decoder is engaged at all.
+    #[arg(
+        long,
+        value_name = "JSON_OR_PATH",
+        help_heading = "Piscem Mapping Options"
+    )]
+    pub thread_policy: Option<String>,
+}
+
+/// Flex-specific decoder engagement policy.
+///
+/// Flex maps ~50 nt probe reads against a tiny probe-set index, so mapping is
+/// very cheap and gzip inflation dominates the mapping stage. The parallel
+/// decoder therefore pays far earlier than on a full-transcriptome workload, and
+/// piscem's general default (`min_threads_per_stream: 8`) leaves it disengaged on
+/// every multi-lane Flex library whose core count is not several times its lane
+/// count — both mates of every lane count as a stream, so 4 lanes need 64
+/// threads. `4` was measured across five Flex datasets to engage where it pays
+/// and stay serial below its bar (no low-budget regression). This is applied
+/// only on the Flex (`multiplex-quant`) path; standard scRNA keeps piscem's
+/// default until a full-index experiment justifies changing it there.
+pub const FLEX_DECODE_THREAD_POLICY: &str = r#"{"parallel_decode": {"min_threads_per_stream": 4}}"#;
+
+impl PiscemDecoderOpts {
+    /// Append these options to a piscem `map-*` invocation.
+    ///
+    /// `--thread-policy` is passed through only when the user supplied one (so
+    /// piscem's own defaults apply otherwise), and only as a path — the value
+    /// reaches piscem unchanged. Callers that inject a default policy or need to
+    /// accept inline JSON (the Flex `multiplex-quant` path) resolve the policy to
+    /// a file themselves before building the command; see
+    /// `multiplex_quant::materialize_thread_policy` and [`FLEX_DECODE_THREAD_POLICY`].
+    pub fn append_to(&self, cmd: &mut std::process::Command) {
+        cmd.arg("--decoder").arg(&self.decoder);
+        if let Some(policy) = self.thread_policy.as_deref() {
+            cmd.arg("--thread-policy").arg(policy);
+        }
+    }
+}
+
+/// Options controlling SSHash's external minimizer sort during `piscem build`.
+///
+/// Flattened into both index-building subcommands. These matter most on HPC,
+/// where `/tmp` may be small and the job runs under a memory cgroup.
+#[derive(Args, Clone, Debug)]
+pub struct PiscemBuildResourceOpts {
+    /// Directory for SSHash's external minimizer-sort scratch files. This is a
+    /// later, separate phase from the cDBG construction that `--work-dir`
+    /// covers. Unset leaves piscem's default.
+    #[arg(long, value_name = "DIR", help_heading = "Piscem Index Options")]
+    pub tmp_dir: Option<PathBuf>,
+
+    /// RAM ceiling, in GiB, for SSHash's external minimizer sort. A smaller
+    /// value spills to disk sooner, trading peak memory for build time.
+    ///
+    /// The default of 8 is deliberately fixed rather than deferring to piscem,
+    /// whose own default scales with the machine's total RAM and so makes peak
+    /// index-build memory vary from host to host.
+    #[arg(
+        long,
+        value_name = "GIB",
+        default_value_t = 8,
+        help_heading = "Piscem Index Options"
+    )]
+    pub ram_limit_gib: usize,
+}
+
+impl PiscemBuildResourceOpts {
+    /// Append these options to a `piscem build` invocation.
+    pub fn append_to(&self, cmd: &mut std::process::Command) {
+        if let Some(ref dir) = self.tmp_dir {
+            cmd.arg("--tmp-dir").arg(dir);
+        }
+        cmd.arg("--ram-limit-gib")
+            .arg(self.ram_limit_gib.to_string());
+    }
+}
+
+/// Collision policy for cell-barcode correction in alevin-fry.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CellBarcodeCorrection {
+    Unique,
+    Frequency,
+}
+
+impl CellBarcodeCorrection {
+    fn as_cli(self) -> &'static str {
+        match self {
+            Self::Unique => "unique",
+            Self::Frequency => "frequency",
+        }
+    }
+}
+
+/// One-error barcode neighbourhood searched by alevin-fry.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BarcodeNeighborhood {
+    #[value(name = "hamming-1")]
+    HammingOne,
+    #[value(name = "substitution-or-shift-1")]
+    SubstitutionOrShiftOne,
+}
+
+impl BarcodeNeighborhood {
+    fn as_cli(self) -> &'static str {
+        match self {
+            Self::HammingOne => "hamming-1",
+            Self::SubstitutionOrShiftOne => "substitution-or-shift-1",
+        }
+    }
+}
+
+/// Collision policy for sample/probe-barcode correction in alevin-fry.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SampleBarcodeCorrection {
+    Exact,
+    Unique,
+    Frequency,
+}
+
+impl SampleBarcodeCorrection {
+    fn as_cli(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::Unique => "unique",
+            Self::Frequency => "frequency",
+        }
+    }
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+enum LegacySampleCorrectionMode {
+    Exact,
+    #[value(name = "1-edit")]
+    OneEdit,
+}
+
+fn confidence_parser(value: &str) -> Result<String, String> {
+    let value = value.trim();
+    let (numerator, denominator) = if let Some((numerator, denominator)) = value.split_once('/') {
+        let numerator = numerator
+            .parse::<u64>()
+            .map_err(|_| format!("invalid barcode-correction confidence {value:?}"))?;
+        let denominator = denominator
+            .parse::<u64>()
+            .map_err(|_| format!("invalid barcode-correction confidence {value:?}"))?;
+        (numerator, denominator)
+    } else {
+        let (whole, fractional) = value.split_once('.').unwrap_or((value, ""));
+        if whole.is_empty() || !whole.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(format!("invalid barcode-correction confidence {value:?}"));
+        }
+        if !fractional.bytes().all(|byte| byte.is_ascii_digit()) || fractional.len() > 18 {
+            return Err(format!("invalid barcode-correction confidence {value:?}"));
+        }
+        let denominator = 10_u64
+            .checked_pow(fractional.len() as u32)
+            .ok_or_else(|| "barcode-correction confidence is too precise".to_string())?;
+        let whole = whole
+            .parse::<u64>()
+            .map_err(|_| format!("invalid barcode-correction confidence {value:?}"))?;
+        let fractional = if fractional.is_empty() {
+            0
+        } else {
+            fractional
+                .parse::<u64>()
+                .map_err(|_| format!("invalid barcode-correction confidence {value:?}"))?
+        };
+        let numerator = whole
+            .checked_mul(denominator)
+            .and_then(|whole| whole.checked_add(fractional))
+            .ok_or_else(|| "barcode-correction confidence is too large".to_string())?;
+        (numerator, denominator)
+    };
+
+    if denominator == 0 || numerator > denominator {
+        return Err(format!(
+            "barcode-correction confidence must be between zero and one (got {numerator}/{denominator})"
+        ));
+    }
+    Ok(value.to_string())
+}
+
+fn memory_size_parser(value: &str) -> Result<String, String> {
+    let value = value.trim();
+    let split = value
+        .find(|character: char| !character.is_ascii_digit() && character != '.')
+        .unwrap_or(value.len());
+    let (number, suffix) = value.split_at(split);
+    if number.is_empty() {
+        return Err("memory size must start with a positive number".to_string());
+    }
+    let number = number
+        .parse::<f64>()
+        .map_err(|_| format!("invalid memory size {value:?}"))?;
+    if !number.is_finite() || number <= 0.0 {
+        return Err("memory size must be positive and finite".to_string());
+    }
+    let multiplier = match suffix.trim().to_ascii_lowercase().as_str() {
+        "" | "b" => 1_u64,
+        "k" | "kb" => 1_000,
+        "ki" | "kib" => 1_u64 << 10,
+        "m" | "mb" => 1_000_000,
+        "mi" | "mib" => 1_u64 << 20,
+        "g" | "gb" => 1_000_000_000,
+        "gi" | "gib" => 1_u64 << 30,
+        "t" | "tb" => 1_000_000_000_000,
+        "ti" | "tib" => 1_u64 << 40,
+        other => return Err(format!("unsupported memory-size suffix {other:?}")),
+    };
+    if number * multiplier as f64 > u64::MAX as f64 {
+        return Err("memory size exceeds the supported range".to_string());
+    }
+    Ok(value.to_string())
+}
+
+/// Optional cell-barcode overrides shared by RNA, multiplex RNA, and ATAC.
+#[derive(Args, Clone, Debug, Default)]
+pub struct CellBarcodeCorrectionOpts {
+    /// Cell-barcode collision policy (inherited default: unique).
+    #[arg(long, value_enum, help_heading = "Advanced Barcode Correction Options")]
+    pub cell_bc_correction: Option<CellBarcodeCorrection>,
+
+    /// One-error cell-barcode neighbourhood. When omitted, alevin-fry chooses
+    /// the protocol/filter-specific default.
+    #[arg(long, value_enum, help_heading = "Advanced Barcode Correction Options")]
+    pub cell_bc_neighborhood: Option<BarcodeNeighborhood>,
+
+    /// Frequency confidence as a decimal or exact fraction. The inherited
+    /// default is 97.5% for RNA and 90% for ATAC.
+    #[arg(
+        long,
+        value_name = "CONFIDENCE",
+        value_parser = confidence_parser,
+        help_heading = "Advanced Barcode Correction Options"
+    )]
+    pub cell_bc_confidence: Option<String>,
+}
+
+impl CellBarcodeCorrectionOpts {
+    pub(crate) fn append_to(&self, command: &mut std::process::Command) {
+        if let Some(policy) = self.cell_bc_correction {
+            command.arg("--cell-bc-correction").arg(policy.as_cli());
+        }
+        if let Some(neighborhood) = self.cell_bc_neighborhood {
+            command
+                .arg("--cell-bc-neighborhood")
+                .arg(neighborhood.as_cli());
+        }
+        if let Some(confidence) = &self.cell_bc_confidence {
+            command.arg("--cell-bc-confidence").arg(confidence);
+        }
+    }
+}
+
+/// Optional collation resource override shared by RNA workflows.
+#[derive(Args, Clone, Debug, Default)]
+pub struct CollationResourceOpts {
+    /// Collation buffer budget (inherited default: 2 GiB).
+    #[arg(
+        long,
+        value_name = "SIZE",
+        value_parser = memory_size_parser,
+        help_heading = "Advanced Resource Options"
+    )]
+    pub collate_memory_limit: Option<String>,
+}
+
+impl CollationResourceOpts {
+    pub(crate) fn append_to(&self, command: &mut std::process::Command) {
+        if let Some(memory_limit) = &self.collate_memory_limit {
+            command.arg("--memory-limit").arg(memory_limit);
+        }
+    }
+}
+
+/// Optional sample/probe-barcode overrides for multiplex RNA.
+#[derive(Args, Clone, Debug, Default)]
+pub struct SampleBarcodeCorrectionOpts {
+    /// Sample-barcode correction policy (inherited default: exact).
+    #[arg(long, value_enum, help_heading = "Advanced Barcode Correction Options")]
+    pub sample_bc_correction: Option<SampleBarcodeCorrection>,
+
+    /// Sample-barcode neighbourhood for non-exact correction (inherited
+    /// default: Hamming-1).
+    #[arg(long, value_enum, help_heading = "Advanced Barcode Correction Options")]
+    pub sample_bc_neighborhood: Option<BarcodeNeighborhood>,
+
+    /// Sample-Frequency confidence as a decimal or exact fraction (inherited
+    /// default: 97.5%).
+    #[arg(
+        long,
+        value_name = "CONFIDENCE",
+        value_parser = confidence_parser,
+        help_heading = "Advanced Barcode Correction Options"
+    )]
+    pub sample_bc_confidence: Option<String>,
+
+    /// Deprecated compatibility alias for sample-barcode correction.
+    #[arg(
+        long,
+        value_enum,
+        hide = true,
+        conflicts_with_all = ["sample_bc_correction", "sample_bc_neighborhood"]
+    )]
+    sample_correction_mode: Option<LegacySampleCorrectionMode>,
+}
+
+impl SampleBarcodeCorrectionOpts {
+    pub(crate) fn append_to(&self, command: &mut std::process::Command) {
+        match self.sample_correction_mode {
+            Some(LegacySampleCorrectionMode::Exact) => {
+                command.arg("--sample-bc-correction").arg("exact");
+            }
+            Some(LegacySampleCorrectionMode::OneEdit) => {
+                command
+                    .arg("--sample-bc-correction")
+                    .arg("unique")
+                    .arg("--sample-bc-neighborhood")
+                    .arg("substitution-or-shift-1");
+            }
+            None => {
+                if let Some(policy) = self.sample_bc_correction {
+                    command.arg("--sample-bc-correction").arg(policy.as_cli());
+                }
+                if let Some(neighborhood) = self.sample_bc_neighborhood {
+                    command
+                        .arg("--sample-bc-neighborhood")
+                        .arg(neighborhood.as_cli());
+                }
+            }
+        }
+        if let Some(confidence) = &self.sample_bc_confidence {
+            command.arg("--sample-bc-confidence").arg(confidence);
+        }
+    }
+}
+
+/// Resource controls used only by deferred sample-Frequency GPL correction.
+#[derive(Args, Clone, Debug, Default)]
+pub struct GplResourceOpts {
+    /// Deferred GPL buffer budget (inherited default: 512 MiB).
+    #[arg(
+        long,
+        value_name = "SIZE",
+        value_parser = memory_size_parser,
+        help_heading = "Advanced Resource Options"
+    )]
+    pub gpl_memory_limit: Option<String>,
+
+    /// Temporary directory for compressed GPL correction runs (inherited
+    /// default: the GPL output directory).
+    #[arg(long, value_name = "DIR", help_heading = "Advanced Resource Options")]
+    pub gpl_tmp_dir: Option<PathBuf>,
+}
+
+impl GplResourceOpts {
+    pub(crate) fn append_to(&self, command: &mut std::process::Command) {
+        if let Some(memory_limit) = &self.gpl_memory_limit {
+            command.arg("--memory-limit").arg(memory_limit);
+        }
+        if let Some(tmp_dir) = &self.gpl_tmp_dir {
+            command.arg("--tmp-dir").arg(tmp_dir);
+        }
+    }
+}
+
 /// The type of references we might create
 /// to map against for quantification with
 /// alevin-fry.
@@ -87,7 +487,7 @@ pub struct MapQuantOpts {
     #[arg(short, long)]
     pub output: PathBuf,
 
-    /// Number of threads to use when running
+    /// Number of threads to use when running. Values below two warn and use two.
     #[arg(short, long, default_value_t = 16)]
     pub threads: u32,
 
@@ -129,9 +529,19 @@ pub struct MapQuantOpts {
     #[arg(long = "use-piscem", requires = "index", hide = true)]
     pub use_piscem: bool,
 
-    /// If piscem >= 0.7.0, enable structural constraints
+    /// Enable structural constraints when mapping
     #[arg(long, help_heading = "Piscem Mapping Options")]
     pub struct_constraints: bool,
+
+    /// Record the position of each mapped read in the RAD file.
+    ///
+    /// alevin-fry detects the positional record type from the RAD header and
+    /// adapts automatically, so no downstream option needs to change. The RAD
+    /// file is larger. Not available for `multiplex-quant`: there is no
+    /// multi-barcode positional record type, and the multi-barcode layout takes
+    /// precedence when the record type is resolved.
+    #[arg(long, help_heading = "Piscem Mapping Options")]
+    pub with_position: bool,
 
     /// Skip checking of the equivalence classes of k-mers that were too ambiguous to be otherwise
     /// considered (passing this flag can speed up mapping slightly, but may reduce specificity)
@@ -194,6 +604,9 @@ pub struct MapQuantOpts {
     )]
     pub dict: PiscemDict,
 
+    #[command(flatten)]
+    pub decode: PiscemDecoderOpts,
+
     /// Path to a mapped output directory containing a RAD file to skip mapping
     #[arg(long = "map-dir", conflicts_with_all = ["index", "reads1", "reads2"], help_heading = "Mapping Options")]
     pub map_dir: Option<PathBuf>,
@@ -231,6 +644,12 @@ pub struct MapQuantOpts {
     )]
     pub min_reads: usize,
 
+    #[command(flatten)]
+    pub cell_correction: CellBarcodeCorrectionOpts,
+
+    #[command(flatten)]
+    pub collation_resources: CollationResourceOpts,
+
     /// Path to a transcript to gene map file
     #[arg(short = 'm', long, help_heading = "UMI Resolution Options")]
     pub t2g_map: Option<PathBuf>,
@@ -238,6 +657,15 @@ pub struct MapQuantOpts {
     /// UMI resolution mode
     #[arg(short, long, help_heading = "UMI Resolution Options", value_parser = clap::builder::PossibleValuesParser::new(["cr-like", "cr-like-em", "parsimony", "parsimony-em", "parsimony-gene", "parsimony-gene-em"]))]
     pub resolution: String,
+
+    /// Cells with fewer than this many reads are resolved by alevin-fry's
+    /// tiny-cell fast path, which applies `cr-like` (winner-take-all) semantics
+    /// regardless of `--resolution`. Pass 0 to resolve every cell with the
+    /// requested strategy.
+    ///
+    /// Left unset, alevin-fry's own default applies.
+    #[arg(long, value_name = "N", help_heading = "UMI Resolution Options")]
+    pub small_thresh: Option<usize>,
 
     /// Generate an anndata (h5ad format) count matrix from the standard (matrix-market format)
     /// output.
@@ -348,7 +776,7 @@ pub struct IndexOpts {
     pub minimizer_length: u32,
 
     /// Paths to decoy sequence FASTA files used to insert poison
-    /// k-mer information into the index (only if using piscem >= 0.7).
+    /// k-mer information into the index.
     #[arg(
         long,
         help_heading = "Piscem Index Options",
@@ -394,6 +822,9 @@ pub struct IndexOpts {
         display_order = 7
     )]
     pub dict: PiscemDict,
+
+    #[command(flatten)]
+    pub build_resources: PiscemBuildResourceOpts,
 
     /// Number of threads to use when running
     #[arg(short, long, default_value_t = 16, display_order = 2)]
@@ -557,7 +988,8 @@ pub struct MultiplexQuantOpts {
     #[arg(short, long)]
     pub chemistry: Option<String>,
 
-    /// Override the read geometry string (e.g. '1{b[16]u[12]x[0-3]hamming(f[TTGCTAGGACCG],1)s[10]x:}2{r:}')
+    /// Override the read geometry string (for example,
+    /// `1{b[16]u[12]x[0-3]hamming(f[TTGCTAGGACCG],1)s[10]x:}2{r:}`).
     #[arg(short, long)]
     pub geometry: Option<String>,
 
@@ -583,17 +1015,23 @@ pub struct MultiplexQuantOpts {
         value_parser = clap::builder::PossibleValuesParser::new(["forward", "reverse"]))]
     pub sample_bc_ori: Option<String>,
 
-    /// Sample barcode correction mode
-    #[arg(long, default_value = "exact",
-        value_parser = clap::builder::PossibleValuesParser::new(["exact", "1-edit"]),
-        help_heading = "Permit List Options")]
-    pub sample_correction_mode: String,
+    #[command(flatten)]
+    pub cell_correction: CellBarcodeCorrectionOpts,
+
+    #[command(flatten)]
+    pub sample_correction: SampleBarcodeCorrectionOpts,
+
+    #[command(flatten)]
+    pub gpl_resources: GplResourceOpts,
+
+    #[command(flatten)]
+    pub collation_resources: CollationResourceOpts,
 
     /// Path to output directory
     #[arg(short, long)]
     pub output: PathBuf,
 
-    /// Number of threads to use
+    /// Number of threads to use. Values below two warn and use two.
     #[arg(short, long, default_value_t = 16)]
     pub threads: u32,
 
@@ -625,6 +1063,21 @@ pub struct MultiplexQuantOpts {
     #[arg(long, help_heading = "Reference Options")]
     pub sample_bc_list: Option<PathBuf>,
 
+    /// Select and name a subset of the chemistry's samples without hand-writing
+    /// barcodes. TSV mapping a registry sample id to your name, one per line
+    /// (e.g. `BC001<TAB>kidney`); a single-column line keeps the registry id as
+    /// the name. The barcode sequences — every spelling — always come from the
+    /// chemistry's registry list, so omitting a spelling (the usual cause of
+    /// silent demultiplexing loss) is impossible. Requires --chemistry; cannot be
+    /// combined with --sample-bc-list.
+    #[arg(
+        long,
+        value_name = "SHEET",
+        conflicts_with = "sample_bc_list",
+        help_heading = "Reference Options"
+    )]
+    pub samples: Option<PathBuf>,
+
     /// Comma-separated list of R1 FASTQ files
     #[arg(
         short = '1',
@@ -652,6 +1105,15 @@ pub struct MultiplexQuantOpts {
         ]))]
     pub resolution: String,
 
+    /// Cells with fewer than this many reads are resolved by alevin-fry's
+    /// tiny-cell fast path, which applies `cr-like` (winner-take-all) semantics
+    /// regardless of `--resolution`. Pass 0 to resolve every cell with the
+    /// requested strategy.
+    ///
+    /// Left unset, alevin-fry's own default applies.
+    #[arg(long, value_name = "N", help_heading = "Quantification Options")]
+    pub small_thresh: Option<usize>,
+
     /// k-mer length for probe index building
     #[arg(long, default_value_t = 23, help_heading = "Probe Set Options")]
     pub kmer_length: usize,
@@ -663,7 +1125,7 @@ pub struct MultiplexQuantOpts {
         help_heading = "Piscem Mapping Options")]
     pub skipping_strategy: String,
 
-    /// If piscem >= 0.7.0, enable structural constraints
+    /// Enable structural constraints when mapping
     #[arg(long, help_heading = "Piscem Mapping Options")]
     pub struct_constraints: bool,
 
@@ -680,6 +1142,9 @@ pub struct MultiplexQuantOpts {
         help_heading = "Piscem Mapping Options"
     )]
     pub dict: PiscemDict,
+
+    #[command(flatten)]
+    pub decode: PiscemDecoderOpts,
 
     /// Minimum read count threshold for unfiltered permit list
     #[arg(long, default_value_t = 10, help_heading = "Permit List Options")]
@@ -868,4 +1333,127 @@ pub enum WorkflowCommands {
         )]
         skip_step: Option<Vec<u64>>,
     },
+}
+
+#[cfg(test)]
+mod barcode_forwarding_tests {
+    use super::*;
+
+    fn args_of(command: &std::process::Command) -> Vec<String> {
+        command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn omitted_barcode_and_resource_overrides_emit_no_arguments() {
+        let mut command = std::process::Command::new("alevin-fry");
+        CellBarcodeCorrectionOpts::default().append_to(&mut command);
+        SampleBarcodeCorrectionOpts::default().append_to(&mut command);
+        CollationResourceOpts::default().append_to(&mut command);
+        GplResourceOpts::default().append_to(&mut command);
+        assert!(args_of(&command).is_empty());
+    }
+
+    #[test]
+    fn explicit_overrides_are_forwarded_to_their_stage_spellings() {
+        let cell = CellBarcodeCorrectionOpts {
+            cell_bc_correction: Some(CellBarcodeCorrection::Frequency),
+            cell_bc_neighborhood: Some(BarcodeNeighborhood::HammingOne),
+            cell_bc_confidence: Some("39/40".to_string()),
+        };
+        let sample = SampleBarcodeCorrectionOpts {
+            sample_bc_correction: Some(SampleBarcodeCorrection::Frequency),
+            sample_bc_neighborhood: Some(BarcodeNeighborhood::SubstitutionOrShiftOne),
+            sample_bc_confidence: Some("0.975".to_string()),
+            sample_correction_mode: None,
+        };
+        let gpl = GplResourceOpts {
+            gpl_memory_limit: Some("1GiB".to_string()),
+            gpl_tmp_dir: Some(PathBuf::from("/tmp/gpl")),
+        };
+        let collate = CollationResourceOpts {
+            collate_memory_limit: Some("4GB".to_string()),
+        };
+
+        let mut gpl_command = std::process::Command::new("alevin-fry");
+        cell.append_to(&mut gpl_command);
+        sample.append_to(&mut gpl_command);
+        gpl.append_to(&mut gpl_command);
+        assert_eq!(
+            args_of(&gpl_command),
+            [
+                "--cell-bc-correction",
+                "frequency",
+                "--cell-bc-neighborhood",
+                "hamming-1",
+                "--cell-bc-confidence",
+                "39/40",
+                "--sample-bc-correction",
+                "frequency",
+                "--sample-bc-neighborhood",
+                "substitution-or-shift-1",
+                "--sample-bc-confidence",
+                "0.975",
+                "--memory-limit",
+                "1GiB",
+                "--tmp-dir",
+                "/tmp/gpl",
+            ]
+        );
+
+        let mut collate_command = std::process::Command::new("alevin-fry");
+        collate.append_to(&mut collate_command);
+        assert_eq!(args_of(&collate_command), ["--memory-limit", "4GB"]);
+    }
+
+    #[test]
+    fn legacy_sample_modes_translate_without_deprecated_child_arguments() {
+        for (legacy, expected) in [
+            (
+                LegacySampleCorrectionMode::Exact,
+                vec!["--sample-bc-correction", "exact"],
+            ),
+            (
+                LegacySampleCorrectionMode::OneEdit,
+                vec![
+                    "--sample-bc-correction",
+                    "unique",
+                    "--sample-bc-neighborhood",
+                    "substitution-or-shift-1",
+                ],
+            ),
+        ] {
+            let options = SampleBarcodeCorrectionOpts {
+                sample_correction_mode: Some(legacy),
+                ..Default::default()
+            };
+            let mut command = std::process::Command::new("alevin-fry");
+            options.append_to(&mut command);
+            assert_eq!(args_of(&command), expected);
+            assert!(
+                !args_of(&command)
+                    .iter()
+                    .any(|argument| argument == "--sample-correction-mode")
+            );
+        }
+    }
+
+    #[test]
+    fn confidence_and_memory_validation_match_alevin_fry_grammar() {
+        for confidence in ["0", "0.90", "0.975", "39/40", "1"] {
+            assert!(confidence_parser(confidence).is_ok(), "{confidence}");
+        }
+        for confidence in ["", "1.01", "40/39", "1/0", "NaN"] {
+            assert!(confidence_parser(confidence).is_err(), "{confidence}");
+        }
+
+        for memory in ["256MiB", "1GiB", "4GB", "512000000", "1.5G"] {
+            assert!(memory_size_parser(memory).is_ok(), "{memory}");
+        }
+        for memory in ["", "0", "NaN", "1XB"] {
+            assert!(memory_size_parser(memory).is_err(), "{memory}");
+        }
+    }
 }

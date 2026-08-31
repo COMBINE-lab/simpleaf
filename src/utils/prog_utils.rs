@@ -14,6 +14,35 @@ use which::which;
 
 use file_requirements::{FileRequirementBuildError, FileRequirementBuilder};
 
+/// The versions of the external programs this release of simpleaf requires.
+///
+/// These are the single source of truth. They used to be written out at each
+/// call site, and drifted: `get_required_progs_from_paths` demanded piscem
+/// `>=0.19.0` while every per-command check still said `>=0.18.0` and
+/// `simpleaf_conda_env.yml` said `>=0.17.1` — three different answers to one
+/// question, so raising the floor meant finding all of them.
+///
+/// Keep `simpleaf_conda_env.yml` in step when these change; it pins the same
+/// programs for CI and cannot read these constants.
+pub mod min_versions {
+    /// piscem 0.23.0 is the first release built against piscem-rs 0.10
+    /// (sshash-lib 0.7, the unified canonical minimizer scheme): its index
+    /// format is incompatible with earlier releases in BOTH directions —
+    /// 0.23 rejects old indexes with a rebuild message, and older piscem
+    /// cannot read 0.23-built indexes. Requiring >=0.23 keeps the piscem
+    /// simpleaf indexes with and the piscem it maps with format-consistent.
+    /// (0.22.0 introduced `--decoder`/`--thread-policy` and the shared `-t`
+    /// budget, which simpleaf forwards unconditionally.)
+    pub const PISCEM: &str = ">=0.23.0, <1.0.0";
+
+    /// alevin-fry 0.18.0 provides deterministic compiled barcode-correction
+    /// plans and the correction/resource controls forwarded by simpleaf 0.28.
+    pub const ALEVIN_FRY: &str = ">=0.18.0, <1.0.0";
+
+    /// Only consulted when peak calling is actually requested.
+    pub const MACS3: &str = ">=3.0.2, <4.0.0";
+}
+
 // The below functions are taken from the [`execute`](https://crates.io/crates/execute)
 // crate.
 
@@ -46,7 +75,8 @@ pub fn shell<S: AsRef<OsStr>>(cmd: S) -> Command {
 }
 
 /// NOTE: the body of the JSON object we fetch cannot exceed 10MB
-/// this is a limitation put in place by `ureq` (see : https://docs.rs/ureq/3.0.0-rc4/ureq/struct.Body.html#method.read_json)
+/// this is a limitation put in place by `ureq` (see
+/// <https://docs.rs/ureq/3.0.0-rc4/ureq/struct.Body.html#method.read_json>).
 pub fn read_json_from_remote_url<T: AsRef<str>>(url: T) -> Result<serde_json::Value> {
     let url = url.as_ref();
 
@@ -232,34 +262,23 @@ pub struct ReqProgs {
     pub macs: Option<ProgInfo>,
 }
 
-impl ReqProgs {
-    pub fn issue_recommended_version_messages(&self) {
-        // Currently (4/14/2026) want to recommend piscem >= 0.19.0
-        if let Some(ref piscem_info) = self.piscem {
-            let desired_ver = VersionReq::parse(">=0.19.0").unwrap();
-            let current_ver = Version::parse(&piscem_info.version).unwrap();
-            if desired_ver.matches(&current_ver) {
-                // nothing to do here
-            } else {
-                warn!(
-                    "It is recommended to use piscem version {}, but currently version {} is being used. \
-                       Please consider installing the latest version of piscem and setting simpleaf to use this \
-                       new version by running the `refresh-prog-info` command.",
-                    &desired_ver, &current_ver
-                );
-            }
-        }
-    }
-}
-
 #[allow(dead_code)]
 pub fn check_version_constraints<S1: AsRef<str>>(
     prog_name: &str,
     req_string: S1,
     prog_ver_string: &str,
 ) -> Result<Version> {
-    let parsed_version = Version::parse(prog_ver_string).unwrap();
-    let req = VersionReq::parse(req_string.as_ref()).unwrap();
+    // A tool that prints something that is not a semantic version is a
+    // misconfigured install, not a bug in simpleaf; report it rather than
+    // panicking with an unwrap.
+    let parsed_version = Version::parse(prog_ver_string).with_context(|| {
+        format!(
+            "could not parse the version of {} (`{}`) as a semantic version",
+            prog_name, prog_ver_string
+        )
+    })?;
+    let req = VersionReq::parse(req_string.as_ref())
+        .with_context(|| format!("invalid version requirement `{}`", req_string.as_ref()))?;
     if req.matches(&parsed_version) {
         Ok(parsed_version)
     } else {
@@ -301,8 +320,18 @@ pub fn check_version_constraints_from_output<S1: AsRef<str>>(
                 } else {
                     version.to_string()
                 };
-                let parsed_version = Version::parse(&ver).unwrap();
-                let req = VersionReq::parse(req_string.as_ref()).unwrap();
+                // See the note in `check_version_constraints`: a tool printing
+                // something unparseable is a bad install, not a panic.
+                let parsed_version = Version::parse(&ver).with_context(|| {
+                    format!(
+                        "could not parse the version of {} (`{}`) as a semantic version; \
+                         the program reported: {:?}",
+                        prog_name, ver, version
+                    )
+                })?;
+                let req = VersionReq::parse(req_string.as_ref()).with_context(|| {
+                    format!("invalid version requirement `{}`", req_string.as_ref())
+                })?;
                 if req.matches(&parsed_version) {
                     return Ok(parsed_version);
                 } else {
@@ -397,7 +426,7 @@ pub fn get_required_progs_from_paths(
     if let Some(piscem) = opt_piscem {
         let st = piscem.display().to_string();
         let sr = run_fun!(${st} --version);
-        let v = check_version_constraints_from_output("piscem", ">=0.19.0, <1.0.0", sr)?;
+        let v = check_version_constraints_from_output("piscem", min_versions::PISCEM, sr)?;
         rp.piscem = Some(ProgInfo {
             exe_path: piscem,
             version: format!("{}", v),
@@ -407,7 +436,7 @@ pub fn get_required_progs_from_paths(
     if let Some(macs) = opt_macs {
         let st = macs.display().to_string();
         let sr = run_fun!(${st} --version);
-        let v = check_version_constraints_from_output("macs3", ">=3.0.2, <4.0.0", sr)?;
+        let v = check_version_constraints_from_output("macs3", min_versions::MACS3, sr)?;
         rp.macs = Some(ProgInfo {
             exe_path: macs,
             version: format!("{}", v),
@@ -416,7 +445,7 @@ pub fn get_required_progs_from_paths(
 
     let st = alevin_fry.display().to_string();
     let sr = run_fun!(${st} --version);
-    let v = check_version_constraints_from_output("alevin-fry", ">=0.16.1, <1.0.0", sr)?;
+    let v = check_version_constraints_from_output("alevin-fry", min_versions::ALEVIN_FRY, sr)?;
     rp.alevin_fry = Some(ProgInfo {
         exe_path: alevin_fry,
         version: format!("{}", v),
@@ -431,7 +460,7 @@ pub fn get_required_progs() -> Result<ReqProgs> {
     // then check the path.
     let piscem_exe = Some(search_for_executable("PISCEM", "piscem")?);
     let alevin_fry_exe = Some(search_for_executable("ALEVIN_FRY", "alevin-fry")?);
-    let macs_exe = Some(search_for_executable("ALEVIN_FRY", "macs3")?);
+    let macs_exe = Some(search_for_executable("MACS3", "macs3")?);
 
     get_required_progs_from_paths(piscem_exe, alevin_fry_exe, macs_exe)
 }

@@ -215,6 +215,13 @@ fn push_advanced_piscem_options(
         piscem_quant_cmd.arg("--struct-constraints");
     }
 
+    // alevin-fry resolves the positional record type from the RAD header
+    // (KnownRecordType::RnaShortPos) and switches record types itself, so this
+    // needs no counterpart on the generate-permit-list / collate / quant calls.
+    if opts.with_position {
+        piscem_quant_cmd.arg("--with-position");
+    }
+
     piscem_quant_cmd
         .arg("--max-hit-occ")
         .arg(format!("{}", opts.max_hit_occ));
@@ -272,7 +279,6 @@ fn resolve_quant_setup(
     let mut t2g_map = opts.t2g_map.clone();
     let ctx = context::load_runtime_context(af_home_path)?;
     let rp: ReqProgs = ctx.progs;
-    rp.issue_recommended_version_messages();
 
     let index_meta = index_meta::resolve_quant_index(opts.index.clone())?;
     if t2g_map.is_none()
@@ -370,14 +376,7 @@ fn resolve_quant_setup(
         filter_meth_opt = Some(CellFilterMethod::KneeFinding);
     }
 
-    let (threads, capped_at) = runtime::cap_threads(opts.threads);
-    if let Some(max_threads) = capped_at {
-        warn!(
-            "The maximum available parallelism is {}, but {} threads were requested.",
-            max_threads, opts.threads
-        );
-        warn!("setting number of threads to {}", max_threads);
-    }
+    let threads = runtime::cap_threads_warned(opts.threads);
 
     let setup = QuantSetup {
         rp,
@@ -418,7 +417,7 @@ fn run_mapping_stage(
                         "A piscem index is being used, but piscem program info is missing.",
                     )?;
                 let mut piscem_quant_cmd =
-                    std::process::Command::new(format!("{}", &piscem_prog_info.exe_path.display()));
+                    std::process::Command::new(format!("{}", piscem_prog_info.exe_path.display()));
                 let index_path = format!("{}", index_base.display());
                 piscem_quant_cmd
                     .arg("map-sc")
@@ -434,25 +433,12 @@ fn run_mapping_stage(
                     .arg("-o")
                     .arg(&map_output);
 
-                match prog_utils::check_version_constraints(
-                    "piscem",
-                    ">=0.18.0, <1.0.0",
-                    &piscem_prog_info.version,
-                ) {
-                    Ok(_piscem_ver) => {
-                        push_advanced_piscem_options(&mut piscem_quant_cmd, opts)?;
-                    }
-                    Err(_) => {
-                        info!(
-                            r#"
-Simpleaf is currently using piscem version {}, but you must be using version >= 0.18.0 in order to use the
-mapping options specific to this, or later versions. If you wish to use these options, please upgrade your
-piscem version or, if you believe you have a sufficiently new version installed, update the executable
-being used by simpleaf"#,
-                            &piscem_prog_info.version
-                        );
-                    }
-                }
+                // No version gate here any more: `set-paths` refuses a piscem
+                // older than `min_versions::PISCEM`, which is well past the
+                // 0.18.0 these options needed, so the fallback that quietly
+                // dropped them could never be reached.
+                push_advanced_piscem_options(&mut piscem_quant_cmd, opts)?;
+                opts.decode.append_to(&mut piscem_quant_cmd);
 
                 add_fragment_library_to_piscem(
                     setup.chem.fragment_geometry_str(),
@@ -535,14 +521,14 @@ fn run_quant_stage(
         .context("Alevin-fry program info is missing; please run `simpleaf set-paths`.")?
         .exe_path
         .clone();
-    let mut alevin_gpl_cmd = std::process::Command::new(format!("{}", &alevin_fry.display()));
-    let gpl_threads = setup.threads.min(8);
+    let mut alevin_gpl_cmd = std::process::Command::new(format!("{}", alevin_fry.display()));
     alevin_gpl_cmd.arg("generate-permit-list");
     alevin_gpl_cmd.arg("-i").arg(&mapping.map_output);
     alevin_gpl_cmd.arg("-d").arg(setup.ori.as_str());
-    alevin_gpl_cmd.arg("-t").arg(format!("{}", gpl_threads));
+    alevin_gpl_cmd.arg("-t").arg(format!("{}", setup.threads));
     setup.filter_meth.add_to_args(&mut alevin_gpl_cmd);
     alevin_gpl_cmd.arg("-o").arg(&gpl_output);
+    opts.cell_correction.append_to(&mut alevin_gpl_cmd);
     let gpl_cmd_string = prog_utils::get_cmd_line_string(&alevin_gpl_cmd);
     info!("alevin-fry generate-permit-list cmd : {}", gpl_cmd_string);
     let input_files = vec![mapping.map_output.clone()];
@@ -551,13 +537,14 @@ fn run_quant_stage(
     exec::run_checked(&mut alevin_gpl_cmd, "[generate permit list]")?;
     let gpl_duration = gpl_start.elapsed();
 
-    let mut alevin_collate_cmd = std::process::Command::new(format!("{}", &alevin_fry.display()));
+    let mut alevin_collate_cmd = std::process::Command::new(format!("{}", alevin_fry.display()));
     alevin_collate_cmd.arg("collate");
     alevin_collate_cmd.arg("-i").arg(&gpl_output);
     alevin_collate_cmd.arg("-r").arg(&mapping.map_output);
     alevin_collate_cmd
         .arg("-t")
         .arg(format!("{}", setup.threads));
+    opts.collation_resources.append_to(&mut alevin_collate_cmd);
     let collate_cmd_string = prog_utils::get_cmd_line_string(&alevin_collate_cmd);
     info!("alevin-fry collate cmd : {}", collate_cmd_string);
     let input_files = vec![gpl_output.clone(), mapping.map_output.clone()];
@@ -566,7 +553,7 @@ fn run_quant_stage(
     exec::run_checked(&mut alevin_collate_cmd, "[collate]")?;
     let collate_duration = collate_start.elapsed();
 
-    let mut alevin_quant_cmd = std::process::Command::new(format!("{}", &alevin_fry.display()));
+    let mut alevin_quant_cmd = std::process::Command::new(format!("{}", alevin_fry.display()));
     alevin_quant_cmd
         .arg("quant")
         .arg("-i")
@@ -576,6 +563,13 @@ fn run_quant_stage(
     alevin_quant_cmd.arg("-t").arg(format!("{}", setup.threads));
     alevin_quant_cmd.arg("-m").arg(setup.t2g_map_file.clone());
     alevin_quant_cmd.arg("-r").arg(&opts.resolution);
+    // Only forwarded when the user set it, so alevin-fry's own default stands
+    // otherwise.
+    if let Some(small_thresh) = opts.small_thresh {
+        alevin_quant_cmd
+            .arg("--small-thresh")
+            .arg(small_thresh.to_string());
+    }
     let quant_cmd_string = prog_utils::get_cmd_line_string(&alevin_quant_cmd);
     info!("cmd : {:?}", alevin_quant_cmd);
     let input_files = vec![gpl_output.clone(), setup.t2g_map_file.clone()];
@@ -746,5 +740,120 @@ mod tests {
             "unexpected error: {:#}",
             err
         );
+    }
+
+    /// The piscem passthroughs on the RNA path must reach the child command.
+    ///
+    /// Same rationale as the ATAC-side test: `--thr` and `--barcode-length`
+    /// both rotted there by being parsed and never forwarded, which is
+    /// invisible from outside when the child's default happens to match.
+    #[test]
+    fn advanced_piscem_options_reach_the_child_command() {
+        let opts = parse_quant_opts(&[
+            "quant",
+            "-c",
+            "10xv3",
+            "-o",
+            "/tmp/out",
+            "-r",
+            "cr-like",
+            "--knee",
+            "--map-dir",
+            "/tmp/mapped",
+            "--with-position",
+            "--struct-constraints",
+            "--max-hit-occ",
+            "77",
+        ]);
+        let mut cmd = std::process::Command::new("echo");
+        push_advanced_piscem_options(&mut cmd, &opts).expect("should build args");
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+
+        assert!(
+            args.iter().any(|a| a == "--with-position"),
+            "--with-position was never forwarded; args: {:?}",
+            args
+        );
+        assert!(args.iter().any(|a| a == "--struct-constraints"));
+        let pos = args
+            .iter()
+            .position(|a| a == "--max-hit-occ")
+            .expect("flag");
+        assert_eq!(args.get(pos + 1).map(String::as_str), Some("77"));
+
+        // and the booleans stay off when not requested
+        let opts = parse_quant_opts(&[
+            "quant",
+            "-c",
+            "10xv3",
+            "-o",
+            "/tmp/out",
+            "-r",
+            "cr-like",
+            "--knee",
+            "--map-dir",
+            "/tmp/mapped",
+        ]);
+        let mut cmd = std::process::Command::new("echo");
+        push_advanced_piscem_options(&mut cmd, &opts).expect("should build args");
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(!args.iter().any(|a| a == "--with-position"));
+        assert!(!args.iter().any(|a| a == "--struct-constraints"));
+    }
+
+    #[test]
+    fn barcode_and_collation_overrides_reach_their_child_arguments() {
+        let opts = parse_quant_opts(&[
+            "quant",
+            "-c",
+            "10xv3",
+            "-o",
+            "/tmp/out",
+            "-r",
+            "cr-like",
+            "--knee",
+            "--map-dir",
+            "/tmp/mapped",
+            "--cell-bc-correction",
+            "frequency",
+            "--cell-bc-neighborhood",
+            "hamming-1",
+            "--cell-bc-confidence",
+            "39/40",
+            "--collate-memory-limit",
+            "3GiB",
+        ]);
+
+        let mut gpl = std::process::Command::new("alevin-fry");
+        opts.cell_correction.append_to(&mut gpl);
+        let gpl_args: Vec<_> = gpl
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            gpl_args,
+            [
+                "--cell-bc-correction",
+                "frequency",
+                "--cell-bc-neighborhood",
+                "hamming-1",
+                "--cell-bc-confidence",
+                "39/40",
+            ]
+        );
+
+        let mut collate = std::process::Command::new("alevin-fry");
+        opts.collation_resources.append_to(&mut collate);
+        let collate_args: Vec<_> = collate
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(collate_args, ["--memory-limit", "3GiB"]);
     }
 }

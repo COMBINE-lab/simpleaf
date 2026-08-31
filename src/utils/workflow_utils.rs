@@ -14,7 +14,7 @@ use std::fs;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::utils::jrsonnet_main::parse_jsonnet;
 use crate::utils::prog_utils;
@@ -196,7 +196,7 @@ be certain you intend to do this.",
     // remain that we have not seen, print out the appropriate
     // warning (or error) message. If the message is an error, then
     // bail after issuing it.
-    for (_cn, action) in expected_columns.iter() {
+    for action in expected_columns.values() {
         match action {
             HeaderFieldAction::Recommended(msg) => {
                 warn!("{}", msg);
@@ -500,7 +500,19 @@ pub fn get_template_version<T: AsRef<Path>>(
         ParseAction::Inspect,
     ) {
         Ok(v) => v,
-        Err(_) => return Ok(String::from("N/A*")),
+        Err(e) => {
+            // Not every template can be evaluated uninstantiated, so this is a
+            // normal outcome rather than a failure. Log the reason all the same:
+            // discarding it entirely meant a genuine regression in the jsonnet
+            // evaluator was indistinguishable from a template that simply needs
+            // arguments, and showed up only as "N/A*" in a table.
+            debug!(
+                "could not evaluate uninstantiated template {}: {:#}",
+                template_path.display(),
+                e
+            );
+            return Ok(String::from("N/A*"));
+        }
     };
 
     let workflow_json_value: Value = serde_json::from_str(workflow_json_string.as_str())?;
@@ -768,7 +780,7 @@ impl SimpleafWorkflow {
         )?;
 
         // sort the cmd queue by its `step`.
-        cmd_queue.sort_by(|cmd1, cmd2| cmd1.step.cmp(&cmd2.step));
+        cmd_queue.sort_by_key(|cmd| cmd.step);
 
         Ok(SimpleafWorkflow {
             af_home_path: af_home_path.as_ref().to_owned(),
@@ -1436,7 +1448,7 @@ pub fn parse_manifest<T: AsRef<Path>>(manifest_path: &T) -> anyhow::Result<serde
     // Open the file in read-only mode with buffer.
     let manifest_path = manifest_path.as_ref();
     let file = File::open(manifest_path)
-        .with_context(|| format!("couldn't open manifest path {}", &manifest_path.display()))?;
+        .with_context(|| format!("couldn't open manifest path {}", manifest_path.display()))?;
     let reader = BufReader::new(file);
     let manifest = serde_json::from_reader(reader)?;
     Ok(manifest)
@@ -1560,7 +1572,7 @@ pub fn get_protocol_estuary<T: AsRef<Path>>(
 }
 
 /// Copy all files from the src folder to the dst folder.\
-/// Adapted from https://stackoverflow.com/a/65192210.
+/// Adapted from <https://stackoverflow.com/a/65192210>.
 pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> anyhow::Result<()> {
     fs::create_dir_all(&dst)?;
     for entry in fs::read_dir(src)? {
@@ -1824,7 +1836,7 @@ mod tests {
         } else {
             panic!(
                 "Expected {:?} to match WFCommand::ExternalCommand, but it didn't",
-                &cmd.cmd
+                cmd.cmd
             );
         }
 

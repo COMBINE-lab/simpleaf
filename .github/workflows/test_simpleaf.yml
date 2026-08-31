@@ -1,16 +1,19 @@
 name: simpleaf-check
 
 on:
+  # `dev`, not `develop`: the branch that exists, and the one that serves both
+  # the runtime chemistry registry and the ReadTheDocs build. Until this was
+  # corrected, nothing pushed to it was tested at all.
   push:
-    branches: [ main, develop ]
+    branches: [ main, dev ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, dev ]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check_formatting:
+  build_and_test:
     if: "!contains(github.event.head_commit.message, 'skip ci')"
     strategy:
       matrix:
@@ -18,29 +21,82 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2.4.2
+        uses: actions/checkout@v6
 
       - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
           components: rustfmt
+
+      # simpleaf has a large, stable dependency graph (notably Polars and
+      # HDF5). Cache dependency artifacts separately for each runner/toolchain;
+      # rust-cache derives the remaining key from Cargo.lock and the Rust
+      # environment, and deliberately excludes simpleaf itself.
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       
+      # Cheap and compiles nothing, so it runs first.
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
       - name: Build
         run: cargo build --verbose --release
 
+      # Deliberately `--release`: it reuses the artifacts the Build step just
+      # produced. A debug `cargo test` would rebuild the whole dependency graph
+      # in a second profile — including HDF5, which is compiled from source —
+      # and cost minutes.
+      #
+      # This job previously ran neither this nor `cargo fmt`, which is how a
+      # test that did not compile, and a stale CLI snapshot, both reached main.
+      - name: Run cargo tests
+        run: cargo test --release --verbose
+
+      - name: Strict API documentation
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps
+
       - name: Install conda env
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@v4
         with:
           channels: conda-forge,default,bioconda
           channel-priority: true
           activate-environment: anaconda-client-env
           environment-file: simpleaf_conda_env.yml
 
+      # The bioconda package can lag a newly published alevin-fry release.
+      # Exercise simpleaf against the release artifact that satisfies the
+      # version contract instead of silently testing an older conda package.
+      - name: Install alevin-fry 0.18.0 release artifact
+        shell: bash -l {0}
+        run: |
+          case "$(uname -s)-$(uname -m)" in
+            Linux-x86_64) target=x86_64-unknown-linux-gnu ;;
+            Linux-aarch64) target=aarch64-unknown-linux-gnu ;;
+            Darwin-x86_64) target=x86_64-apple-darwin ;;
+            Darwin-arm64) target=aarch64-apple-darwin ;;
+            *) echo "unsupported CI platform: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+          esac
+
+          archive="alevin-fry-${target}.tar.xz"
+          install_dir="${RUNNER_TEMP}/alevin-fry-0.18.0"
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            "https://github.com/COMBINE-lab/alevin-fry/releases/download/v0.18.0/${archive}" \
+            -o "${RUNNER_TEMP}/${archive}"
+          mkdir -p "${install_dir}"
+          tar -xJf "${RUNNER_TEMP}/${archive}" \
+            --strip-components=1 -C "${install_dir}"
+          "${install_dir}/alevin-fry" --version
+          echo "${install_dir}" >> "${GITHUB_PATH}"
+
       - name: Test simpleaf
         shell: bash -l {0}
         run: |
+          export PATH="${RUNNER_TEMP}/alevin-fry-0.18.0:${PATH}"
           cd scripts
           chmod +x test_simpleaf.sh
           ulimit -n 2048

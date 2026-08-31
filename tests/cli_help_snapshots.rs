@@ -98,6 +98,18 @@ fn update_requested() -> bool {
     std::env::var_os("UPDATE_CLI_SNAPSHOTS").is_some_and(|v| !v.is_empty() && v != "0")
 }
 
+fn normalize_help(output: &str) -> String {
+    let mut normalized = output
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if output.ends_with('\n') {
+        normalized.push('\n');
+    }
+    normalized
+}
+
 #[test]
 fn cli_help_outputs_match_snapshots() {
     let binary = env!("CARGO_BIN_EXE_simpleaf");
@@ -115,12 +127,16 @@ fn cli_help_outputs_match_snapshots() {
         assert!(
             output.status.success(),
             "expected success for args {:?}, got status {:?}\nstderr:\n{}",
-            &args,
+            args,
             output.status.code(),
             String::from_utf8_lossy(&output.stderr)
         );
 
-        let actual = String::from_utf8(output.stdout).expect("stdout was not valid UTF-8");
+        // Clap indents otherwise-empty separator lines. Keeping those spaces in
+        // tracked snapshots makes `git diff --check` fail while adding no
+        // information, so normalize trailing whitespace on both sides.
+        let actual =
+            normalize_help(&String::from_utf8(output.stdout).expect("stdout was not valid UTF-8"));
         let expected_path = snapshots_dir().join(snapshot_file);
 
         if updating {
@@ -130,16 +146,16 @@ fn cli_help_outputs_match_snapshots() {
             continue;
         }
 
-        let expected = fs::read_to_string(&expected_path).unwrap_or_else(|e| {
+        let expected = normalize_help(&fs::read_to_string(&expected_path).unwrap_or_else(|e| {
             panic!("failed reading snapshot {}: {}", expected_path.display(), e)
-        });
+        }));
 
         assert_eq!(
             actual, expected,
             "help output drifted for args {:?} against snapshot {}.\n\
              If this change is intended, regenerate with:\n    \
              UPDATE_CLI_SNAPSHOTS=1 cargo test --test cli_help_snapshots",
-            &args, snapshot_file
+            args, snapshot_file
         );
     }
 

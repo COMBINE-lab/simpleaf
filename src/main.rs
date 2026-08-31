@@ -112,7 +112,8 @@ fn main() -> anyhow::Result<()> {
         }
 
         // processing for ATAC-seq data
-        Commands::Atac(AtacCommand::Process(process_opts)) => {
+        Commands::Atac(AtacCommand::Process(mut process_opts)) => {
+            process_opts.threads = crate::core::runtime::cap_threads_warned(process_opts.threads);
             // validate versions
             atac::process::check_progs(&af_home_path, &process_opts)?;
             // first we map the reads

@@ -267,7 +267,8 @@ pub fn list_workflows<T: AsRef<Path>>(af_home_path: T) -> anyhow::Result<()> {
 ///
 /// ### Program Description
 /// This program is used for getting the source files of a pubished workflow
-/// from the protocol estuary GitHub repo https://github.com/COMBINE-lab/protocol-estuary
+/// from the protocol estuary GitHub repo
+/// <https://github.com/COMBINE-lab/protocol-estuary>.
 ///
 /// This program takes a string representing the name of a published workflow, and copy the
 /// folder of that workflow in the protocol estuary to the provided output directory

@@ -6,7 +6,7 @@ The `simpleaf` program can be installed from source, from [crates.io](https://cr
 
 **Note**: `simpleaf` uses [`piscem`](https://github.com/COMBINE-lab/piscem) as its RNA back-end mapper and indexer. If you have difficulty building a `piscem` index, before filing an issue on GitHub, please make sure you try to increase your file handle limit (e.g. as described [here](https://github.com/COMBINE-lab/cuttlefish/blob/master/README.md#note)).
 
-Check out the detailed documentation [here](https://simpleaf.readthedocs.io/en/latest/), and read on below to learn more about the background and motivation behind `simpleaf`.
+Check out the detailed documentation [here](https://combine-lab.github.io/simpleaf), and read on below to learn more about the background and motivation behind `simpleaf`.
 
 ## Note(s)
 
