@@ -381,7 +381,20 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
         .arg(format!("{}", opts.max_ec_card))
         .arg("--dict")
         .arg(opts.dict.as_cli());
-    opts.decode.append_to(&mut piscem_cmd);
+    // Flex maps cheap probe reads against a tiny index, so decode dominates and
+    // the parallel decoder pays much earlier than piscem's cross-workload
+    // default assumes. Engage it earlier here unless the user set their own
+    // policy. See `FLEX_DECODE_THREAD_POLICY`.
+    if opts.decode.thread_policy.is_none() {
+        info!(
+            "Flex default decoder engagement: {}",
+            crate::simpleaf_commands::FLEX_DECODE_THREAD_POLICY
+        );
+    }
+    opts.decode.append_to_with_default_policy(
+        &mut piscem_cmd,
+        Some(crate::simpleaf_commands::FLEX_DECODE_THREAD_POLICY),
+    );
 
     let r1_str: Vec<String> = opts
         .reads1

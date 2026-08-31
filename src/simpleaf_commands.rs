@@ -73,16 +73,36 @@ pub struct PiscemDecoderOpts {
     )]
     pub decoder: String,
 
-    /// JSON file overriding piscem's thread and decoder policy.
+    /// Piscem thread and decoder policy, as inline JSON or a path to a JSON file.
     ///
-    /// Every field is optional and defaults to a measured value; an unrecognised
-    /// field is an error rather than a silent no-op. Currently understood:
-    /// `{"parallel_decode": {"min_threads_per_stream": 8}}`, the number of
-    /// threads that must be free per gzip input before the parallel decoder is
-    /// engaged at all.
-    #[arg(long, value_name = "FILE", help_heading = "Piscem Mapping Options")]
-    pub thread_policy: Option<PathBuf>,
+    /// A value beginning with `{` is parsed as inline JSON; anything else is a
+    /// path. Every field is optional and defaults to a measured value; an
+    /// unrecognised field is an error rather than a silent no-op. Currently
+    /// understood: `{"parallel_decode": {"min_threads_per_stream": 8}}`, the
+    /// number of threads that must be free per gzip input before the parallel
+    /// decoder is engaged at all.
+    #[arg(
+        long,
+        value_name = "JSON_OR_PATH",
+        help_heading = "Piscem Mapping Options"
+    )]
+    pub thread_policy: Option<String>,
 }
+
+/// Flex-specific decoder engagement policy.
+///
+/// Flex maps ~50 nt probe reads against a tiny probe-set index, so mapping is
+/// very cheap and gzip inflation dominates the mapping stage. The parallel
+/// decoder therefore pays far earlier than on a full-transcriptome workload, and
+/// piscem's general default (`min_threads_per_stream: 8`) leaves it disengaged on
+/// every multi-lane Flex library whose core count is not several times its lane
+/// count — both mates of every lane count as a stream, so 4 lanes need 64
+/// threads. `4` was measured across five Flex datasets to engage where it pays
+/// and stay serial below its bar (no low-budget regression). This is applied
+/// only on the Flex (`multiplex-quant`) path; standard scRNA keeps piscem's
+/// default until a full-index experiment justifies changing it there.
+pub const FLEX_DECODE_THREAD_POLICY: &str =
+    r#"{"parallel_decode": {"min_threads_per_stream": 4}}"#;
 
 impl PiscemDecoderOpts {
     /// Append these options to a piscem `map-*` invocation.
@@ -90,9 +110,27 @@ impl PiscemDecoderOpts {
     /// `--thread-policy` is only passed when the user supplied one, so piscem's
     /// own measured defaults apply otherwise.
     pub fn append_to(&self, cmd: &mut std::process::Command) {
+        self.append_to_with_default_policy(cmd, None);
+    }
+
+    /// Like [`append_to`](Self::append_to), but supplies a `default_policy` when
+    /// the user did not set `--thread-policy`.
+    ///
+    /// A user-supplied policy always wins; the default only fills the gap. This
+    /// lets a workload with a known decode-to-map ratio (Flex — see
+    /// [`FLEX_DECODE_THREAD_POLICY`]) ship a tuned engagement threshold without
+    /// changing piscem's cross-workload default or overriding an explicit choice.
+    pub fn append_to_with_default_policy(
+        &self,
+        cmd: &mut std::process::Command,
+        default_policy: Option<&str>,
+    ) {
         cmd.arg("--decoder").arg(&self.decoder);
-        if let Some(ref policy) = self.thread_policy {
-            cmd.arg("--thread-policy").arg(policy);
+        match self.thread_policy.as_deref().or(default_policy) {
+            Some(policy) => {
+                cmd.arg("--thread-policy").arg(policy);
+            }
+            None => {}
         }
     }
 }
