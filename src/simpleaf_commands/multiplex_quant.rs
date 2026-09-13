@@ -496,9 +496,20 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
         .arg("-r")
         .arg(&map_output)
         .arg("-t")
-        .arg(format!("{}", opts.threads));
+        .arg(format!("{}", opts.threads))
+        // Compress the collated RAD. In alevin-fry >= 0.18.3 this is a per-chunk
+        // lz4 codec: a ~3.4x smaller, still chunk-seekable intermediate that
+        // quant decompresses in parallel (faster on cold/slow storage, neutral
+        // otherwise). Enabled here for the Flex path ahead of making it the
+        // simpleaf-wide default.
+        .arg("--compress");
     opts.collation_resources.append_to(&mut collate_cmd);
 
+    info!(
+        "Collated-RAD compression is enabled for this run (--compress). We expect \
+         it to become the simpleaf default in an upcoming release; please test \
+         your workflows with it and report any issues."
+    );
     let collate_cmd_str = prog_utils::get_cmd_line_string(&collate_cmd);
     info!("collate cmd: {}", collate_cmd_str);
     let collate_start = Instant::now();
