@@ -94,8 +94,12 @@ Advanced Resource Options:
           the `zstd` feature). `--compress` with no value also selects lz4. The per-chunk framing
           keeps the collated RAD chunk-seekable, so the parallel reader still engages
 
+          Possible values:
+          - lz4:  lz4 (pure-Rust; always available in alevin-fry)
+          - zstd: zstd (needs an alevin-fry built with the `zstd` feature)
+          - none: No compression
+
           [default: lz4]
-          [possible values: lz4, zstd, none]
 
 Mapping Options:
   -i, --index <INDEX>

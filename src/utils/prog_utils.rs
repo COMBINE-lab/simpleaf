@@ -37,7 +37,11 @@ pub mod min_versions {
 
     /// alevin-fry 0.18.0 provides deterministic compiled barcode-correction
     /// plans and the correction/resource controls forwarded by simpleaf 0.28.
-    pub const ALEVIN_FRY: &str = ">=0.18.0, <1.0.0";
+    /// 0.18.3 is required because collate is now invoked with `--compress=<codec>`
+    /// (per-chunk codec, on by default): earlier releases spell `--compress` as a
+    /// bare boolean flag and reject the `=<codec>` value, which would fail at
+    /// collate on every run.
+    pub const ALEVIN_FRY: &str = ">=0.18.3, <1.0.0";
 
     /// Only consulted when peak calling is actually requested.
     pub const MACS3: &str = ">=3.0.2, <4.0.0";
