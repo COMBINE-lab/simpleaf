@@ -854,6 +854,7 @@ mod tests {
             .get_args()
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect();
-        assert_eq!(collate_args, ["--memory-limit", "3GiB"]);
+        // Compression is on by default (lz4), so the parsed opts forward it too.
+        assert_eq!(collate_args, ["--memory-limit", "3GiB", "--compress=lz4"]);
     }
 }
