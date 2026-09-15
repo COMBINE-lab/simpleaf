@@ -158,6 +158,14 @@ Advanced Resource Options:
       --collate-memory-limit <SIZE>
           Collation buffer budget (inherited default: 2 GiB)
 
+      --compress [<CODEC>]
+          Compress the collated RAD file with a per-chunk codec (inherited default: off).
+          `--compress` alone uses lz4; `--compress zstd` requires an alevin-fry build with the
+          `zstd` feature. The per-chunk framing keeps the collated RAD chunk-seekable, so the
+          parallel reader still engages
+
+          [possible values: lz4, zstd]
+
 UMI Resolution Options:
   -m, --t2g-map <T2G_MAP>
           Path to a transcript to gene map file

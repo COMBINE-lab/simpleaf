@@ -346,12 +346,29 @@ pub struct CollationResourceOpts {
         help_heading = "Advanced Resource Options"
     )]
     pub collate_memory_limit: Option<String>,
+
+    /// Compress the collated RAD file with a per-chunk codec (inherited
+    /// default: off). `--compress` alone uses lz4; `--compress zstd` requires
+    /// an alevin-fry build with the `zstd` feature. The per-chunk framing keeps
+    /// the collated RAD chunk-seekable, so the parallel reader still engages.
+    #[arg(
+        long,
+        value_name = "CODEC",
+        num_args = 0..=1,
+        default_missing_value = "lz4",
+        value_parser = clap::builder::PossibleValuesParser::new(["lz4", "zstd"]),
+        help_heading = "Advanced Resource Options"
+    )]
+    pub compress: Option<String>,
 }
 
 impl CollationResourceOpts {
     pub(crate) fn append_to(&self, command: &mut std::process::Command) {
         if let Some(memory_limit) = &self.collate_memory_limit {
             command.arg("--memory-limit").arg(memory_limit);
+        }
+        if let Some(codec) = &self.compress {
+            command.arg("--compress").arg(codec);
         }
     }
 }
@@ -1375,6 +1392,7 @@ mod barcode_forwarding_tests {
         };
         let collate = CollationResourceOpts {
             collate_memory_limit: Some("4GB".to_string()),
+            compress: None,
         };
 
         let mut gpl_command = std::process::Command::new("alevin-fry");
@@ -1406,6 +1424,19 @@ mod barcode_forwarding_tests {
         let mut collate_command = std::process::Command::new("alevin-fry");
         collate.append_to(&mut collate_command);
         assert_eq!(args_of(&collate_command), ["--memory-limit", "4GB"]);
+
+        // --compress forwards `--compress <codec>` to alevin-fry collate; absent
+        // leaves the collate command unchanged (stock uncompressed behaviour).
+        let compress = CollationResourceOpts {
+            collate_memory_limit: Some("4GB".to_string()),
+            compress: Some("lz4".to_string()),
+        };
+        let mut compress_command = std::process::Command::new("alevin-fry");
+        compress.append_to(&mut compress_command);
+        assert_eq!(
+            args_of(&compress_command),
+            ["--memory-limit", "4GB", "--compress", "lz4"]
+        );
     }
 
     #[test]

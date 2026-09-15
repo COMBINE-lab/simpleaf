@@ -8,12 +8,12 @@ Options:
 
   -t, --threads <THREADS>
           Number of threads to use when running
-          
+
           [default: 16]
 
   -k, --kmer-length <KMER_LENGTH>
           The value of k to be used to construct the index
-          
+
           [default: 31]
 
       --gff3-format
@@ -35,7 +35,7 @@ Expanded Reference Options:
       --ref-type <REF_TYPE>
           Specify whether an expanded reference, spliced+intronic (or splici) or spliced+unspliced
           (or spliceu), should be built
-          
+
           [default: spliced+intronic]
 
   -f, --fasta <FASTA>
@@ -75,7 +75,7 @@ Direct Reference Options:
 Piscem Index Options:
   -m, --minimizer-length <MINIMIZER_LENGTH>
           Minimizer length to be used to construct the piscem index (must be < k)
-          
+
           [default: 19]
 
       --decoy-paths <DECOY_PATHS>
@@ -84,18 +84,18 @@ Piscem Index Options:
       --seed <HASH_SEED>
           The seed value to use in SSHash index construction (try changing this in the rare event
           index build fails)
-          
+
           [default: 1]
 
       --work-dir <WORK_DIR>
           The working directory where temporary files should be placed
-          
+
           [default: ./workdir.noindex]
 
       --dict <DICT>
           Piscem dictionary backend: `auto` (default, emits Tiny artifacts for small references),
           `sshash` (compact), or `tiny` (fast-path)
-          
+
           [default: auto]
           [possible values: auto, sshash, tiny]
 
@@ -106,9 +106,9 @@ Piscem Index Options:
       --ram-limit-gib <GIB>
           RAM ceiling, in GiB, for SSHash's external minimizer sort. A smaller value spills to disk
           sooner, trading peak memory for build time.
-          
+
           The default of 8 is deliberately fixed rather than deferring to piscem, whose own default
           scales with the machine's total RAM and so makes peak index-build memory vary from host to
           host.
-          
+
           [default: 8]
