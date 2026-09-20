@@ -71,7 +71,7 @@ jobs:
       # The bioconda package can lag a newly published alevin-fry release.
       # Exercise simpleaf against the release artifact that satisfies the
       # version contract instead of silently testing an older conda package.
-      - name: Install alevin-fry 0.18.0 release artifact
+      - name: Install alevin-fry 0.18.3 release artifact
         shell: bash -l {0}
         run: |
           case "$(uname -s)-$(uname -m)" in
@@ -83,9 +83,9 @@ jobs:
           esac
 
           archive="alevin-fry-${target}.tar.xz"
-          install_dir="${RUNNER_TEMP}/alevin-fry-0.18.0"
+          install_dir="${RUNNER_TEMP}/alevin-fry-0.18.3"
           curl --proto '=https' --tlsv1.2 -LsSf \
-            "https://github.com/COMBINE-lab/alevin-fry/releases/download/v0.18.0/${archive}" \
+            "https://github.com/COMBINE-lab/alevin-fry/releases/download/v0.18.3/${archive}" \
             -o "${RUNNER_TEMP}/${archive}"
           mkdir -p "${install_dir}"
           tar -xJf "${RUNNER_TEMP}/${archive}" \
@@ -96,7 +96,7 @@ jobs:
       - name: Test simpleaf
         shell: bash -l {0}
         run: |
-          export PATH="${RUNNER_TEMP}/alevin-fry-0.18.0:${PATH}"
+          export PATH="${RUNNER_TEMP}/alevin-fry-0.18.3:${PATH}"
           cd scripts
           chmod +x test_simpleaf.sh
           ulimit -n 2048

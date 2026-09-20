@@ -265,6 +265,10 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
 
     // Load runtime context (program paths)
     let rt = context::load_runtime_context(af_home)?;
+    // Fail fast on a too-old registered alevin-fry, before mapping — otherwise a
+    // stale registration only surfaces deep in `collate` (e.g. `--compress`
+    // needs alevin-fry >= 0.18.3).
+    crate::utils::prog_utils::ensure_alevin_fry_version(&rt.progs)?;
     let piscem_info = rt
         .progs
         .piscem
@@ -1124,6 +1128,30 @@ GATCCTCT\tGATCCTCT\tBC003
     }
 
     #[test]
+    fn compress_flag_parses_to_codec() {
+        use crate::simpleaf_commands::CompressCodec;
+        let codec = |args: &[&str]| {
+            parse_multiplex_quant_opts(args)
+                .collation_resources
+                .compress
+        };
+        // Absent => lz4 (compression is ON by default via the CLI default_value).
+        assert_eq!(codec(&["-o", "."]), CompressCodec::Lz4);
+        // Bare `--compress` => lz4 (default_missing_value).
+        assert_eq!(codec(&["-o", ".", "--compress"]), CompressCodec::Lz4);
+        // Explicit codecs.
+        assert_eq!(codec(&["-o", ".", "--compress", "lz4"]), CompressCodec::Lz4);
+        assert_eq!(
+            codec(&["-o", ".", "--compress", "zstd"]),
+            CompressCodec::Zstd
+        );
+        assert_eq!(
+            codec(&["-o", ".", "--compress", "none"]),
+            CompressCodec::None
+        );
+    }
+
+    #[test]
     fn usa_flag_maps_to_usa_mode() {
         let opts = parse_multiplex_quant_opts(&["-o", ".", "--usa"]);
         assert_eq!(t2g_mode(&opts), ProbeT2gMode::Usa);
@@ -1231,7 +1259,8 @@ GATCCTCT\tGATCCTCT\tBC003
             .get_args()
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect();
-        assert_eq!(collate_args, ["--memory-limit", "4GiB"]);
+        // Compression is on by default (lz4), so the parsed opts forward it too.
+        assert_eq!(collate_args, ["--memory-limit", "4GiB", "--compress=lz4"]);
     }
 
     #[test]
