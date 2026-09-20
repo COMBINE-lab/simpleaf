@@ -8,12 +8,75 @@ use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
-use tracing::info;
+use tracing::{info, warn};
+
+/// After a `piscem build` that was handed decoy sequences (`--decoy-paths`),
+/// warn if the resulting poison table came back empty. piscem's poison k-mers
+/// are the decoy k-mers *adjacent* to the indexed reference in the compacted de
+/// Bruijn graph; when `k` is large relative to any decoy/reference adjacency
+/// (e.g. the generic `index` default k=31 on 50 bp probes) none are found, the
+/// table is empty, and `--excluded-probes decoy` then silently filters nothing
+/// at map time. The probe-quant path defaults to k=23, which does populate it.
+/// Best-effort: stays quiet if the poison sidecar is absent or unparseable
+/// (e.g. a piscem build that produced no decoys at all).
+pub fn warn_if_empty_poison_table(index_prefix: &Path, kmer_length: usize) {
+    let mut poison_json = index_prefix.as_os_str().to_owned();
+    poison_json.push(".poison.json");
+    let poison_json = PathBuf::from(poison_json);
+
+    let Ok(contents) = std::fs::read_to_string(&poison_json) else {
+        return;
+    };
+    let num_poison = serde_json::from_str::<serde_json::Value>(&contents)
+        .ok()
+        .and_then(|v| v.get("num_poison_kmers").and_then(|x| x.as_u64()));
+    if num_poison == Some(0) {
+        warn!(
+            "Decoy sequences were indexed, but the resulting poison table is empty \
+             (0 poison k-mers at k={kmer_length}): no reads will be filtered by the \
+             decoys at map time. piscem poison k-mers are decoy k-mers adjacent to the \
+             reference in the de Bruijn graph, so an empty table usually means k is too \
+             large for any decoy/reference adjacency (the probe-quant default k is 23; \
+             the generic `index` default is 31). Rebuild with a smaller k to make the \
+             decoys effective."
+        );
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProbeT2gMode {
     Gene,
     Usa,
+}
+
+/// What to do with probes the probe set flags as excluded (`included == FALSE`,
+/// i.e. 10x's `__EXCLUDED` probes).
+///
+/// 10x excludes a probe from quantification because it is known to be
+/// off-target or otherwise unreliable, but reads from such a probe are still
+/// present in the library. Dropping the probe entirely lets those reads find
+/// their next-best match among the *retained* probes, which is exactly the
+/// spurious mapping the exclusion was meant to prevent. Indexing the excluded
+/// sequences as decoys keeps them out of the quantified reference (they never
+/// enter the t2g map or the gene set) while still letting piscem recognise —
+/// and discard — reads that belong to them.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ExcludedProbeMode {
+    /// Index excluded probes as decoys (piscem poison k-mers): reads from them
+    /// are recognised and discarded rather than mis-assigned to a retained probe.
+    #[default]
+    Decoy,
+    /// Drop excluded probes from the reference entirely (the behavior of earlier releases).
+    Ignore,
+}
+
+impl ExcludedProbeMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ExcludedProbeMode::Decoy => "decoy",
+            ExcludedProbeMode::Ignore => "ignore",
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -22,6 +85,11 @@ pub struct ProbeReferenceFiles {
     pub gene_t2g_path: PathBuf,
     pub usa_t2g_path: Option<PathBuf>,
     pub gene_id_to_name_path: Option<PathBuf>,
+    /// FASTA of excluded probes to index as decoys. `Some` only when
+    /// [`ExcludedProbeMode::Decoy`] was requested *and* at least one probe was
+    /// excluded, so callers can forward it to `piscem build --decoy-paths`
+    /// unconditionally (piscem is never handed an empty decoy file).
+    pub decoy_fasta_path: Option<PathBuf>,
     #[allow(dead_code)]
     pub metadata: serde_json::Value,
 }
@@ -84,13 +152,39 @@ pub fn write_gene_id_to_name(map: &BTreeMap<String, String>, path: &Path) -> any
     Ok(())
 }
 
+/// Lazily append one decoy record (`>seq_id` / `sequence`) to a decoy FASTA at
+/// `decoy_path`, creating the file on first use so a caller with no excluded
+/// probes never leaves an empty file behind. Shared by the two `--probe-csv`
+/// conversion paths (`convert_probe_csv_to_reference_files` and
+/// `simpleaf index --probe-csv`) so the decoy-writing logic lives in one place.
+pub(crate) fn append_decoy_record(
+    writer: &mut Option<BufWriter<std::fs::File>>,
+    decoy_path: &Path,
+    seq_id: &str,
+    sequence: &str,
+) -> anyhow::Result<()> {
+    if writer.is_none() {
+        *writer = Some(BufWriter::new(std::fs::File::create(decoy_path)?));
+    }
+    if let Some(w) = writer.as_mut() {
+        writeln!(w, ">{seq_id}\n{sequence}")?;
+    }
+    Ok(())
+}
+
 /// Convert a 10x probe set CSV file to a FASTA file suitable for indexing.
 ///
 /// Also generates a collapsed gene-level transcript-to-gene (t2g) map and, when
 /// probe `region` annotations are present, a separate USA-mode t2g map.
+///
+/// Excluded probes (`included == FALSE`) never enter `probes.fa` or either t2g
+/// map. Under [`ExcludedProbeMode::Decoy`] their sequences are written to
+/// `probe_decoys.fa` instead, for the caller to hand to `piscem build
+/// --decoy-paths`; under [`ExcludedProbeMode::Ignore`] they are dropped.
 pub fn convert_probe_csv_to_reference_files(
     csv_path: &Path,
     output_dir: &Path,
+    excluded_mode: ExcludedProbeMode,
 ) -> anyhow::Result<ProbeReferenceFiles> {
     std::fs::create_dir_all(output_dir)?;
 
@@ -125,6 +219,7 @@ pub fn convert_probe_csv_to_reference_files(
     let gene_t2g_path = output_dir.join("probe_t2g.tsv");
     let usa_t2g_path = region_idx.map(|_| output_dir.join("probe_t2g_usa.tsv"));
     let gene_id_to_name_path = gene_name_idx.map(|_| output_dir.join("gene_id_to_name.tsv"));
+    let decoy_fasta_path = output_dir.join("probe_decoys.fa");
     let meta_path = output_dir.join("probe_set_info.json");
 
     let mut fasta_writer = BufWriter::new(std::fs::File::create(&fasta_path)?);
@@ -134,6 +229,9 @@ pub fn convert_probe_csv_to_reference_files(
     } else {
         None
     };
+    // Opened lazily on the first excluded probe so that a probe set with no
+    // exclusions leaves no (empty) decoy file behind.
+    let mut decoy_writer: Option<BufWriter<std::fs::File>> = None;
 
     let mut num_probes = 0u64;
     let mut num_included = 0u64;
@@ -160,6 +258,9 @@ pub fn convert_probe_csv_to_reference_files(
         num_probes += 1;
         if !included {
             num_excluded += 1;
+            if excluded_mode == ExcludedProbeMode::Decoy {
+                append_decoy_record(&mut decoy_writer, &decoy_fasta_path, probe_id, probe_seq)?;
+            }
             continue;
         }
         num_included += 1;
@@ -201,6 +302,18 @@ Expected `spliced` or `unspliced`.",
     if let Some(writer) = usa_t2g_writer.as_mut() {
         writer.flush()?;
     }
+    let decoy_fasta_path = match decoy_writer.as_mut() {
+        Some(writer) => {
+            writer.flush()?;
+            Some(decoy_fasta_path)
+        }
+        None => None,
+    };
+    let num_decoy = if decoy_fasta_path.is_some() {
+        num_excluded
+    } else {
+        0
+    };
     if let Some(ref path) = gene_id_to_name_path {
         write_gene_id_to_name(&gene_id_to_name, path)?;
     }
@@ -208,6 +321,8 @@ Expected `spliced` or `unspliced`.",
     metadata.insert("num_probes".to_string(), json!(num_probes));
     metadata.insert("num_included".to_string(), json!(num_included));
     metadata.insert("num_excluded".to_string(), json!(num_excluded));
+    metadata.insert("num_decoy".to_string(), json!(num_decoy));
+    metadata.insert("excluded_probes".to_string(), json!(excluded_mode.as_str()));
     metadata.insert("num_genes".to_string(), json!(genes.len()));
     metadata.insert("has_region".to_string(), json!(region_idx.is_some()));
     metadata.insert(
@@ -227,10 +342,11 @@ Expected `spliced` or `unspliced`.",
     serde_json::to_writer_pretty(meta_file, &meta_value)?;
 
     info!(
-        "Converted probe CSV: {} included probes, {} genes, {} excluded",
+        "Converted probe CSV: {} included probes, {} genes, {} excluded ({} indexed as decoys)",
         num_included,
         genes.len(),
         num_excluded,
+        num_decoy,
     );
 
     Ok(ProbeReferenceFiles {
@@ -238,6 +354,7 @@ Expected `spliced` or `unspliced`.",
         gene_t2g_path,
         usa_t2g_path,
         gene_id_to_name_path,
+        decoy_fasta_path,
         metadata: meta_value,
     })
 }
@@ -333,12 +450,55 @@ Provide a probe CSV with a `region` column (`spliced` / `unspliced`), or a pre-b
 #[cfg(test)]
 mod tests {
     use super::{
-        ProbeT2gMode, collapse_t2g_to_gene, convert_probe_csv_to_reference_files, ensure_t2g_mode,
-        insert_gene_name, t2g_has_usa_mapping,
+        ExcludedProbeMode, ProbeT2gMode, append_decoy_record, collapse_t2g_to_gene,
+        convert_probe_csv_to_reference_files, ensure_t2g_mode, insert_gene_name,
+        t2g_has_usa_mapping, warn_if_empty_poison_table,
     };
     use std::collections::BTreeMap;
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn append_decoy_record_is_lazy_and_appends() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("probe_decoys.fa");
+        // never called -> no file left behind (the no-exclusion case)
+        let mut w: Option<std::io::BufWriter<std::fs::File>> = None;
+        assert!(!path.exists());
+        // first call creates the file; a second appends
+        append_decoy_record(&mut w, &path, "probeA", "ACGT").unwrap();
+        append_decoy_record(&mut w, &path, "probeB", "TTTT").unwrap();
+        drop(w); // flush
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            ">probeA\nACGT\n>probeB\nTTTT\n"
+        );
+    }
+
+    // The warning is best-effort and only logs, so these tests exercise the
+    // code paths (path building, JSON parsing, absent-file handling) rather than
+    // asserting on log output; the point is that none of them panic.
+    #[test]
+    fn poison_warning_handles_empty_missing_and_populated() {
+        let dir = tempdir().unwrap();
+        let prefix = dir.path().join("piscem_idx");
+        // absent sidecar -> quiet, no panic
+        warn_if_empty_poison_table(&prefix, 31);
+        // empty poison table -> would warn, must not panic
+        fs::write(
+            dir.path().join("piscem_idx.poison.json"),
+            r#"{"max_poison_occ":0,"num_poison_kmers":0,"num_poison_occs":0}"#,
+        )
+        .unwrap();
+        warn_if_empty_poison_table(&prefix, 31);
+        // populated table -> no warning, no panic
+        fs::write(
+            dir.path().join("piscem_idx.poison.json"),
+            r#"{"max_poison_occ":1,"num_poison_kmers":46,"num_poison_occs":46}"#,
+        )
+        .unwrap();
+        warn_if_empty_poison_table(&prefix, 23);
+    }
 
     #[test]
     fn insert_gene_name_dedups_and_detects_conflicts() {
@@ -368,13 +528,37 @@ mod tests {
         )
         .expect("failed to write probe CSV");
 
-        let converted = convert_probe_csv_to_reference_files(&csv_path, td.path())
-            .expect("failed to convert probe CSV");
+        let converted =
+            convert_probe_csv_to_reference_files(&csv_path, td.path(), ExcludedProbeMode::Decoy)
+                .expect("failed to convert probe CSV");
 
+        // The excluded probe (P2) is quantified nowhere: not in the reference FASTA
+        // and not in either t2g map ...
+        assert_eq!(
+            fs::read_to_string(&converted.fasta_path).expect("failed to read probes.fa"),
+            ">P1\nAAAA\n>P3\nGGGG\n"
+        );
         assert_eq!(
             fs::read_to_string(&converted.gene_t2g_path).expect("failed to read gene t2g"),
             "P1\tG1\nP3\tG2\n"
         );
+        // ... but its sequence is emitted as a decoy.
+        assert_eq!(
+            fs::read_to_string(
+                converted
+                    .decoy_fasta_path
+                    .as_ref()
+                    .expect("decoy FASTA should be present")
+            )
+            .expect("failed to read decoy FASTA"),
+            ">P2\nCCCC\n"
+        );
+        assert_eq!(converted.metadata["num_probes"], 3);
+        assert_eq!(converted.metadata["num_included"], 2);
+        assert_eq!(converted.metadata["num_excluded"], 1);
+        assert_eq!(converted.metadata["num_decoy"], 1);
+        assert_eq!(converted.metadata["num_genes"], 2);
+        assert_eq!(converted.metadata["excluded_probes"], "decoy");
         assert_eq!(
             fs::read_to_string(
                 converted
@@ -403,6 +587,52 @@ mod tests {
     }
 
     #[test]
+    fn convert_probe_csv_ignore_mode_drops_excluded_probes() {
+        let td = tempdir().expect("failed to create tempdir");
+        let csv_path = td.path().join("probes.csv");
+        fs::write(
+            &csv_path,
+            "gene_id,probe_seq,probe_id,included\nG1,AAAA,P1,TRUE\nG1,CCCC,P2,FALSE\n",
+        )
+        .expect("failed to write probe CSV");
+
+        let converted =
+            convert_probe_csv_to_reference_files(&csv_path, td.path(), ExcludedProbeMode::Ignore)
+                .expect("failed to convert probe CSV");
+
+        assert!(converted.decoy_fasta_path.is_none());
+        assert!(!td.path().join("probe_decoys.fa").exists());
+        assert_eq!(
+            fs::read_to_string(&converted.fasta_path).expect("failed to read probes.fa"),
+            ">P1\nAAAA\n"
+        );
+        assert_eq!(converted.metadata["num_excluded"], 1);
+        assert_eq!(converted.metadata["num_decoy"], 0);
+        assert_eq!(converted.metadata["excluded_probes"], "ignore");
+    }
+
+    #[test]
+    fn convert_probe_csv_without_exclusions_writes_no_decoy_file() {
+        let td = tempdir().expect("failed to create tempdir");
+        let csv_path = td.path().join("probes.csv");
+        fs::write(
+            &csv_path,
+            "gene_id,probe_seq,probe_id,included\nG1,AAAA,P1,TRUE\nG2,CCCC,P2,TRUE\n",
+        )
+        .expect("failed to write probe CSV");
+
+        let converted =
+            convert_probe_csv_to_reference_files(&csv_path, td.path(), ExcludedProbeMode::Decoy)
+                .expect("failed to convert probe CSV");
+
+        // Nothing to decoy: no file is created, so callers never hand piscem an
+        // empty decoy FASTA.
+        assert!(converted.decoy_fasta_path.is_none());
+        assert!(!td.path().join("probe_decoys.fa").exists());
+        assert_eq!(converted.metadata["num_decoy"], 0);
+    }
+
+    #[test]
     fn convert_probe_csv_without_gene_name_skips_gene_id_to_name() {
         let td = tempdir().expect("failed to create tempdir");
         let csv_path = td.path().join("probes.csv");
@@ -412,8 +642,9 @@ mod tests {
         )
         .expect("failed to write probe CSV");
 
-        let converted = convert_probe_csv_to_reference_files(&csv_path, td.path())
-            .expect("failed to convert probe CSV");
+        let converted =
+            convert_probe_csv_to_reference_files(&csv_path, td.path(), ExcludedProbeMode::Decoy)
+                .expect("failed to convert probe CSV");
 
         assert!(converted.gene_id_to_name_path.is_none());
         assert!(

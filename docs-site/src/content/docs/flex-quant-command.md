@@ -6,7 +6,7 @@ The `multiplex-quant` command runs the end-to-end `simpleaf` pipeline for 10x Fl
 
 - Flex chemistry lookup from the chemistry registry
 - probe set selection by organism
-- probe-set CSV to FASTA conversion and `probe_t2g.tsv` generation
+- probe-set CSV to FASTA conversion and `probe_t2g.tsv` generation (excluded probes become index decoys)
 - probe index construction with `piscem build` when needed
 - cell barcode whitelist resolution
 - sample barcode list resolution
@@ -182,6 +182,21 @@ Probe Set Options:
           Path to probe set CSV or FASTA (overrides auto-download). If a CSV is provided, it is
           converted to FASTA and a t2g map is generated automatically
 
+      --excluded-probes <EXCLUDED_PROBES>
+          How probes flagged `included = FALSE` in a probe set CSV are treated when simpleaf builds
+          the probe index. `decoy` (default) indexes their sequences as piscem decoys so reads from
+          an excluded probe are recognised and discarded instead of being mis-assigned to a retained
+          probe; `ignore` drops them from the reference entirely. Excluded probes are never
+          quantified in either mode. Has no effect on a pre-built `--index`
+
+          Possible values:
+          - decoy:  Index excluded probes as decoys (piscem poison k-mers): reads from them are
+            recognised and discarded rather than mis-assigned to a retained probe
+          - ignore: Drop excluded probes from the reference entirely (the behavior of earlier
+            releases)
+
+          [default: decoy]
+
       --kmer-length <KMER_LENGTH>
           k-mer length for probe index building
 
@@ -325,6 +340,8 @@ If your protocol becomes stable and reusable, consider proposing it as a chemist
   If `--index` is provided, `simpleaf` accepts either a `simpleaf index` output directory, its `index/` subdirectory, the `piscem_idx` prefix within that directory, or a multiplex probe-index directory/prefix. It will reuse adjacent metadata and t2g files when present.
 - Probe set:
   If `--probe-set` is provided, it overrides the registry entry. A CSV probe set is converted into a FASTA plus a gene-level `probe_t2g.tsv` automatically, and if probe `region` annotations are present it also produces a USA-mode t2g for `--usa`. A FASTA input is accepted as-is, and `simpleaf` generates an identity-style t2g mapping from the FASTA headers.
+- Excluded probes:
+  Probes a CSV probe set flags with `included = FALSE` (10x's `__EXCLUDED` probes) are never quantified: they appear in neither the reference FASTA nor any t2g map, and do not contribute to the gene set. By default (`--excluded-probes decoy`) their sequences are written to `probe_decoys.fa` and passed to `piscem build --decoy-paths`, so reads that originate from an excluded probe are recognised and discarded instead of being mis-assigned to a retained probe. `--excluded-probes ignore` restores the previous behavior of dropping them entirely. The choice is recorded in `probe_set_info.json` (`excluded_probes`, `num_excluded`, `num_decoy`) and auto-built indices are cached separately per mode. The option has no effect on a pre-built `--index`.
 - Automatic probe-set selection:
   If neither `--index` nor `--probe-set` is provided, `simpleaf` looks up the requested `--organism` in the selected chemistry's registered probe sets, downloads the matching probe CSV if needed, and builds a cached probe index.
 - Cell barcode whitelist:

@@ -898,6 +898,16 @@ pub struct IndexOpts {
     conflicts_with_all = ["dedup", "unspliced", "spliced", "rlen", "gtf", "fasta", "ref_seq", "feature_csv"])]
     pub probe_csv: Option<PathBuf>,
 
+    /// How probes flagged `included = FALSE` in `--probe-csv` are treated. `decoy` (default) indexes their sequences as piscem decoys (alongside any `--decoy-paths`) so reads from an excluded probe are recognised and discarded rather than mis-assigned to a retained probe; `ignore` drops them from the reference entirely. Excluded probes are never quantified in either mode. Has no effect on other reference types.
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = crate::utils::probe_utils::ExcludedProbeMode::Decoy,
+        help_heading = "Direct Reference Options",
+        display_order = 8
+    )]
+    pub excluded_probes: crate::utils::probe_utils::ExcludedProbeMode,
+
     /// Path to a CSV file containing feature barcode sequences to use for direct reference indexing. The file must follow the format of 10x Feature Reference CSV. Currently, only three columns are used: id, name, and sequence.
     #[arg(long, help_heading = "Direct Reference Options", display_order = 7,
     conflicts_with_all = ["dedup", "unspliced", "spliced", "rlen", "gtf", "fasta", "ref_seq", "probe_csv"])]
@@ -1094,6 +1104,20 @@ pub struct MultiplexQuantOpts {
     /// is generated automatically.
     #[arg(long, help_heading = "Probe Set Options")]
     pub probe_set: Option<PathBuf>,
+
+    /// How probes flagged `included = FALSE` in a probe set CSV are treated when
+    /// simpleaf builds the probe index. `decoy` (default) indexes their sequences
+    /// as piscem decoys so reads from an excluded probe are recognised and
+    /// discarded instead of being mis-assigned to a retained probe; `ignore`
+    /// drops them from the reference entirely. Excluded probes are never
+    /// quantified in either mode. Has no effect on a pre-built `--index`.
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = crate::utils::probe_utils::ExcludedProbeMode::Decoy,
+        help_heading = "Probe Set Options"
+    )]
+    pub excluded_probes: crate::utils::probe_utils::ExcludedProbeMode,
 
     /// Path to a transcript-to-gene map file. Use this instead of --probe-set
     /// when working with a transcriptome reference rather than a probe set.
