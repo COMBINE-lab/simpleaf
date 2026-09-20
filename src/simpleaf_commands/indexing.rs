@@ -552,12 +552,12 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
                     if !record.included()
                         && opts.excluded_probes == probe_utils::ExcludedProbeMode::Decoy
                     {
-                        if decoy_writer.is_none() {
-                            decoy_writer = Some(BufWriter::new(File::create(&decoy_path)?));
-                        }
-                        if let Some(writer) = decoy_writer.as_mut() {
-                            writeln!(writer, ">{}\n{}", record.seq_id(), record.sequence())?;
-                        }
+                        probe_utils::append_decoy_record(
+                            &mut decoy_writer,
+                            &decoy_path,
+                            record.seq_id(),
+                            record.sequence(),
+                        )?;
                     }
 
                     parse_csv_record(

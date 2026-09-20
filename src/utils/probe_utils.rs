@@ -152,6 +152,26 @@ pub fn write_gene_id_to_name(map: &BTreeMap<String, String>, path: &Path) -> any
     Ok(())
 }
 
+/// Lazily append one decoy record (`>seq_id` / `sequence`) to a decoy FASTA at
+/// `decoy_path`, creating the file on first use so a caller with no excluded
+/// probes never leaves an empty file behind. Shared by the two `--probe-csv`
+/// conversion paths (`convert_probe_csv_to_reference_files` and
+/// `simpleaf index --probe-csv`) so the decoy-writing logic lives in one place.
+pub(crate) fn append_decoy_record(
+    writer: &mut Option<BufWriter<std::fs::File>>,
+    decoy_path: &Path,
+    seq_id: &str,
+    sequence: &str,
+) -> anyhow::Result<()> {
+    if writer.is_none() {
+        *writer = Some(BufWriter::new(std::fs::File::create(decoy_path)?));
+    }
+    if let Some(w) = writer.as_mut() {
+        writeln!(w, ">{seq_id}\n{sequence}")?;
+    }
+    Ok(())
+}
+
 /// Convert a 10x probe set CSV file to a FASTA file suitable for indexing.
 ///
 /// Also generates a collapsed gene-level transcript-to-gene (t2g) map and, when
@@ -239,13 +259,7 @@ pub fn convert_probe_csv_to_reference_files(
         if !included {
             num_excluded += 1;
             if excluded_mode == ExcludedProbeMode::Decoy {
-                if decoy_writer.is_none() {
-                    decoy_writer = Some(BufWriter::new(std::fs::File::create(&decoy_fasta_path)?));
-                }
-                if let Some(writer) = decoy_writer.as_mut() {
-                    writeln!(writer, ">{}", probe_id)?;
-                    writeln!(writer, "{}", probe_seq)?;
-                }
+                append_decoy_record(&mut decoy_writer, &decoy_fasta_path, probe_id, probe_seq)?;
             }
             continue;
         }
@@ -436,13 +450,30 @@ Provide a probe CSV with a `region` column (`spliced` / `unspliced`), or a pre-b
 #[cfg(test)]
 mod tests {
     use super::{
-        ExcludedProbeMode, ProbeT2gMode, collapse_t2g_to_gene,
+        ExcludedProbeMode, ProbeT2gMode, append_decoy_record, collapse_t2g_to_gene,
         convert_probe_csv_to_reference_files, ensure_t2g_mode, insert_gene_name,
         t2g_has_usa_mapping, warn_if_empty_poison_table,
     };
     use std::collections::BTreeMap;
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn append_decoy_record_is_lazy_and_appends() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("probe_decoys.fa");
+        // never called -> no file left behind (the no-exclusion case)
+        let mut w: Option<std::io::BufWriter<std::fs::File>> = None;
+        assert!(!path.exists());
+        // first call creates the file; a second appends
+        append_decoy_record(&mut w, &path, "probeA", "ACGT").unwrap();
+        append_decoy_record(&mut w, &path, "probeB", "TTTT").unwrap();
+        drop(w); // flush
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            ">probeA\nACGT\n>probeB\nTTTT\n"
+        );
+    }
 
     // The warning is best-effort and only logs, so these tests exercise the
     // code paths (path building, JSON parsing, absent-file handling) rather than

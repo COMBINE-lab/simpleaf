@@ -15,6 +15,14 @@
   with equivalent quantification. Pass `--compress none` to restore the previous
   uncompressed output. `zstd` additionally requires an alevin-fry built with the
   `zstd` feature.
+* Index 10x Flex `__EXCLUDED` probes (CSV `included == FALSE`) as piscem decoys
+  instead of dropping them. `multiplex-quant` and `index --probe-csv` gain
+  `--excluded-probes <decoy|ignore>` (default `decoy`); excluded probes are
+  written to a decoy FASTA and passed to `piscem build --decoy-paths`, so reads
+  from them are discarded (poison k-mers) rather than mis-assigned to a retained
+  paralog probe. They never enter the reference, the t2g map, or the gene set.
+  Auto-built probe indices cache decoy builds separately (`<plist>_<k>_decoy`).
+  Pass `--excluded-probes ignore` for the previous drop behavior.
 
 ### Notes
 
@@ -26,6 +34,11 @@
 * The collated RAD (`map.collated.rad`) is now per-chunk lz4 by default;
   third-party readers must use a `libradicl`/reader new enough to parse the
   per-chunk codec, or run with `--compress none`.
+* Excluded-probe decoys are only effective at a k small enough for
+  decoy/reference adjacency in the de Bruijn graph: the `multiplex-quant` probe
+  default (k=23) populates the poison table, while the generic `index` default
+  (k=31) leaves it empty. simpleaf warns when decoys were indexed but the poison
+  table came back empty.
 
 ## [0.28.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.27.0...v0.28.0) (2026-08-15)
 

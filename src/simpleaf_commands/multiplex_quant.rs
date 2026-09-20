@@ -638,7 +638,11 @@ fn resolve_probe_index(
             inferred_t2g
         } else if let Some(ref ps) = opts.probe_set {
             let conv_dir = opts.output.join("probe_conversion");
-            let probe_set_files = prepare_probe_set_files(ps, &conv_dir, opts.excluded_probes)?;
+            // A user-supplied prebuilt index can't gain decoys after the fact, so
+            // only derive the t2g/gene-name here — never write a `probe_decoys.fa`
+            // (which would be unused and misleadingly counted).
+            let probe_set_files =
+                prepare_probe_set_files(ps, &conv_dir, probe_utils::ExcludedProbeMode::Ignore)?;
             Some(select_probe_set_t2g(&probe_set_files, mode)?)
         } else {
             None
@@ -647,7 +651,11 @@ fn resolve_probe_index(
             inferred_gene_id_to_name
         } else if let Some(ref ps) = opts.probe_set {
             let conv_dir = opts.output.join("probe_conversion");
-            let probe_set_files = prepare_probe_set_files(ps, &conv_dir, opts.excluded_probes)?;
+            // A user-supplied prebuilt index can't gain decoys after the fact, so
+            // only derive the t2g/gene-name here — never write a `probe_decoys.fa`
+            // (which would be unused and misleadingly counted).
+            let probe_set_files =
+                prepare_probe_set_files(ps, &conv_dir, probe_utils::ExcludedProbeMode::Ignore)?;
             probe_set_files.gene_id_to_name_path
         } else {
             None
@@ -707,6 +715,12 @@ fn resolve_probe_index(
             resolve_t2g_from_candidates(&candidates, &opts.output.join("resolved_t2g"), mode)?;
         let gene_id_to_name = gene_id_to_name_for_dir(Some(&cached_probe_index_dir));
         info!("Using cached probe index: {}", cached_probe_index.display());
+        // Re-emit the empty-poison warning on cache hits too: otherwise a user
+        // who first built at a k with an empty poison table would only ever see
+        // the warning on that first (uncached) build.
+        if opts.excluded_probes == probe_utils::ExcludedProbeMode::Decoy {
+            probe_utils::warn_if_empty_poison_table(&cached_probe_index, opts.kmer_length);
+        }
         return Ok((cached_probe_index, t2g, gene_id_to_name));
     }
 
