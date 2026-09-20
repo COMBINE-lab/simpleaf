@@ -4,6 +4,29 @@
 > (2024-07-01); releases 0.18.0 through 0.26.2 are not recorded here. See the
 > git history and the GitHub releases page for that range.
 
+## [Unreleased]
+
+### Features
+
+* Compress the collated RAD by default. `quant` and `multiplex-quant` now expose
+  `--compress <lz4|zstd|none>` (default `lz4`), forwarded to `alevin-fry collate`.
+  The per-chunk framing keeps the collated RAD chunk-seekable, so the parallel
+  reader still engages; on 10x Flex data the collated RAD is ~2.7–2.85x smaller
+  with equivalent quantification. Pass `--compress none` to restore the previous
+  uncompressed output. `zstd` additionally requires an alevin-fry built with the
+  `zstd` feature.
+
+### Notes
+
+* Minimum alevin-fry is now **0.18.3** (where `collate --compress` gained its
+  codec argument). `quant`/`multiplex-quant` now verify the registered
+  alevin-fry version up front and fail with an actionable message, rather than
+  only at `set-paths`, so a stale registration no longer surfaces deep in
+  `collate`.
+* The collated RAD (`map.collated.rad`) is now per-chunk lz4 by default;
+  third-party readers must use a `libradicl`/reader new enough to parse the
+  per-chunk codec, or run with `--compress none`.
+
 ## [0.28.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.27.0...v0.28.0) (2026-08-15)
 
 ### Features

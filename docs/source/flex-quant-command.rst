@@ -184,7 +184,7 @@ Output
 The command creates the requested output directory and writes:
 
 - ``af_map/``: the ``piscem`` mapping output
-- ``af_quant/``: the ``alevin-fry`` permit-list, collate, and quantification output
+- ``af_quant/``: the ``alevin-fry`` permit-list, collate, and quantification output. The collated RAD is compressed per-chunk with lz4 by default; pass ``--compress none`` for an uncompressed file, or ``--compress zstd`` (requires a zstd-enabled ``alevin-fry`` build)
 - ``af_quant/simpleaf_map_info.json``: parsed mapping metadata copied into the quantification directory for downstream consumers such as AnnData conversion
 - ``af_quant/simpleaf_multiplex_quant_info.json``: multiplex pipeline metadata copied into the quantification directory so it can be embedded into AnnData ``uns``
 - ``af_quant/gene_id_to_name.tsv``: optional gene ID to gene symbol/name mapping copied when available from the probe set or index

@@ -17,7 +17,7 @@ fn legacy_salmon_index_metadata_is_rejected_with_migration_error() {
     let af_info = json!({
         "prog_info": {
             "piscem": {"exe_path": "/bin/echo", "version": "0.18.0"},
-            "alevin_fry": {"exe_path": "/bin/echo", "version": "0.13.0"},
+            "alevin_fry": {"exe_path": "/bin/echo", "version": "0.18.3"},
             "macs": null
         }
     });

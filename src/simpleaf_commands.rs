@@ -377,9 +377,10 @@ pub struct CollationResourceOpts {
 
     /// Compress the collated RAD file with a per-chunk codec. Compression is ON
     /// by default (lz4); pass `--compress none` to disable it, or `--compress
-    /// zstd` (needs an alevin-fry build with the `zstd` feature). `--compress`
-    /// with no value also selects lz4. The per-chunk framing keeps the collated
-    /// RAD chunk-seekable, so the parallel reader still engages.
+    /// zstd` (needs an alevin-fry build with the `zstd` feature — otherwise
+    /// alevin-fry rejects `zstd` when the collate step runs). `--compress` with
+    /// no value also selects lz4. The per-chunk framing keeps the collated RAD
+    /// chunk-seekable, so the parallel reader still engages.
     #[arg(
         long,
         value_name = "CODEC",

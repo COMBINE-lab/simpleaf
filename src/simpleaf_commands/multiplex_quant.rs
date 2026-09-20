@@ -265,6 +265,10 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
 
     // Load runtime context (program paths)
     let rt = context::load_runtime_context(af_home)?;
+    // Fail fast on a too-old registered alevin-fry, before mapping — otherwise a
+    // stale registration only surfaces deep in `collate` (e.g. `--compress`
+    // needs alevin-fry >= 0.18.3).
+    crate::utils::prog_utils::ensure_alevin_fry_version(&rt.progs)?;
     let piscem_info = rt
         .progs
         .piscem

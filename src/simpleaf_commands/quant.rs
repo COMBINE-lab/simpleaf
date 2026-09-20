@@ -279,6 +279,10 @@ fn resolve_quant_setup(
     let mut t2g_map = opts.t2g_map.clone();
     let ctx = context::load_runtime_context(af_home_path)?;
     let rp: ReqProgs = ctx.progs;
+    // Fail fast on a too-old registered alevin-fry, before mapping — otherwise a
+    // stale registration only surfaces deep in `collate` (e.g. `--compress`
+    // needs alevin-fry >= 0.18.3).
+    crate::utils::prog_utils::ensure_alevin_fry_version(&rp)?;
 
     let index_meta = index_meta::resolve_quant_index(opts.index.clone())?;
     if t2g_map.is_none()
