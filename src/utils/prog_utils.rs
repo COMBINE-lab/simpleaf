@@ -37,7 +37,11 @@ pub mod min_versions {
 
     /// alevin-fry 0.18.0 provides deterministic compiled barcode-correction
     /// plans and the correction/resource controls forwarded by simpleaf 0.28.
-    pub const ALEVIN_FRY: &str = ">=0.18.0, <1.0.0";
+    /// 0.18.3 is required because collate is now invoked with `--compress=<codec>`
+    /// (per-chunk codec, on by default): earlier releases spell `--compress` as a
+    /// bare boolean flag and reject the `=<codec>` value, which would fail at
+    /// collate on every run.
+    pub const ALEVIN_FRY: &str = ">=0.18.3, <1.0.0";
 
     /// Only consulted when peak calling is actually requested.
     pub const MACS3: &str = ">=3.0.2, <4.0.0";
@@ -289,6 +293,29 @@ pub fn check_version_constraints<S1: AsRef<str>>(
             req
         ))
     }
+}
+
+/// Preflight: confirm the alevin-fry recorded in the cached program info
+/// (`simpleaf_info.json`) satisfies [`min_versions::ALEVIN_FRY`], erroring with
+/// an actionable message *before* any long-running work.
+///
+/// `set-paths`/`refresh-prog-info` already validate at registration time, but a
+/// user who registered an older alevin-fry and then upgraded simpleaf would
+/// otherwise only discover the mismatch deep in `collate` (e.g. `--compress` was
+/// added in alevin-fry 0.18.3). This checks the *cached* version string, so it
+/// spawns no subprocess.
+pub fn ensure_alevin_fry_version(rp: &ReqProgs) -> Result<()> {
+    let af = rp
+        .alevin_fry
+        .as_ref()
+        .context("alevin-fry program info is missing; please run `simpleaf set-paths`.")?;
+    check_version_constraints("alevin-fry", min_versions::ALEVIN_FRY, &af.version).with_context(
+        || {
+            "the registered alevin-fry does not meet this simpleaf's minimum; install a newer \
+             alevin-fry and re-run `simpleaf set-paths`"
+        },
+    )?;
+    Ok(())
 }
 
 /// Checks that the version returned from a given program's `--version`
@@ -554,10 +581,40 @@ pub fn inspect_af_home(af_home_path: &Path) -> anyhow::Result<serde_json::Value>
 
 #[cfg(test)]
 mod tests {
-    use super::{check_files_exist, check_piscem_index_files};
+    use super::{
+        ProgInfo, ReqProgs, check_files_exist, check_piscem_index_files, ensure_alevin_fry_version,
+    };
     use cmd_lib::run_fun;
     use std::fs;
     use tempfile::tempdir;
+
+    fn req_progs_with_af(version: &str) -> ReqProgs {
+        ReqProgs {
+            piscem: None,
+            alevin_fry: Some(ProgInfo {
+                exe_path: "/bin/echo".into(),
+                version: version.to_string(),
+            }),
+            macs: None,
+        }
+    }
+
+    #[test]
+    fn ensure_alevin_fry_version_accepts_current_and_rejects_old_or_missing() {
+        // meets the >=0.18.3 floor
+        assert!(ensure_alevin_fry_version(&req_progs_with_af("0.18.3")).is_ok());
+        assert!(ensure_alevin_fry_version(&req_progs_with_af("0.20.0")).is_ok());
+        // below the floor -> clear error before any work
+        assert!(ensure_alevin_fry_version(&req_progs_with_af("0.18.2")).is_err());
+        assert!(ensure_alevin_fry_version(&req_progs_with_af("0.18.0")).is_err());
+        // not registered at all -> error pointing at set-paths
+        let none = ReqProgs {
+            piscem: None,
+            alevin_fry: None,
+            macs: None,
+        };
+        assert!(ensure_alevin_fry_version(&none).is_err());
+    }
 
     #[test]
     fn check_files_exist_ignores_duplicate_entries() {

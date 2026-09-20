@@ -335,6 +335,34 @@ impl CellBarcodeCorrectionOpts {
     }
 }
 
+/// Per-chunk codec for the collated RAD, forwarded to `alevin-fry collate`.
+///
+/// The type default is [`CompressCodec::None`] (a `Default`-constructed opts set
+/// forwards nothing); the *CLI* default is `lz4`, set on the `--compress` arg, so
+/// a plain invocation compresses.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum CompressCodec {
+    /// lz4 (pure-Rust; always available in alevin-fry).
+    Lz4,
+    /// zstd (needs an alevin-fry built with the `zstd` feature).
+    Zstd,
+    /// No compression.
+    #[default]
+    None,
+}
+
+impl CompressCodec {
+    /// The value forwarded as `--compress=<codec>`, or `None` when no `--compress`
+    /// flag should be forwarded (uncompressed).
+    fn as_collate_arg(self) -> Option<&'static str> {
+        match self {
+            CompressCodec::Lz4 => Some("lz4"),
+            CompressCodec::Zstd => Some("zstd"),
+            CompressCodec::None => Option::None,
+        }
+    }
+}
+
 /// Optional collation resource override shared by RNA workflows.
 #[derive(Args, Clone, Debug, Default)]
 pub struct CollationResourceOpts {
@@ -346,12 +374,34 @@ pub struct CollationResourceOpts {
         help_heading = "Advanced Resource Options"
     )]
     pub collate_memory_limit: Option<String>,
+
+    /// Compress the collated RAD file with a per-chunk codec. Compression is ON
+    /// by default (lz4); pass `--compress none` to disable it, or `--compress
+    /// zstd` (needs an alevin-fry build with the `zstd` feature — otherwise
+    /// alevin-fry rejects `zstd` when the collate step runs). `--compress` with
+    /// no value also selects lz4. The per-chunk framing keeps the collated RAD
+    /// chunk-seekable, so the parallel reader still engages.
+    #[arg(
+        long,
+        value_name = "CODEC",
+        value_enum,
+        num_args = 0..=1,
+        default_value = "lz4",
+        default_missing_value = "lz4",
+        help_heading = "Advanced Resource Options"
+    )]
+    pub compress: CompressCodec,
 }
 
 impl CollationResourceOpts {
     pub(crate) fn append_to(&self, command: &mut std::process::Command) {
         if let Some(memory_limit) = &self.collate_memory_limit {
             command.arg("--memory-limit").arg(memory_limit);
+        }
+        // Compression is on by default (lz4); `none` (and a Default-constructed
+        // opts set) forwards no `--compress`, leaving the collate uncompressed.
+        if let Some(codec) = self.compress.as_collate_arg() {
+            command.arg(format!("--compress={codec}"));
         }
     }
 }
@@ -1399,6 +1449,7 @@ mod barcode_forwarding_tests {
         };
         let collate = CollationResourceOpts {
             collate_memory_limit: Some("4GB".to_string()),
+            compress: CompressCodec::None,
         };
 
         let mut gpl_command = std::process::Command::new("alevin-fry");
@@ -1429,7 +1480,29 @@ mod barcode_forwarding_tests {
 
         let mut collate_command = std::process::Command::new("alevin-fry");
         collate.append_to(&mut collate_command);
+        // `compress: none` leaves the collate command uncompressed (no --compress).
         assert_eq!(args_of(&collate_command), ["--memory-limit", "4GB"]);
+
+        // A real codec forwards `--compress=<codec>` to alevin-fry collate.
+        let compress = CollationResourceOpts {
+            collate_memory_limit: Some("4GB".to_string()),
+            compress: CompressCodec::Lz4,
+        };
+        let mut compress_command = std::process::Command::new("alevin-fry");
+        compress.append_to(&mut compress_command);
+        assert_eq!(
+            args_of(&compress_command),
+            ["--memory-limit", "4GB", "--compress=lz4"]
+        );
+
+        // zstd forwards likewise (build-gated downstream by alevin-fry).
+        let zstd = CollationResourceOpts {
+            collate_memory_limit: None,
+            compress: CompressCodec::Zstd,
+        };
+        let mut zstd_command = std::process::Command::new("alevin-fry");
+        zstd.append_to(&mut zstd_command);
+        assert_eq!(args_of(&zstd_command), ["--compress=zstd"]);
     }
 
     #[test]
