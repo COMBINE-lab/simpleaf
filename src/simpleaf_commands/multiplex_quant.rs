@@ -28,6 +28,10 @@ struct ResolvedProbeSetFiles {
     gene_t2g_path: PathBuf,
     usa_t2g_path: Option<PathBuf>,
     gene_id_to_name_path: Option<PathBuf>,
+    /// Excluded probes to index as decoys (see `ExcludedProbeMode`); `None`
+    /// for FASTA probe sets, `--excluded-probes ignore`, or a CSV with no
+    /// excluded probes.
+    decoy_fasta_path: Option<PathBuf>,
 }
 
 fn t2g_mode(opts: &MultiplexQuantOpts) -> probe_utils::ProbeT2gMode {
@@ -102,16 +106,22 @@ Provide a splicing-aware probe CSV or rerun without `--usa`.",
 fn prepare_probe_set_files(
     probe_set: &Path,
     output_dir: &Path,
+    excluded_mode: probe_utils::ExcludedProbeMode,
 ) -> anyhow::Result<ResolvedProbeSetFiles> {
     let ext = probe_set.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     if ext.eq_ignore_ascii_case("csv") {
-        let converted = probe_utils::convert_probe_csv_to_reference_files(probe_set, output_dir)?;
+        let converted = probe_utils::convert_probe_csv_to_reference_files(
+            probe_set,
+            output_dir,
+            excluded_mode,
+        )?;
         return Ok(ResolvedProbeSetFiles {
             fasta_path: converted.fasta_path,
             gene_t2g_path: converted.gene_t2g_path,
             usa_t2g_path: converted.usa_t2g_path,
             gene_id_to_name_path: converted.gene_id_to_name_path,
+            decoy_fasta_path: converted.decoy_fasta_path,
         });
     }
 
@@ -125,6 +135,7 @@ fn prepare_probe_set_files(
         gene_t2g_path,
         usa_t2g_path: None,
         gene_id_to_name_path: None,
+        decoy_fasta_path: None,
     })
 }
 
@@ -623,7 +634,7 @@ fn resolve_probe_index(
             inferred_t2g
         } else if let Some(ref ps) = opts.probe_set {
             let conv_dir = opts.output.join("probe_conversion");
-            let probe_set_files = prepare_probe_set_files(ps, &conv_dir)?;
+            let probe_set_files = prepare_probe_set_files(ps, &conv_dir, opts.excluded_probes)?;
             Some(select_probe_set_t2g(&probe_set_files, mode)?)
         } else {
             None
@@ -632,7 +643,7 @@ fn resolve_probe_index(
             inferred_gene_id_to_name
         } else if let Some(ref ps) = opts.probe_set {
             let conv_dir = opts.output.join("probe_conversion");
-            let probe_set_files = prepare_probe_set_files(ps, &conv_dir)?;
+            let probe_set_files = prepare_probe_set_files(ps, &conv_dir, opts.excluded_probes)?;
             probe_set_files.gene_id_to_name_path
         } else {
             None
@@ -672,7 +683,18 @@ fn resolve_probe_index(
     let cache_dir = af_home.join("probe_indices");
     std::fs::create_dir_all(&cache_dir)?;
     let cache_key = probe_info.plist_name.as_deref().unwrap_or("unknown");
-    let cached_index = cache_dir.join(format!("{}_{}", cache_key, opts.kmer_length));
+    // Indices built under the two `--excluded-probes` modes differ (one carries
+    // a poison table, the other does not), so they must not share a cache slot.
+    // The `ignore` layout is the historical one, so indices cached by earlier
+    // simpleaf releases — all built without decoys — keep serving that mode.
+    let cached_index = match opts.excluded_probes {
+        probe_utils::ExcludedProbeMode::Ignore => {
+            cache_dir.join(format!("{}_{}", cache_key, opts.kmer_length))
+        }
+        probe_utils::ExcludedProbeMode::Decoy => {
+            cache_dir.join(format!("{}_{}_decoy", cache_key, opts.kmer_length))
+        }
+    };
     let cached_probe_index_dir = cached_index.join("probe_index");
     let cached_probe_index = cached_probe_index_dir.join("index");
     if probe_index_base_exists(&cached_probe_index) {
@@ -717,7 +739,7 @@ fn build_index_from_probe_set(
 ) -> anyhow::Result<(PathBuf, PathBuf, Option<PathBuf>)> {
     let index_dir = opts.output.join("probe_index");
     std::fs::create_dir_all(&index_dir)?;
-    let probe_set_files = prepare_probe_set_files(probe_set, &index_dir)?;
+    let probe_set_files = prepare_probe_set_files(probe_set, &index_dir, opts.excluded_probes)?;
     let fasta_path = probe_set_files.fasta_path.clone();
     let t2g_path = select_probe_set_t2g(&probe_set_files, mode)?;
 
@@ -738,6 +760,19 @@ fn build_index_from_probe_set(
         .arg("--dict")
         .arg(opts.dict.as_cli())
         .arg("--overwrite");
+
+    // Excluded probes become poison k-mers: piscem records the k-mers at the
+    // boundary between decoy sequence and the indexed reference and, at map
+    // time, discards any read whose hits include one. `set-paths` already
+    // requires a piscem new enough (>= min_versions::PISCEM) to accept
+    // `--decoy-paths`, so no version gate is needed here.
+    if let Some(ref decoys) = probe_set_files.decoy_fasta_path {
+        info!(
+            "Indexing excluded probes as decoys from {}",
+            decoys.display()
+        );
+        build_cmd.arg("--decoy-paths").arg(decoys);
+    }
 
     info!(
         "piscem build cmd: {}",
@@ -1130,6 +1165,38 @@ GATCCTCT\tGATCCTCT\tBC003
     }
 
     #[test]
+    fn excluded_probes_default_to_decoy_and_accept_ignore() {
+        use crate::utils::probe_utils::ExcludedProbeMode;
+        let opts = parse_multiplex_quant_opts(&["-o", "."]);
+        assert_eq!(opts.excluded_probes, ExcludedProbeMode::Decoy);
+        let opts = parse_multiplex_quant_opts(&["-o", ".", "--excluded-probes", "ignore"]);
+        assert_eq!(opts.excluded_probes, ExcludedProbeMode::Ignore);
+    }
+
+    #[test]
+    fn csv_probe_set_exposes_excluded_probes_as_decoys() {
+        use crate::utils::probe_utils::ExcludedProbeMode;
+        let td = tempfile::tempdir().expect("failed to create tempdir");
+        let csv_path = td.path().join("probes.csv");
+        std::fs::write(
+            &csv_path,
+            "gene_id,probe_seq,probe_id,included\nG1,AAAA,P1,TRUE\nG1,CCCC,P2,FALSE\n",
+        )
+        .expect("failed to write probe CSV");
+
+        let files = super::prepare_probe_set_files(&csv_path, td.path(), ExcludedProbeMode::Decoy)
+            .expect("conversion failed");
+        assert_eq!(
+            files.decoy_fasta_path.as_deref(),
+            Some(td.path().join("probe_decoys.fa").as_path())
+        );
+
+        let files = super::prepare_probe_set_files(&csv_path, td.path(), ExcludedProbeMode::Ignore)
+            .expect("conversion failed");
+        assert!(files.decoy_fasta_path.is_none());
+    }
+
+    #[test]
     fn sample_barcode_orientation_uses_cli_then_preset_then_child_default() {
         let mut opts = parse_multiplex_quant_opts(&["-o", "."]);
         let mut chemistry =
@@ -1160,6 +1227,7 @@ GATCCTCT\tGATCCTCT\tBC003
             gene_t2g_path: Path::new("/tmp/probe_t2g.tsv").to_path_buf(),
             usa_t2g_path: None,
             gene_id_to_name_path: None,
+            decoy_fasta_path: None,
         };
 
         let err = super::select_probe_set_t2g(&files, ProbeT2gMode::Usa)

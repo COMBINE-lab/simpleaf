@@ -103,6 +103,21 @@ Probe Set Options:
           Path to probe set CSV or FASTA (overrides auto-download). If a CSV is provided, it is
           converted to FASTA and a t2g map is generated automatically
 
+      --excluded-probes <EXCLUDED_PROBES>
+          How probes flagged `included = FALSE` in a probe set CSV are treated when simpleaf builds
+          the probe index. `decoy` (default) indexes their sequences as piscem decoys so reads from
+          an excluded probe are recognised and discarded instead of being mis-assigned to a retained
+          probe; `ignore` drops them from the reference entirely. Excluded probes are never
+          quantified in either mode. Has no effect on a pre-built `--index`
+
+          Possible values:
+          - decoy:  Index excluded probes as decoys (piscem poison k-mers): reads from them are
+            recognised and discarded rather than mis-assigned to a retained probe
+          - ignore: Drop excluded probes from the reference entirely (the behavior of earlier
+            releases)
+
+          [default: decoy]
+
       --kmer-length <KMER_LENGTH>
           k-mer length for probe index building
 

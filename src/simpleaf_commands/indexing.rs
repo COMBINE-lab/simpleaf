@@ -111,6 +111,31 @@ mod tests {
         assert_eq!(k, 10);
         assert_eq!(m, 7);
     }
+
+    #[test]
+    fn excluded_probes_flag_defaults_to_decoy() {
+        use crate::simpleaf_commands::Commands;
+        use crate::utils::probe_utils::ExcludedProbeMode;
+        use clap::Parser;
+
+        let index_opts = |args: &[&str]| {
+            let mut cli_args = vec!["simpleaf", "index", "-o", "out"];
+            cli_args.extend_from_slice(args);
+            match crate::Cli::parse_from(cli_args).command {
+                Commands::Index(opts) => opts,
+                cmd => panic!("expected index command, found {:?}", cmd),
+            }
+        };
+
+        // The default applies to every reference kind and is a no-op outside
+        // `--probe-csv`, so plain `--ref-seq` invocations are unaffected.
+        let opts = index_opts(&["--ref-seq", "ref.fa"]);
+        assert_eq!(opts.excluded_probes, ExcludedProbeMode::Decoy);
+        let opts = index_opts(&["--probe-csv", "probes.csv"]);
+        assert_eq!(opts.excluded_probes, ExcludedProbeMode::Decoy);
+        let opts = index_opts(&["--probe-csv", "probes.csv", "--excluded-probes", "ignore"]);
+        assert_eq!(opts.excluded_probes, ExcludedProbeMode::Ignore);
+    }
 }
 
 fn validate_index_type_opts(_opts: &IndexOpts) -> anyhow::Result<()> {
@@ -354,6 +379,9 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     let mut gene_id_to_name = None;
     let mut roers_duration = None;
     let mut roers_aug_ref_opt = None;
+    // decoy FASTA of excluded probes, produced only by the `--probe-csv` path
+    // under `--excluded-probes decoy` when the CSV actually excludes something.
+    let mut probe_decoy_path: Option<PathBuf> = None;
     let outref = output.join("ref");
     let min_seq_len: Option<u32>;
 
@@ -495,6 +523,10 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
                 }
             }
             CsvReader::Probe(mut rdr) => {
+                index_info["args"]["excluded-probes"] = json!(opts.excluded_probes.as_str());
+                let decoy_path = outref.join("probe_decoys.fa");
+                let mut decoy_writer: Option<BufWriter<File>> = None;
+
                 // process the csv file
                 for row in rdr.deserialize() {
                     let record: ProbeRow = row?;
@@ -512,6 +544,22 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
                         )?;
                     }
 
+                    // Excluded probes are never quantified (parse_csv_record skips
+                    // them), but under `--excluded-probes decoy` their sequences are
+                    // indexed as decoys so reads from them are discarded rather than
+                    // mis-assigned to a retained probe. The decoy file is opened on
+                    // first use so a CSV without exclusions leaves none behind.
+                    if !record.included()
+                        && opts.excluded_probes == probe_utils::ExcludedProbeMode::Decoy
+                    {
+                        if decoy_writer.is_none() {
+                            decoy_writer = Some(BufWriter::new(File::create(&decoy_path)?));
+                        }
+                        if let Some(writer) = decoy_writer.as_mut() {
+                            writeln!(writer, ">{}\n{}", record.seq_id(), record.sequence())?;
+                        }
+                    }
+
                     parse_csv_record(
                         record.ref_id(),
                         record.seq_id(),
@@ -523,6 +571,16 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
                         &mut ref_seq_writer,
                         &mut t2g_writer,
                     )?;
+                }
+
+                if let Some(mut writer) = decoy_writer {
+                    writer.flush()?;
+                    info!(
+                        "excluded probes written as decoys to {}",
+                        decoy_path.display()
+                    );
+                    index_info["probe_decoys"] = json!(&decoy_path);
+                    probe_decoy_path = Some(decoy_path);
                 }
             }
         }
@@ -616,7 +674,10 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
         .arg(opts.dict.as_cli());
     opts.build_resources.append_to(&mut piscem_index_cmd);
 
-    if let Some(decoy_paths) = opts.decoy_paths {
+    // User-supplied decoys plus (for `--probe-csv`) the excluded-probe decoys.
+    let mut decoy_paths = opts.decoy_paths.unwrap_or_default();
+    decoy_paths.extend(probe_decoy_path);
+    if !decoy_paths.is_empty() {
         // No version gate here any more: `set-paths` refuses a piscem older
         // than `min_versions::PISCEM`, so `--decoy-paths` is always supported
         // and the silent-drop branch could never be taken. Silently ignoring a
