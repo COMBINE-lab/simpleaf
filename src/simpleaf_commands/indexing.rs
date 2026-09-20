@@ -677,6 +677,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     // User-supplied decoys plus (for `--probe-csv`) the excluded-probe decoys.
     let mut decoy_paths = opts.decoy_paths.unwrap_or_default();
     decoy_paths.extend(probe_decoy_path);
+    let had_decoys = !decoy_paths.is_empty();
     if !decoy_paths.is_empty() {
         // No version gate here any more: `set-paths` refuses a piscem older
         // than `min_versions::PISCEM`, so `--decoy-paths` is always supported
@@ -697,6 +698,17 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     let index_start = Instant::now();
     let _cres = exec::run_checked(&mut piscem_index_cmd, "piscem index command")?;
     let index_duration = index_start.elapsed();
+
+    // If decoys were indexed, warn when the poison table came back empty (e.g.
+    // this generic `index` path defaults to k=31, too large for decoy/reference
+    // adjacency on ~50 bp probes), so the user knows the decoys are inert at
+    // this k.
+    if had_decoys {
+        crate::utils::probe_utils::warn_if_empty_poison_table(
+            &output_index_stem,
+            kmer_length as usize,
+        );
+    }
 
     let mut t2g_out_path: Option<PathBuf> = None;
     if let Some(t2g_file) = reference_stage.t2g.clone() {

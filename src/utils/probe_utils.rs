@@ -8,7 +8,40 @@ use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
-use tracing::info;
+use tracing::{info, warn};
+
+/// After a `piscem build` that was handed decoy sequences (`--decoy-paths`),
+/// warn if the resulting poison table came back empty. piscem's poison k-mers
+/// are the decoy k-mers *adjacent* to the indexed reference in the compacted de
+/// Bruijn graph; when `k` is large relative to any decoy/reference adjacency
+/// (e.g. the generic `index` default k=31 on 50 bp probes) none are found, the
+/// table is empty, and `--excluded-probes decoy` then silently filters nothing
+/// at map time. The probe-quant path defaults to k=23, which does populate it.
+/// Best-effort: stays quiet if the poison sidecar is absent or unparseable
+/// (e.g. a piscem build that produced no decoys at all).
+pub fn warn_if_empty_poison_table(index_prefix: &Path, kmer_length: usize) {
+    let mut poison_json = index_prefix.as_os_str().to_owned();
+    poison_json.push(".poison.json");
+    let poison_json = PathBuf::from(poison_json);
+
+    let Ok(contents) = std::fs::read_to_string(&poison_json) else {
+        return;
+    };
+    let num_poison = serde_json::from_str::<serde_json::Value>(&contents)
+        .ok()
+        .and_then(|v| v.get("num_poison_kmers").and_then(|x| x.as_u64()));
+    if num_poison == Some(0) {
+        warn!(
+            "Decoy sequences were indexed, but the resulting poison table is empty \
+             (0 poison k-mers at k={kmer_length}): no reads will be filtered by the \
+             decoys at map time. piscem poison k-mers are decoy k-mers adjacent to the \
+             reference in the de Bruijn graph, so an empty table usually means k is too \
+             large for any decoy/reference adjacency (the probe-quant default k is 23; \
+             the generic `index` default is 31). Rebuild with a smaller k to make the \
+             decoys effective."
+        );
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProbeT2gMode {
@@ -405,11 +438,36 @@ mod tests {
     use super::{
         ExcludedProbeMode, ProbeT2gMode, collapse_t2g_to_gene,
         convert_probe_csv_to_reference_files, ensure_t2g_mode, insert_gene_name,
-        t2g_has_usa_mapping,
+        t2g_has_usa_mapping, warn_if_empty_poison_table,
     };
     use std::collections::BTreeMap;
     use std::fs;
     use tempfile::tempdir;
+
+    // The warning is best-effort and only logs, so these tests exercise the
+    // code paths (path building, JSON parsing, absent-file handling) rather than
+    // asserting on log output; the point is that none of them panic.
+    #[test]
+    fn poison_warning_handles_empty_missing_and_populated() {
+        let dir = tempdir().unwrap();
+        let prefix = dir.path().join("piscem_idx");
+        // absent sidecar -> quiet, no panic
+        warn_if_empty_poison_table(&prefix, 31);
+        // empty poison table -> would warn, must not panic
+        fs::write(
+            dir.path().join("piscem_idx.poison.json"),
+            r#"{"max_poison_occ":0,"num_poison_kmers":0,"num_poison_occs":0}"#,
+        )
+        .unwrap();
+        warn_if_empty_poison_table(&prefix, 31);
+        // populated table -> no warning, no panic
+        fs::write(
+            dir.path().join("piscem_idx.poison.json"),
+            r#"{"max_poison_occ":1,"num_poison_kmers":46,"num_poison_occs":46}"#,
+        )
+        .unwrap();
+        warn_if_empty_poison_table(&prefix, 23);
+    }
 
     #[test]
     fn insert_gene_name_dedups_and_detects_conflicts() {

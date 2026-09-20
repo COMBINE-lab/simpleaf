@@ -780,6 +780,14 @@ fn build_index_from_probe_set(
     );
     exec::run_checked(&mut build_cmd, "[piscem build]")?;
 
+    // If we asked piscem to index decoys, warn when the poison table came back
+    // empty (e.g. k too large for any decoy/reference adjacency) so the user is
+    // not left thinking the excluded-probe decoys are filtering reads when they
+    // are not.
+    if probe_set_files.decoy_fasta_path.is_some() {
+        probe_utils::warn_if_empty_poison_table(&index_prefix, opts.kmer_length);
+    }
+
     Ok((index_prefix, t2g_path, probe_set_files.gene_id_to_name_path))
 }
 
