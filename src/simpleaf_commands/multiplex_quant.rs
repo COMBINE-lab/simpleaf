@@ -728,6 +728,9 @@ fn resolve_probe_index(
                 cached_index.display(),
                 reason
             );
+            // A run whose rebuild fails goes on with the index in the slot,
+            // if there is one, so keep what a failed build left only if not.
+            let keep_failed_build = !probe_index_base_exists(&cached_probe_index);
             match build_cached_probe_index(
                 probe_info,
                 &cache_dir,
@@ -736,6 +739,7 @@ fn resolve_probe_index(
                 opts,
                 piscem_path,
                 mode,
+                keep_failed_build,
             ) {
                 Ok(resolved) => return Ok(resolved),
                 // E.g. a read-only shared ALEVIN_FRY_HOME or cache slot, or no
@@ -777,12 +781,15 @@ fn resolve_probe_index(
         opts,
         piscem_path,
         mode,
+        true,
     )
 }
 
 /// Build the index of the auto-selected probe set `probe_info`, downloading
 /// its CSV into `cache_dir` first if needed, and install it in the cache slot
-/// `cached_index` with `build_record`.
+/// `cached_index` with `build_record`. If the build fails, what it left is
+/// kept for inspection when `keep_failed_build` is set, and removed if not.
+#[allow(clippy::too_many_arguments)]
 fn build_cached_probe_index(
     probe_info: &ProbeSetInfo,
     cache_dir: &Path,
@@ -791,6 +798,7 @@ fn build_cached_probe_index(
     opts: &MultiplexQuantOpts,
     piscem_path: &Path,
     mode: probe_utils::ProbeT2gMode,
+    keep_failed_build: bool,
 ) -> anyhow::Result<(PathBuf, Option<PathBuf>, Option<PathBuf>)> {
     // The index is built in a private directory next to the cache slot and
     // the finished index moved into place, so no run ever sees a half-built
@@ -810,7 +818,28 @@ fn build_cached_probe_index(
 
         let mut build_opts = opts.clone();
         build_opts.output = staging.path().to_path_buf();
-        let result = build_index_from_probe_set(&csv_path, &build_opts, piscem_path, mode)?;
+        let result = match build_index_from_probe_set(&csv_path, &build_opts, piscem_path, mode) {
+            Ok(result) => result,
+            Err(e) => {
+                if keep_failed_build {
+                    // Keep what the failed build left (any piscem scratch
+                    // among it) for inspection, as a build that failed in the
+                    // slot itself used to; `remove_abandoned` deletes it once
+                    // it is old.
+                    let staging = staging.keep();
+                    warn!(
+                        "The probe index build failed; what it left is kept in {} (a later run removes it once it is an hour old)",
+                        staging.display()
+                    );
+                } else {
+                    info!(
+                        "The probe index build failed; removing what it left in {}",
+                        staging.path().display()
+                    );
+                }
+                return Err(e);
+            }
+        };
         probe_index_cache::write_build_record(staging.path(), build_record)?;
         let cached_probe_index = cached_index.join("probe_index").join("index");
         if !probe_index_cache::install(
@@ -1460,6 +1489,96 @@ GATCCTCT\tGATCCTCT\tBC003
                 "--sample-bc-neighborhood",
                 "substitution-or-shift-1",
             ]
+        );
+    }
+
+    /// A failed build of an auto-selected probe index installs nothing. Its
+    /// staging directory, with whatever piscem left in it, is kept when asked
+    /// (the run fails), and removed otherwise (the run falls back to the
+    /// index already in the slot).
+    #[cfg(unix)]
+    #[test]
+    fn failed_cached_probe_index_build_keeps_its_staging_dir_only_if_asked() {
+        use crate::utils::chem_utils::ProbeSetInfo;
+        use crate::utils::probe_index_cache::ProbeIndexBuildRecord;
+        use crate::utils::prog_utils::ProgInfo;
+        use std::os::unix::fs::PermissionsExt;
+
+        let td = tempdir().expect("failed to create tempdir");
+        // A piscem whose build writes a partial file next to its `-o`, then fails.
+        let piscem = td.path().join("piscem");
+        fs::write(
+            &piscem,
+            "#!/bin/sh\nwhile [ $# -gt 0 ]; do\n  if [ \"$1\" = \"-o\" ]; then\n    \
+             echo partial > \"$2.partial\"\n  fi\n  shift\ndone\nexit 1\n",
+        )
+        .expect("failed to write fake piscem");
+        fs::set_permissions(&piscem, fs::Permissions::from_mode(0o755))
+            .expect("failed to chmod fake piscem");
+        let piscem_info = ProgInfo {
+            exe_path: piscem.clone(),
+            version: "0.24.0".to_string(),
+        };
+
+        let cache_dir = td.path().join("probe_indices");
+        let downloads = cache_dir.join("downloads");
+        fs::create_dir_all(&downloads).expect("failed to create downloads dir");
+        // Already downloaded, so nothing is fetched.
+        fs::write(
+            downloads.join("probes.csv"),
+            "gene_id,probe_seq,probe_id,included\nG1,ACGTACGTACGTACGTACGTACGTA,P1,TRUE\n",
+        )
+        .expect("failed to write probe set");
+        let probe_info = ProbeSetInfo {
+            name: "probes".to_string(),
+            plist_name: Some("abc".to_string()),
+            remote_url: Some("https://example.invalid/probes.csv".to_string()),
+        };
+        let out = td.path().join("out");
+        let out_str = out.display().to_string();
+        let opts = parse_multiplex_quant_opts(&["-o", &out_str]);
+        let slot = cache_dir.join(format!("abc_{}", opts.kmer_length));
+        let record =
+            ProbeIndexBuildRecord::for_run(&piscem_info, opts.kmer_length, opts.excluded_probes)
+                .expect("failed to build record");
+
+        let build = |keep_failed_build: bool| {
+            super::build_cached_probe_index(
+                &probe_info,
+                &cache_dir,
+                &slot,
+                &record,
+                &opts,
+                &piscem,
+                ProbeT2gMode::Gene,
+                keep_failed_build,
+            )
+            .expect_err("the fake build should fail");
+            assert!(!slot.exists(), "a failed build must not be installed");
+        };
+        let staging_prefix = format!(".abc_{}.tmp-", opts.kmer_length);
+        let staging_dirs = || -> Vec<_> {
+            fs::read_dir(&cache_dir)
+                .expect("failed to list cache dir")
+                .map(|entry| entry.expect("failed to read cache entry").path())
+                .filter(|path| {
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.starts_with(&staging_prefix))
+                })
+                .collect()
+        };
+
+        build(false);
+        let left = staging_dirs();
+        assert!(left.is_empty(), "expected no staging dir left: {left:?}");
+
+        build(true);
+        let kept = staging_dirs();
+        assert_eq!(kept.len(), 1, "expected one kept staging dir: {kept:?}");
+        assert!(
+            kept[0].join("probe_index").join("index.partial").is_file(),
+            "the failed build's files should be kept"
         );
     }
 }

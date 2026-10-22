@@ -321,12 +321,13 @@ fn retire(slot: &Path) -> anyhow::Result<()> {
 }
 
 /// A staging or retired directory older than this was left behind by a run
-/// that was killed (a probe index builds in seconds, and a retired slot is
-/// deleted right after it is moved aside).
+/// that was killed, or kept from a build that failed (a probe index builds in
+/// seconds, and a retired slot is deleted right after it is moved aside).
 const ABANDONED_AFTER: Duration = Duration::from_secs(60 * 60);
 
 /// Remove the staging and retired directories that killed runs (e.g. Ctrl-C
-/// during the build) left in `cache_dir`. Best-effort: failures are logged.
+/// during the build) or failed builds left in `cache_dir`. Best-effort:
+/// failures are logged.
 pub fn remove_abandoned(cache_dir: &Path) {
     let Ok(entries) = std::fs::read_dir(cache_dir) else {
         return;
@@ -348,7 +349,7 @@ pub fn remove_abandoned(cache_dir: &Path) {
             let path = entry.path();
             match std::fs::remove_dir_all(&path) {
                 Ok(()) => info!(
-                    "Removed {}, left behind by an interrupted probe index build",
+                    "Removed {}, left behind by an interrupted or failed probe index build",
                     path.display()
                 ),
                 Err(e) => warn!("could not remove {}: {e}", path.display()),
