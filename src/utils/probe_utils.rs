@@ -20,17 +20,7 @@ use tracing::{info, warn};
 /// Best-effort: stays quiet if the poison sidecar is absent or unparseable
 /// (e.g. a piscem build that produced no decoys at all).
 pub fn warn_if_empty_poison_table(index_prefix: &Path, kmer_length: usize) {
-    let mut poison_json = index_prefix.as_os_str().to_owned();
-    poison_json.push(".poison.json");
-    let poison_json = PathBuf::from(poison_json);
-
-    let Ok(contents) = std::fs::read_to_string(&poison_json) else {
-        return;
-    };
-    let num_poison = serde_json::from_str::<serde_json::Value>(&contents)
-        .ok()
-        .and_then(|v| v.get("num_poison_kmers").and_then(|x| x.as_u64()));
-    if num_poison == Some(0) {
+    if poison_table_is_empty(index_prefix) == Some(true) {
         warn!(
             "Decoy sequences were indexed, but the resulting poison table is empty \
              (0 poison k-mers at k={kmer_length}): no reads will be filtered by the \
@@ -41,6 +31,23 @@ pub fn warn_if_empty_poison_table(index_prefix: &Path, kmer_length: usize) {
              decoys effective."
         );
     }
+}
+
+/// Whether the poison table in the `<prefix>.poison.json` sidecar of a piscem
+/// index is empty: `Some(true)` for 0 poison k-mers, `Some(false)` for one or
+/// more, and `None` if the sidecar is absent, unparseable or has no count.
+/// Split out of [`warn_if_empty_poison_table`] so the decision can be tested
+/// directly.
+fn poison_table_is_empty(index_prefix: &Path) -> Option<bool> {
+    let mut poison_json = index_prefix.as_os_str().to_owned();
+    poison_json.push(".poison.json");
+    let poison_json = PathBuf::from(poison_json);
+
+    let contents = std::fs::read_to_string(&poison_json).ok()?;
+    serde_json::from_str::<serde_json::Value>(&contents)
+        .ok()
+        .and_then(|v| v.get("num_poison_kmers").and_then(|x| x.as_u64()))
+        .map(|num_poison| num_poison == 0)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -452,7 +459,7 @@ mod tests {
     use super::{
         ExcludedProbeMode, ProbeT2gMode, append_decoy_record, collapse_t2g_to_gene,
         convert_probe_csv_to_reference_files, ensure_t2g_mode, insert_gene_name,
-        t2g_has_usa_mapping, warn_if_empty_poison_table,
+        poison_table_is_empty, t2g_has_usa_mapping, warn_if_empty_poison_table,
     };
     use std::collections::BTreeMap;
     use std::fs;
@@ -475,21 +482,22 @@ mod tests {
         );
     }
 
-    // The warning is best-effort and only logs, so these tests exercise the
-    // code paths (path building, JSON parsing, absent-file handling) rather than
-    // asserting on log output; the point is that none of them panic.
+    // The warning itself only logs, so assert on the predicate that decides it,
+    // and still drive the wrapper through each case to show none of them panic.
     #[test]
     fn poison_warning_handles_empty_missing_and_populated() {
         let dir = tempdir().unwrap();
         let prefix = dir.path().join("piscem_idx");
         // absent sidecar -> quiet, no panic
+        assert_eq!(poison_table_is_empty(&prefix), None);
         warn_if_empty_poison_table(&prefix, 31);
-        // empty poison table -> would warn, must not panic
+        // empty poison table -> warns, must not panic
         fs::write(
             dir.path().join("piscem_idx.poison.json"),
             r#"{"max_poison_occ":0,"num_poison_kmers":0,"num_poison_occs":0}"#,
         )
         .unwrap();
+        assert_eq!(poison_table_is_empty(&prefix), Some(true));
         warn_if_empty_poison_table(&prefix, 31);
         // populated table -> no warning, no panic
         fs::write(
@@ -497,7 +505,15 @@ mod tests {
             r#"{"max_poison_occ":1,"num_poison_kmers":46,"num_poison_occs":46}"#,
         )
         .unwrap();
+        assert_eq!(poison_table_is_empty(&prefix), Some(false));
         warn_if_empty_poison_table(&prefix, 23);
+        // unparseable sidecar, or one without the count -> quiet, no panic
+        fs::write(dir.path().join("piscem_idx.poison.json"), "not json").unwrap();
+        assert_eq!(poison_table_is_empty(&prefix), None);
+        warn_if_empty_poison_table(&prefix, 31);
+        fs::write(dir.path().join("piscem_idx.poison.json"), "{}").unwrap();
+        assert_eq!(poison_table_is_empty(&prefix), None);
+        warn_if_empty_poison_table(&prefix, 31);
     }
 
     #[test]
