@@ -12,6 +12,7 @@ use crate::simpleaf_commands::MultiplexQuantOpts;
 use crate::utils::af_utils::IndexType;
 use crate::utils::chem_utils::{CustomChemistry, CustomChemistryMap};
 use crate::utils::constants::{CHEMISTRIES_PATH, CHEMISTRIES_URL};
+use crate::utils::probe_index_cache;
 use crate::utils::probe_utils;
 use crate::utils::prog_parsing_utils;
 use crate::utils::prog_utils;
@@ -359,13 +360,8 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
     std::fs::create_dir_all(&quant_output)?;
 
     // === Step 1: Resolve index and t2g ===
-    let (index_path, probe_t2g_path_opt, gene_id_to_name_opt) = resolve_probe_index(
-        af_home,
-        chem.as_ref(),
-        &opts,
-        &piscem_info.exe_path,
-        t2g_mode(&opts),
-    )?;
+    let (index_path, probe_t2g_path_opt, gene_id_to_name_opt) =
+        resolve_probe_index(af_home, chem.as_ref(), &opts, piscem_info, t2g_mode(&opts))?;
     // --t2g-map overrides any probe-derived or inferred t2g.
     let t2g_path = if let Some(t2g_map) = opts.t2g_map.clone() {
         t2g_map
@@ -626,9 +622,10 @@ fn resolve_probe_index(
     af_home: &Path,
     chem: Option<&CustomChemistry>,
     opts: &MultiplexQuantOpts,
-    piscem_path: &Path,
+    piscem: &prog_utils::ProgInfo,
     mode: probe_utils::ProbeT2gMode,
 ) -> anyhow::Result<(PathBuf, Option<PathBuf>, Option<PathBuf>)> {
+    let piscem_path = piscem.exe_path.as_path();
     // If user provided a pre-built index, use it directly.
     if let Some(ref index) = opts.index {
         info!("Using user-provided probe index: {}", index.display());
@@ -697,8 +694,8 @@ fn resolve_probe_index(
     let cache_key = probe_info.plist_name.as_deref().unwrap_or("unknown");
     // Indices built under the two `--excluded-probes` modes differ (one carries
     // a poison table, the other does not), so they must not share a cache slot.
-    // The `ignore` layout is the historical one, so indices cached by earlier
-    // simpleaf releases — all built without decoys — keep serving that mode.
+    // The `ignore` slot keeps its historical name; what earlier simpleaf
+    // releases cached there carries no build record and is rebuilt once.
     let cached_index = match opts.excluded_probes {
         probe_utils::ExcludedProbeMode::Ignore => {
             cache_dir.join(format!("{}_{}", cache_key, opts.kmer_length))
@@ -709,7 +706,52 @@ fn resolve_probe_index(
     };
     let cached_probe_index_dir = cached_index.join("probe_index");
     let cached_probe_index = cached_probe_index_dir.join("index");
-    if probe_index_base_exists(&cached_probe_index) {
+    // Reuse a cached index only if this piscem built it with these settings:
+    // an index from another piscem release may not even load (see
+    // `probe_index_cache`).
+    let build_record = probe_index_cache::ProbeIndexBuildRecord::for_run(
+        piscem,
+        opts.kmer_length,
+        opts.excluded_probes,
+    )?;
+    // A missing or stale index is built in a private directory next to the
+    // cache slot and the finished index moved into place, so no run ever sees
+    // a half-built one.
+    let staging = match probe_index_cache::slot_status(
+        &cached_index,
+        &cached_probe_index,
+        &build_record,
+    ) {
+        probe_index_cache::SlotStatus::Fresh => None,
+        probe_index_cache::SlotStatus::Absent => {
+            Some(probe_index_cache::staging_dir(&cached_index)?)
+        }
+        probe_index_cache::SlotStatus::Stale(reason) => {
+            match probe_index_cache::staging_dir(&cached_index) {
+                Ok(staging) => {
+                    info!(
+                        "Rebuilding the cached probe index {}: {}",
+                        cached_index.display(),
+                        reason
+                    );
+                    Some(staging)
+                }
+                // E.g. a read-only shared ALEVIN_FRY_HOME: use the index as
+                // earlier releases did; piscem reports it if it cannot load it.
+                Err(e) if probe_index_base_exists(&cached_probe_index) => {
+                    warn!(
+                        "The cached probe index {} cannot be rebuilt ({:#}); using it as is, although {}.",
+                        cached_index.display(),
+                        e,
+                        reason
+                    );
+                    None
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    };
+    let Some(staging) = staging else {
         let candidates = multiplex_t2g_candidates_for(None, Some(&cached_probe_index_dir), mode);
         let t2g =
             resolve_t2g_from_candidates(&candidates, &opts.output.join("resolved_t2g"), mode)?;
@@ -722,7 +764,7 @@ fn resolve_probe_index(
             probe_utils::warn_if_empty_poison_table(&cached_probe_index, opts.kmer_length);
         }
         return Ok((cached_probe_index, t2g, gene_id_to_name));
-    }
+    };
 
     // Download and build
     if let Some(ref url) = probe_info.remote_url {
@@ -735,11 +777,27 @@ fn resolve_probe_index(
             info!("Downloaded probe set to {}", csv_path.display());
         }
 
-        // Build index in the cache directory
         let mut build_opts = opts.clone();
-        build_opts.output = cached_index.clone();
+        build_opts.output = staging.path().to_path_buf();
         let result = build_index_from_probe_set(&csv_path, &build_opts, piscem_path, mode)?;
-        Ok((result.0, Some(result.1), result.2))
+        probe_index_cache::write_build_record(staging.path(), &build_record)?;
+        if !probe_index_cache::install(
+            staging.path(),
+            &cached_index,
+            &cached_probe_index,
+            &build_record,
+        )? {
+            info!(
+                "Another run cached an equivalent probe index first; using {}",
+                cached_probe_index.display()
+            );
+        }
+        let in_cache = |p: PathBuf| probe_index_cache::rebase(p, staging.path(), &cached_index);
+        Ok((
+            in_cache(result.0),
+            Some(in_cache(result.1)),
+            result.2.map(in_cache),
+        ))
     } else {
         bail!(
             "No remote URL for probe set '{}'. Provide --probe-set.",
