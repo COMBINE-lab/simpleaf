@@ -10,7 +10,7 @@
 use crate::core::{context, exec, index_meta};
 use crate::simpleaf_commands::MultiplexQuantOpts;
 use crate::utils::af_utils::IndexType;
-use crate::utils::chem_utils::{CustomChemistry, CustomChemistryMap};
+use crate::utils::chem_utils::{CustomChemistry, CustomChemistryMap, ProbeSetInfo};
 use crate::utils::constants::{CHEMISTRIES_PATH, CHEMISTRIES_URL};
 use crate::utils::probe_index_cache;
 use crate::utils::probe_utils;
@@ -715,44 +715,46 @@ fn resolve_probe_index(
         opts.kmer_length,
         opts.excluded_probes,
     )?;
-    // A missing or stale index is built in a private directory next to the
-    // cache slot and the finished index moved into place, so no run ever sees
-    // a half-built one.
-    let staging = match probe_index_cache::slot_status(
+    let use_cached = match probe_index_cache::slot_status(
         &cached_index,
         &cached_probe_index,
         &build_record,
     ) {
-        probe_index_cache::SlotStatus::Fresh => None,
-        probe_index_cache::SlotStatus::Absent => {
-            Some(probe_index_cache::staging_dir(&cached_index)?)
-        }
+        probe_index_cache::SlotStatus::Fresh => true,
+        probe_index_cache::SlotStatus::Absent => false,
         probe_index_cache::SlotStatus::Stale(reason) => {
-            match probe_index_cache::staging_dir(&cached_index) {
-                Ok(staging) => {
-                    info!(
-                        "Rebuilding the cached probe index {}: {}",
-                        cached_index.display(),
-                        reason
-                    );
-                    Some(staging)
-                }
-                // E.g. a read-only shared ALEVIN_FRY_HOME: use the index as
+            info!(
+                "Rebuilding the cached probe index {}: {}",
+                cached_index.display(),
+                reason
+            );
+            match build_cached_probe_index(
+                probe_info,
+                &cache_dir,
+                &cached_index,
+                &build_record,
+                opts,
+                piscem_path,
+                mode,
+            ) {
+                Ok(resolved) => return Ok(resolved),
+                // E.g. a read-only shared ALEVIN_FRY_HOME or cache slot, or no
+                // network to download the probe set again: use the index as
                 // earlier releases did; piscem reports it if it cannot load it.
                 Err(e) if probe_index_base_exists(&cached_probe_index) => {
                     warn!(
-                        "The cached probe index {} cannot be rebuilt ({:#}); using it as is, although {}.",
+                        "The cached probe index {} could not be rebuilt ({:#}); using it as is, although {}.",
                         cached_index.display(),
                         e,
                         reason
                     );
-                    None
+                    true
                 }
                 Err(e) => return Err(e),
             }
         }
     };
-    let Some(staging) = staging else {
+    if use_cached {
         let candidates = multiplex_t2g_candidates_for(None, Some(&cached_probe_index_dir), mode);
         let t2g =
             resolve_t2g_from_candidates(&candidates, &opts.output.join("resolved_t2g"), mode)?;
@@ -765,7 +767,35 @@ fn resolve_probe_index(
             probe_utils::warn_if_empty_poison_table(&cached_probe_index, opts.kmer_length);
         }
         return Ok((cached_probe_index, t2g, gene_id_to_name));
-    };
+    }
+
+    build_cached_probe_index(
+        probe_info,
+        &cache_dir,
+        &cached_index,
+        &build_record,
+        opts,
+        piscem_path,
+        mode,
+    )
+}
+
+/// Build the index of the auto-selected probe set `probe_info`, downloading
+/// its CSV into `cache_dir` first if needed, and install it in the cache slot
+/// `cached_index` with `build_record`.
+fn build_cached_probe_index(
+    probe_info: &ProbeSetInfo,
+    cache_dir: &Path,
+    cached_index: &Path,
+    build_record: &probe_index_cache::ProbeIndexBuildRecord,
+    opts: &MultiplexQuantOpts,
+    piscem_path: &Path,
+    mode: probe_utils::ProbeT2gMode,
+) -> anyhow::Result<(PathBuf, Option<PathBuf>, Option<PathBuf>)> {
+    // The index is built in a private directory next to the cache slot and
+    // the finished index moved into place, so no run ever sees a half-built
+    // one.
+    let staging = probe_index_cache::staging_dir(cached_index)?;
 
     // Download and build
     if let Some(ref url) = probe_info.remote_url {
@@ -781,19 +811,20 @@ fn resolve_probe_index(
         let mut build_opts = opts.clone();
         build_opts.output = staging.path().to_path_buf();
         let result = build_index_from_probe_set(&csv_path, &build_opts, piscem_path, mode)?;
-        probe_index_cache::write_build_record(staging.path(), &build_record)?;
+        probe_index_cache::write_build_record(staging.path(), build_record)?;
+        let cached_probe_index = cached_index.join("probe_index").join("index");
         if !probe_index_cache::install(
             staging.path(),
-            &cached_index,
+            cached_index,
             &cached_probe_index,
-            &build_record,
+            build_record,
         )? {
             info!(
                 "Another run cached an equivalent probe index first; using {}",
                 cached_probe_index.display()
             );
         }
-        let in_cache = |p: PathBuf| probe_index_cache::rebase(p, staging.path(), &cached_index);
+        let in_cache = |p: PathBuf| probe_index_cache::rebase(p, staging.path(), cached_index);
         Ok((
             in_cache(result.0),
             Some(in_cache(result.1)),

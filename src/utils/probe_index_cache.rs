@@ -222,7 +222,9 @@ pub fn write_build_record(dir: &Path, record: &ProbeIndexBuildRecord) -> anyhow:
 /// Move the complete, recorded index built in `staging` into `slot`, first
 /// retiring whatever stale index the slot holds. Returns `false`, leaving
 /// `staging` in place, if another run has meanwhile installed an index that
-/// serves `record` just as well; the caller then uses that one.
+/// serves `record` just as well; the caller then uses that one. A stale index
+/// that cannot be moved aside (e.g. a slot directory the user may not write)
+/// is left in place, and an error returned.
 pub fn install(
     staging: &Path,
     slot: &Path,
@@ -607,6 +609,50 @@ mod tests {
             .map(|e| e.unwrap().file_name())
             .collect();
         assert_eq!(names, vec![std::ffi::OsString::from("plist_23")]);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn install_leaves_a_stale_slot_it_cannot_move_in_place() {
+        // A slot built by another user of a shared ALEVIN_FRY_HOME, or made
+        // read-only: moving a directory to a new parent needs write access to
+        // the directory itself, so the slot cannot be retired. multiplex-quant
+        // then uses it as is, so it must survive the failed install intact.
+        use std::os::unix::fs::PermissionsExt;
+        let td = tempdir().expect("failed to create tempdir");
+        let piscem = fake_piscem(td.path(), "piscem");
+        let record = ProbeIndexBuildRecord::for_run(&piscem, 23, ExcludedProbeMode::Ignore)
+            .expect("failed to build record");
+        let cache = td.path().join("probe_indices");
+        let slot = cache.join("plist_23");
+        let prefix = write_slot(&slot, None);
+        fs::set_permissions(&slot, fs::Permissions::from_mode(0o555)).unwrap();
+        // Permissions do not bind root; there is nothing to test then.
+        let enforced = fs::write(slot.join("probe"), "").is_err();
+        if enforced {
+            let staging = staging_dir(&slot).expect("failed to create staging dir");
+            write_slot(staging.path(), Some(&record));
+            let err = install(staging.path(), &slot, &prefix, &record)
+                .expect_err("a slot that cannot be moved aside must not be replaced");
+            assert!(
+                format!("{err:#}").contains("could not move the stale probe index"),
+                "unexpected error: {err:#}"
+            );
+            assert!(crate::utils::prog_utils::check_piscem_index_files(&prefix).is_ok());
+            assert_stale(
+                slot_status(&slot, &prefix, &record),
+                "no simpleaf_probe_index.json",
+            );
+            drop(staging);
+            // Neither the staging nor the retired directory is left behind.
+            let names: Vec<_> = fs::read_dir(&cache)
+                .unwrap()
+                .map(|e| e.unwrap().file_name())
+                .collect();
+            assert_eq!(names, vec![std::ffi::OsString::from("plist_23")]);
+        }
+        // Let the tempdir be removed.
+        fs::set_permissions(&slot, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
     #[test]
