@@ -818,11 +818,43 @@ fn build_index_from_probe_set(
         build_cmd.arg("--decoy-paths").arg(decoys);
     }
 
+    // Without `-w`, piscem puts its scratch in `./workdir.noindex` under the
+    // current directory, where cf1-rs uses fixed file names: concurrent builds
+    // launched from one directory clobber each other's files and either fail
+    // or produce a corrupt index. Give each build its own work directory under
+    // the index directory instead, and remove it once the build succeeds.
+    let work_dir = tempfile::Builder::new()
+        .prefix("workdir.")
+        .suffix(".noindex")
+        .tempdir_in(&index_dir)
+        .with_context(|| {
+            format!(
+                "could not create a piscem work directory in {}",
+                index_dir.display()
+            )
+        })?;
+    build_cmd.arg("-w").arg(work_dir.path());
+
     info!(
         "piscem build cmd: {}",
         prog_utils::get_cmd_line_string(&build_cmd)
     );
-    exec::run_checked(&mut build_cmd, "[piscem build]")?;
+    if let Err(e) = exec::run_checked(&mut build_cmd, "[piscem build]") {
+        // Keep the scratch of a failed build for inspection.
+        let work_dir = work_dir.keep();
+        warn!(
+            "piscem build failed; its work directory was left at {}",
+            work_dir.display()
+        );
+        return Err(e);
+    }
+    let work_dir_path = work_dir.path().to_path_buf();
+    if let Err(e) = work_dir.close() {
+        warn!(
+            "could not remove the piscem work directory {}: {e}",
+            work_dir_path.display()
+        );
+    }
 
     // If we asked piscem to index decoys, warn when the poison table came back
     // empty (e.g. k too large for any decoy/reference adjacency) so the user is
@@ -1035,7 +1067,7 @@ mod tests {
     use clap::Parser;
     use serde_json::json;
     use std::fs;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use tempfile::tempdir;
 
     /// A registry file in the shipped 3-column format: two samples, each with
@@ -1301,6 +1333,66 @@ GATCCTCT\tGATCCTCT\tBC003
         assert!(format!("{err:#}").contains("missing_r2.fq"), "{err:#}");
 
         assert!(super::check_read_pairs(&[], &[]).is_err());
+    }
+
+    /// Write a stand-in for `piscem` that records the `-w` it was given (and
+    /// fails if that directory does not exist), then exits with `status`.
+    #[cfg(unix)]
+    fn fake_piscem(dir: &Path, status: i32) -> (PathBuf, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let record = dir.join(format!("work_dir_{status}.txt"));
+        let script = dir.join(format!("fake_piscem_{status}"));
+        fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nwhile [ $# -gt 0 ]; do\n  if [ \"$1\" = \"-w\" ]; then\n    \
+                 printf '%s' \"$2\" > '{}'\n    test -d \"$2\" || exit 3\n  fi\n  shift\n\
+                 done\nexit {status}\n",
+                record.display()
+            ),
+        )
+        .expect("failed to write fake piscem");
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755))
+            .expect("failed to chmod fake piscem");
+        (script, record)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn probe_index_build_uses_its_own_work_dir() {
+        let td = tempdir().expect("failed to create tempdir");
+        let probes = td.path().join("probes.fa");
+        fs::write(&probes, ">P1\nACGTACGTACGTACGTACGTACGTA\n").expect("failed to write probes");
+        let out = td.path().join("out");
+        let out_str = out.display().to_string();
+        let opts = parse_multiplex_quant_opts(&["-o", &out_str]);
+        let index_dir = out.join("probe_index");
+
+        // Success: the work dir lives under the index dir and is removed.
+        let (piscem, record) = fake_piscem(td.path(), 0);
+        super::build_index_from_probe_set(&probes, &opts, &piscem, ProbeT2gMode::Gene)
+            .expect("fake build should succeed");
+        let work_dir = PathBuf::from(fs::read_to_string(&record).unwrap());
+        assert_eq!(work_dir.parent(), Some(index_dir.as_path()));
+        assert!(
+            !work_dir.exists(),
+            "work dir should be removed after success"
+        );
+
+        // Failure: the work dir is kept for inspection.
+        let (piscem, record) = fake_piscem(td.path(), 1);
+        super::build_index_from_probe_set(&probes, &opts, &piscem, ProbeT2gMode::Gene)
+            .expect_err("fake build should fail");
+        let failed_work_dir = PathBuf::from(fs::read_to_string(&record).unwrap());
+        assert_eq!(failed_work_dir.parent(), Some(index_dir.as_path()));
+        assert_ne!(
+            failed_work_dir, work_dir,
+            "each build gets its own work dir"
+        );
+        assert!(
+            failed_work_dir.is_dir(),
+            "work dir should be kept on failure"
+        );
     }
 
     #[test]
