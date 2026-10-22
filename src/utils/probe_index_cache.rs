@@ -169,14 +169,23 @@ pub fn slot_status(
     index_prefix: &Path,
     expected: &ProbeIndexBuildRecord,
 ) -> SlotStatus {
-    if !slot.exists() {
-        return SlotStatus::Absent;
+    match slot.try_exists() {
+        Ok(true) => {}
+        Ok(false) => return SlotStatus::Absent,
+        Err(e) => return SlotStatus::Stale(format!("it cannot be inspected ({e})")),
     }
     let record_path = slot.join(BUILD_RECORD_FILE);
-    if !record_path.exists() {
-        return SlotStatus::Stale(format!(
-            "it has no {BUILD_RECORD_FILE} (it was cached by an earlier simpleaf, or its build did not finish)"
-        ));
+    match record_path.try_exists() {
+        Ok(true) => {}
+        Ok(false) => {
+            return SlotStatus::Stale(format!(
+                "it has no {BUILD_RECORD_FILE} (it was cached by an earlier simpleaf, or its build did not finish)"
+            ));
+        }
+        // E.g. another user's slot that this user may not read.
+        Err(e) => {
+            return SlotStatus::Stale(format!("its {BUILD_RECORD_FILE} cannot be accessed ({e})"));
+        }
     }
     let record = std::fs::read_to_string(&record_path)
         .map_err(anyhow::Error::from)
@@ -501,6 +510,37 @@ mod tests {
 
         fs::write(slot.join(BUILD_RECORD_FILE), "{not json").unwrap();
         assert_stale(slot_status(&slot, &prefix, &record), "unreadable");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn slot_that_cannot_be_read_says_so() {
+        // E.g. another user's slot with mode 0700: whether it has a record is
+        // unknown, so it must not be reported as an earlier simpleaf's slot.
+        use std::os::unix::fs::PermissionsExt;
+        let td = tempdir().expect("failed to create tempdir");
+        let piscem = fake_piscem(td.path(), "piscem");
+        let record = ProbeIndexBuildRecord::for_run(&piscem, 23, ExcludedProbeMode::Decoy)
+            .expect("failed to build record");
+        let cache = td.path().join("probe_indices");
+        let slot = cache.join("plist_23_decoy");
+        let prefix = write_slot(&slot, Some(&record));
+        fs::set_permissions(&slot, fs::Permissions::from_mode(0o600)).unwrap();
+        // Permissions do not bind root; there is nothing to test then.
+        if fs::metadata(slot.join(BUILD_RECORD_FILE)).is_err() {
+            assert_stale(
+                slot_status(&slot, &prefix, &record),
+                "its simpleaf_probe_index.json cannot be accessed",
+            );
+            fs::set_permissions(&cache, fs::Permissions::from_mode(0o600)).unwrap();
+            assert_stale(
+                slot_status(&slot, &prefix, &record),
+                "it cannot be inspected",
+            );
+        }
+        // Let the tempdir be removed.
+        fs::set_permissions(&cache, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(&slot, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
     #[test]
