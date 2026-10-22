@@ -731,7 +731,12 @@ fn resolve_probe_index(
         std::fs::create_dir_all(&download_dir)?;
         let csv_path = download_dir.join(format!("{}.csv", probe_info.name));
         if !csv_path.exists() {
-            prog_utils::download_to_file(url, &csv_path)?;
+            download_registry_file(
+                url,
+                &csv_path,
+                probe_info.plist_name.as_deref(),
+                "probe set",
+            )?;
             info!("Downloaded probe set to {}", csv_path.display());
         }
 
@@ -809,6 +814,33 @@ fn build_index_from_probe_set(
     Ok((index_prefix, t2g_path, probe_set_files.gene_id_to_name_path))
 }
 
+/// Download a file the chemistry registry lists to `dest`. When the registry
+/// records the file's blake3 content hash (its `plist_name`), check the
+/// download against it, and, as `get_permit_if_absent` does for permit lists,
+/// warn on a mismatch rather than fail; the file is still used.
+fn download_registry_file(
+    url: &str,
+    dest: &Path,
+    expected_hash: Option<&str>,
+    what: &str,
+) -> anyhow::Result<()> {
+    let Some(expected_hash) = expected_hash else {
+        return prog_utils::download_to_file(url, dest);
+    };
+    let observed_hash = prog_utils::download_to_file_compute_hash(url, dest)?.to_string();
+    if observed_hash != expected_hash {
+        warn!(
+            "The {} obtained from the remote url {} does not match the expected hash {} (the observed hash was {}); it is used as is, and stays cached at {}",
+            what,
+            url,
+            expected_hash,
+            observed_hash,
+            dest.display()
+        );
+    }
+    Ok(())
+}
+
 /// Resolve cell barcode whitelist from the chemistry's plist_name/remote_url.
 fn resolve_cell_bc_whitelist(af_home: &Path, chem: &CustomChemistry) -> anyhow::Result<PathBuf> {
     let plist_dir = af_home.join("plist");
@@ -829,7 +861,12 @@ fn resolve_cell_bc_whitelist(af_home: &Path, chem: &CustomChemistry) -> anyhow::
             plist_dir.join("cell_bc_whitelist.txt")
         };
         info!("Downloading cell barcode whitelist...");
-        prog_utils::download_to_file(url, &dest)?;
+        download_registry_file(
+            url,
+            &dest,
+            chem.plist_name.as_deref(),
+            "cell barcode whitelist",
+        )?;
         info!("Downloaded to {}", dest.display());
         Ok(dest)
     } else {
@@ -881,7 +918,12 @@ fn resolve_sample_bc_list(
             plist_dir.join("sample_bc_list.txt")
         };
         info!("Downloading sample barcode list...");
-        prog_utils::download_to_file(url, &dest)?;
+        download_registry_file(
+            url,
+            &dest,
+            sbc_info.plist_name.as_deref(),
+            "sample barcode list",
+        )?;
         info!("Downloaded to {}", dest.display());
         dest
     } else {
