@@ -135,8 +135,13 @@ impl PiscemDecoderOpts {
 /// this keeps the Flex default (and any user-supplied inline value) working
 /// without requiring a newer piscem. A path is passed through unchanged and
 /// works with every piscem.
+///
+/// Inline JSON is checked for syntax only, so a typo fails here rather than
+/// after piscem has loaded the index; piscem still checks the fields.
 fn materialize_thread_policy(policy: &str, output_dir: &Path) -> anyhow::Result<PathBuf> {
     if policy.trim_start().starts_with('{') {
+        serde_json::from_str::<serde_json::Value>(policy)
+            .with_context(|| format!("--thread-policy {policy} is not valid JSON"))?;
         std::fs::create_dir_all(output_dir)?;
         let path = output_dir.join("thread_policy.json");
         std::fs::write(&path, policy)
@@ -1609,6 +1614,19 @@ mod decoder_opts_tests {
         let path = materialize_thread_policy(policy, dir.path()).unwrap();
         assert!(path.starts_with(dir.path()));
         assert_eq!(fs::read_to_string(&path).unwrap(), policy);
+    }
+
+    #[test]
+    fn malformed_inline_thread_policy_is_rejected_before_writing() {
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("out");
+        let error = materialize_thread_policy(
+            r#"{"parallel_decode": {"min_threads_per_stream": 4}"#,
+            &output,
+        )
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("is not valid JSON"));
+        assert!(!output.exists());
     }
 
     #[test]

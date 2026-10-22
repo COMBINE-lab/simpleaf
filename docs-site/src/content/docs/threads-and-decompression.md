@@ -75,11 +75,11 @@ simpleaf quant -t 32 --thread-policy '{"parallel_decode": {"min_threads_per_stre
 
 A JSON policy overriding the measured defaults, given either as a path to a JSON
 file or inline: a value beginning with `{` is treated as inline JSON. `piscem` reads
-the policy only from a file, so simpleaf writes an inline value to
-`thread_policy.json` in the run's output directory and passes that path; a path is
-passed through unchanged. Every field is optional; an unrecognised field is an
-**error**, not a silently ignored no-op, so a typo fails the run instead of quietly
-doing nothing.
+the policy only from a file, so simpleaf checks that an inline value is valid JSON,
+writes it to `thread_policy.json` in the run's output directory and passes that
+path; a path is passed through unchanged. Every field is optional; an unrecognised
+field is an **error**, not a silently ignored no-op, so a typo fails the run instead
+of quietly doing nothing.
 
 Currently understood:
 
