@@ -11,6 +11,11 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # The alevin-fry release artifact the end-to-end test runs against (see the
+  # install step below). Keep it in step with min_versions::ALEVIN_FRY in
+  # src/utils/prog_utils.rs and the floors in simpleaf_conda_env.yml. Quoted so
+  # that a version such as 0.20 stays a string rather than becoming a number.
+  ALEVIN_FRY_VERSION: "0.18.3"
 
 jobs:
   build_and_test:
@@ -26,7 +31,7 @@ jobs:
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          components: rustfmt, clippy
 
       # simpleaf has a large, stable dependency graph (notably Polars and
       # HDF5). Cache dependency artifacts separately for each runner/toolchain;
@@ -73,7 +78,7 @@ jobs:
       # version contract instead of silently testing an older conda package.
       # piscem, by contrast, still comes from bioconda; simpleaf_conda_env.yml
       # caps it to releases whose RAD output this alevin-fry can read.
-      - name: Install alevin-fry 0.18.3 release artifact
+      - name: Install alevin-fry ${{ env.ALEVIN_FRY_VERSION }} release artifact
         shell: bash -l {0}
         run: |
           case "$(uname -s)-$(uname -m)" in
@@ -85,9 +90,9 @@ jobs:
           esac
 
           archive="alevin-fry-${target}.tar.xz"
-          install_dir="${RUNNER_TEMP}/alevin-fry-0.18.3"
+          install_dir="${RUNNER_TEMP}/alevin-fry-${ALEVIN_FRY_VERSION}"
           curl --proto '=https' --tlsv1.2 -LsSf \
-            "https://github.com/COMBINE-lab/alevin-fry/releases/download/v0.18.3/${archive}" \
+            "https://github.com/COMBINE-lab/alevin-fry/releases/download/v${ALEVIN_FRY_VERSION}/${archive}" \
             -o "${RUNNER_TEMP}/${archive}"
           mkdir -p "${install_dir}"
           tar -xJf "${RUNNER_TEMP}/${archive}" \
@@ -98,10 +103,21 @@ jobs:
       - name: Test simpleaf
         shell: bash -l {0}
         run: |
-          export PATH="${RUNNER_TEMP}/alevin-fry-0.18.3:${PATH}"
+          export PATH="${RUNNER_TEMP}/alevin-fry-${ALEVIN_FRY_VERSION}:${PATH}"
           cd scripts
           chmod +x test_simpleaf.sh
           ulimit -n 2048
           ./test_simpleaf.sh
+
+      # Last, so that a lint introduced by a newer stable toolchain cannot skip
+      # the functional checks above. Default (dev) profile on purpose: the
+      # rustdoc step already compiled the dev-profile build scripts (HDF5
+      # among them) and proc macros and checked the dependencies, so this only
+      # checks simpleaf itself. The only platform-conditional code is cfg(unix)
+      # and cfg(windows), and both runners are unix, so one of them is enough.
+      - name: Clippy
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo clippy --all-targets -- -D warnings
+
       - name: Check job status
         run: echo "This job's status is ${{ job.status }}."
