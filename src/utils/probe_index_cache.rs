@@ -20,6 +20,7 @@
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 use tracing::{info, warn};
@@ -46,12 +47,28 @@ pub struct PiscemIdentity {
 impl PiscemIdentity {
     /// Identify the registered piscem by inspecting its executable on disk.
     pub fn of(piscem: &ProgInfo) -> anyhow::Result<Self> {
-        let exe_path = std::fs::canonicalize(&piscem.exe_path).with_context(|| {
+        Self::of_in(piscem, None)
+    }
+
+    /// Like [`Self::of`], but searching `path_list`, when given, in place of
+    /// `PATH`.
+    fn of_in(piscem: &ProgInfo, path_list: Option<OsString>) -> anyhow::Result<Self> {
+        // Find the executable the way running it will: a bare name (what
+        // `simpleaf set-paths -p piscem` records) is looked up on PATH, and
+        // any other relative path is taken from the current directory.
+        let mut finder =
+            which::WhichConfig::new().binary_name(piscem.exe_path.clone().into_os_string());
+        if let Some(path_list) = path_list {
+            finder = finder.custom_path_list(path_list);
+        }
+        let found = finder.first_result().with_context(|| {
             format!(
-                "could not resolve the registered piscem executable {}; please run `simpleaf set-paths`",
+                "could not find the registered piscem executable {}; please run `simpleaf set-paths`",
                 piscem.exe_path.display()
             )
         })?;
+        let exe_path = std::fs::canonicalize(&found)
+            .with_context(|| format!("could not resolve {}", found.display()))?;
         let meta = std::fs::metadata(&exe_path)
             .with_context(|| format!("could not inspect {}", exe_path.display()))?;
         let exe_modified = meta.modified().with_context(|| {
@@ -335,6 +352,13 @@ mod tests {
     fn fake_piscem(dir: &Path, contents: &str) -> ProgInfo {
         let exe_path = dir.join("piscem");
         fs::write(&exe_path, contents).expect("failed to write fake piscem");
+        // Only an executable file is found where piscem is registered.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&exe_path, fs::Permissions::from_mode(0o755))
+                .expect("failed to make fake piscem executable");
+        }
         ProgInfo {
             exe_path,
             version: "0.24.0".to_string(),
@@ -393,6 +417,35 @@ mod tests {
                 version: "0.24.0".to_string(),
             })
             .is_err()
+        );
+    }
+
+    #[test]
+    fn identity_of_a_bare_name_is_found_on_path() {
+        // `simpleaf set-paths -p piscem` registers the bare name "piscem",
+        // which running piscem looks up on PATH.
+        let td = tempdir().expect("failed to create tempdir");
+        let bin = td.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let installed = fake_piscem(&bin, "piscem on PATH");
+        let bare = ProgInfo {
+            exe_path: PathBuf::from("piscem"),
+            version: installed.version.clone(),
+        };
+        let empty = td.path().join("empty");
+        fs::create_dir_all(&empty).unwrap();
+        let path_list = std::env::join_paths([&empty, &bin]).unwrap();
+        assert_eq!(
+            PiscemIdentity::of_in(&bare, Some(path_list)).expect("failed to identify piscem"),
+            PiscemIdentity::of(&installed).unwrap()
+        );
+
+        // Not on PATH: the run cannot start piscem either.
+        let err = PiscemIdentity::of_in(&bare, Some(empty.into_os_string()))
+            .expect_err("a piscem missing from PATH must not be identified");
+        assert!(
+            format!("{err:#}").contains("could not find the registered piscem executable piscem"),
+            "unexpected error: {err:#}"
         );
     }
 
