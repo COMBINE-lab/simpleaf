@@ -1319,7 +1319,11 @@ impl ProgramName {
             // `try_parse_from`, not `parse_from`: an invalid argument in one
             // step must come back as an error (which the caller reports with
             // the step number) rather than exit the whole process from inside clap.
-            let cmd = Cli::try_parse_from(arg_vec)?.command;
+            // clap's message ends in a newline; drop it so the caller's error
+            // does not end with a blank line.
+            let cmd = Cli::try_parse_from(arg_vec)
+                .map_err(|e| anyhow!("{}", e.to_string().trim_end()))?
+                .command;
             Ok(WFCommand::SimpleafCommand(Box::new(cmd)))
         } else {
             bail!(
@@ -2036,11 +2040,9 @@ mod tests {
         let err = ProgramName::Index
             .create_simpleaf_cmd(&json!({"--bogus-flag": "x"}))
             .unwrap_err();
-        assert!(
-            format!("{:#}", err).contains("--bogus-flag"),
-            "unexpected error: {:#}",
-            err
-        );
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("--bogus-flag"), "unexpected error: {}", msg);
+        assert!(!msg.ends_with('\n'), "trailing newline in: {:?}", msg);
     }
 
     #[test]
