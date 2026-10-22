@@ -318,6 +318,115 @@ pub fn ensure_alevin_fry_version(rp: &ReqProgs) -> Result<()> {
     Ok(())
 }
 
+/// Optional alevin-fry options that simpleaf forwards only to a build that has
+/// them.
+///
+/// The version string cannot tell builds apart here: development and
+/// integration builds that carry these options still report the last release
+/// (0.18.3). So they are read off the subcommands' `--help` instead, which
+/// lists exactly the options that build accepts.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AlevinFryCapabilities {
+    /// `generate-permit-list --data-type`: declares the assay, so that `quant`
+    /// resolves Flex UMIs per probe. Without it quant resolves per gene.
+    pub gpl_data_type: bool,
+    /// `quant --dump-molecules`: writes the molecule table.
+    pub quant_dump_molecules: bool,
+    /// `quant --probe-mtx`: also writes the probe x cell matrix for Flex data.
+    pub quant_probe_mtx: bool,
+}
+
+impl AlevinFryCapabilities {
+    /// Read the capabilities off the `--help` text of `generate-permit-list`
+    /// and `quant`.
+    pub fn from_help(gpl_help: &str, quant_help: &str) -> Self {
+        Self {
+            gpl_data_type: help_defines_flag(gpl_help, "--data-type"),
+            quant_dump_molecules: help_defines_flag(quant_help, "--dump-molecules"),
+            quant_probe_mtx: help_defines_flag(quant_help, "--probe-mtx"),
+        }
+    }
+
+    /// Run `generate-permit-list --help` and `quant --help` once each on the
+    /// given alevin-fry. A subcommand whose help cannot be obtained is treated
+    /// as having none of the optional options (with a warning), which is what
+    /// simpleaf assumed before it checked.
+    pub fn detect(alevin_fry: &Path) -> Self {
+        let help = |subcommand: &str| -> String {
+            match Command::new(alevin_fry)
+                .arg(subcommand)
+                .arg("--help")
+                .output()
+            {
+                Ok(out) if out.status.success() => {
+                    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+                    text.push_str(&String::from_utf8_lossy(&out.stderr));
+                    text
+                }
+                Ok(out) => {
+                    warn!(
+                        "`{} {} --help` exited with {}; assuming it has none of the optional options",
+                        alevin_fry.display(),
+                        subcommand,
+                        out.status
+                    );
+                    String::new()
+                }
+                Err(e) => {
+                    warn!(
+                        "could not run `{} {} --help` ({}); assuming it has none of the optional options",
+                        alevin_fry.display(),
+                        subcommand,
+                        e
+                    );
+                    String::new()
+                }
+            }
+        };
+        let caps = Self::from_help(&help("generate-permit-list"), &help("quant"));
+        debug!("alevin-fry capabilities: {:?}", caps);
+        caps
+    }
+}
+
+/// The error for a simpleaf option that is forwarded as alevin-fry's
+/// `subcommand` option `flag` when the configured alevin-fry does not have it.
+pub fn missing_alevin_fry_option(alevin_fry: &Path, subcommand: &str, flag: &str) -> anyhow::Error {
+    anyhow!(
+        "`{flag}` needs an alevin-fry whose `{subcommand}` has `{flag}`, but `{} {subcommand} \
+         --help` does not list it. Install an alevin-fry that has it and re-run `simpleaf \
+         set-paths`, or rerun without `{flag}`.",
+        alevin_fry.display()
+    )
+}
+
+/// Whether clap-style `help` text defines the long option `flag` (e.g.
+/// `--probe-mtx`). Only option lines count -- `  -x, --flag ...` or
+/// `      --flag ...` -- so a flag that is merely mentioned in another option's
+/// description (whose wrapped lines clap indents further), or one that only
+/// shares a prefix (`--flag-extra`), does not register.
+fn help_defines_flag(help: &str, flag: &str) -> bool {
+    help.lines().any(|line| {
+        let trimmed = line.trim_start();
+        if line.len() - trimmed.len() > 6 {
+            return false;
+        }
+        let line = trimmed;
+        // Drop a short alias such as `-d, `.
+        let line = match line.split_once(", ") {
+            Some((short, rest)) if short.len() == 2 && short.starts_with('-') && short != "--" => {
+                rest
+            }
+            _ => line,
+        };
+        line.strip_prefix(flag).is_some_and(|rest| {
+            rest.chars()
+                .next()
+                .is_none_or(|c| c.is_whitespace() || matches!(c, '<' | '=' | '['))
+        })
+    })
+}
+
 /// Checks that the version returned from a given program's `--version`
 /// flag is compatible with the provided `req_string`.  The interpretation
 /// of compatible is according to the standard meaning of Semantic versioning.
@@ -582,11 +691,151 @@ pub fn inspect_af_home(af_home_path: &Path) -> anyhow::Result<serde_json::Value>
 #[cfg(test)]
 mod tests {
     use super::{
-        ProgInfo, ReqProgs, check_files_exist, check_piscem_index_files, ensure_alevin_fry_version,
+        AlevinFryCapabilities, ProgInfo, ReqProgs, check_files_exist, check_piscem_index_files,
+        ensure_alevin_fry_version, help_defines_flag,
     };
     use cmd_lib::run_fun;
     use std::fs;
     use tempfile::tempdir;
+
+    /// Excerpts of real `quant --help` output (alevin-fry 0.18.3 and the
+    /// RAD v2 integration build, which still reports 0.18.3).
+    const QUANT_HELP_0_18_3: &str = "\
+Options:
+  -m, --tg-map <TGMAP>                  transcript to gene map
+  -d, --dump-eqclasses                  flag for dumping equivalence classes
+  -b, --num-bootstraps <NUMBOOTSTRAPS>  number of bootstraps to use [default: 0]
+      --small-thresh <SMALLTHRESH>      cells with fewer than this many reads are resolved by a fast
+  -h, --help                            Print help
+";
+    const QUANT_HELP_INTEGRATION: &str = "\
+Options:
+  -m, --tg-map <TGMAP>                  transcript to gene map
+  -d, --dump-eqclasses                  flag for dumping equivalence classes
+      --dump-molecules                  write alevin/molecules.parquet: one row per resolved
+                                        molecule (cell barcode, representative UMI, feature,
+  -b, --num-bootstraps <NUMBOOTSTRAPS>  number of bootstraps to use [default: 0]
+      --probe-mtx                       for Flex data, also write the probe x cell count matrix the
+                                        gene matrix was summed from; the gene matrix is written
+  -h, --help                            Print help
+";
+    const GPL_HELP_WITHOUT_DATA_TYPE: &str = "\
+Options:
+      --sample-bc-list <SAMPLELIST>
+          file containing known sample/library barcodes (one per line); triggers multi-barcode mode
+      --sample-names <SAMPLENAMES>
+          file mapping sample barcodes to human-readable names (TSV: barcode\\tname)
+";
+    const GPL_HELP_WITH_DATA_TYPE: &str = "\
+Options:
+      --sample-bc-list <SAMPLELIST>
+          file containing known sample/library barcodes (one per line); triggers multi-barcode mode
+      --data-type <DATATYPE>
+          the assay the data comes from; `flex` makes quant resolve UMIs per probe [possible
+          values: flex]
+";
+
+    #[test]
+    fn capabilities_are_read_off_the_help_text() {
+        assert_eq!(
+            AlevinFryCapabilities::from_help(GPL_HELP_WITHOUT_DATA_TYPE, QUANT_HELP_0_18_3),
+            AlevinFryCapabilities::default()
+        );
+        assert_eq!(
+            AlevinFryCapabilities::from_help(GPL_HELP_WITHOUT_DATA_TYPE, QUANT_HELP_INTEGRATION),
+            AlevinFryCapabilities {
+                gpl_data_type: false,
+                quant_dump_molecules: true,
+                quant_probe_mtx: true,
+            }
+        );
+        assert_eq!(
+            AlevinFryCapabilities::from_help(GPL_HELP_WITH_DATA_TYPE, QUANT_HELP_INTEGRATION),
+            AlevinFryCapabilities {
+                gpl_data_type: true,
+                quant_dump_molecules: true,
+                quant_probe_mtx: true,
+            }
+        );
+        // No help text at all (the subcommand could not be run) means no
+        // optional options, i.e. what simpleaf assumed before it checked.
+        assert_eq!(
+            AlevinFryCapabilities::from_help("", ""),
+            AlevinFryCapabilities::default()
+        );
+    }
+
+    #[test]
+    fn help_flag_detection_needs_an_option_line_for_that_exact_flag() {
+        // With and without a short alias, with and without a value.
+        assert!(help_defines_flag(
+            QUANT_HELP_INTEGRATION,
+            "--dump-eqclasses"
+        ));
+        assert!(help_defines_flag(QUANT_HELP_INTEGRATION, "--tg-map"));
+        assert!(help_defines_flag(QUANT_HELP_INTEGRATION, "--probe-mtx"));
+        assert!(help_defines_flag(
+            "  --data-type=<DATATYPE>  x",
+            "--data-type"
+        ));
+        // A prefix of a longer flag is not the flag.
+        assert!(!help_defines_flag(QUANT_HELP_INTEGRATION, "--dump"));
+        assert!(!help_defines_flag(
+            "      --probe-mtx-dir <DIR>  x",
+            "--probe-mtx"
+        ));
+        // A mention inside another option's description is not a definition.
+        assert!(!help_defines_flag(
+            "      --probe-mtx   requires generate-permit-list --data-type flex\n\
+             \x20                 --data-type is set upstream",
+            "--data-type"
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn capabilities_detect_runs_each_subcommand_help_once() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let td = tempdir().expect("failed to create tempdir");
+        let log = td.path().join("calls.log");
+        let exe = td.path().join("alevin-fry");
+        fs::write(
+            &exe,
+            format!(
+                "#!/bin/sh\necho \"$@\" >> '{}'\n\
+                 case \"$1\" in\n\
+                 generate-permit-list) echo '      --data-type <DATATYPE>  x' ;;\n\
+                 quant) echo '      --dump-molecules  x' ;;\n\
+                 esac\n",
+                log.display()
+            ),
+        )
+        .expect("failed to write fake alevin-fry");
+        let mut perms = fs::metadata(&exe).expect("stat").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&exe, perms).expect("chmod");
+
+        let caps = AlevinFryCapabilities::detect(&exe);
+        assert_eq!(
+            caps,
+            AlevinFryCapabilities {
+                gpl_data_type: true,
+                quant_dump_molecules: true,
+                quant_probe_mtx: false,
+            }
+        );
+        assert_eq!(
+            fs::read_to_string(&log).expect("read log"),
+            "generate-permit-list --help\nquant --help\n"
+        );
+
+        // An executable that cannot be run reports no optional options.
+        assert_eq!(
+            AlevinFryCapabilities::detect(&td.path().join("missing")),
+            AlevinFryCapabilities::default()
+        );
+    }
 
     fn req_progs_with_af(version: &str) -> ReqProgs {
         ReqProgs {

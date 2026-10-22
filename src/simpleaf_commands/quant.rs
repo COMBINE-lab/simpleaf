@@ -283,6 +283,18 @@ fn resolve_quant_setup(
     // stale registration only surfaces deep in `collate` (e.g. `--compress`
     // needs alevin-fry >= 0.18.3).
     crate::utils::prog_utils::ensure_alevin_fry_version(&rp)?;
+    // Likewise for `--dump-molecules`, which only some alevin-fry builds have.
+    // The version string cannot tell those builds apart, so ask its `--help`.
+    if opts.dump_molecules
+        && let Some(af) = rp.alevin_fry.as_ref()
+        && !prog_utils::AlevinFryCapabilities::detect(&af.exe_path).quant_dump_molecules
+    {
+        return Err(prog_utils::missing_alevin_fry_option(
+            &af.exe_path,
+            "quant",
+            "--dump-molecules",
+        ));
+    }
 
     let index_meta = index_meta::resolve_quant_index(opts.index.clone())?;
     if t2g_map.is_none()
@@ -574,6 +586,10 @@ fn run_quant_stage(
             .arg("--small-thresh")
             .arg(small_thresh.to_string());
     }
+    // Forwarded only when requested; support was checked before any work.
+    if opts.dump_molecules {
+        alevin_quant_cmd.arg("--dump-molecules");
+    }
     let quant_cmd_string = prog_utils::get_cmd_line_string(&alevin_quant_cmd);
     info!("cmd : {:?}", alevin_quant_cmd);
     let input_files = vec![gpl_output.clone(), setup.t2g_map_file.clone()];
@@ -642,6 +658,13 @@ fn write_quant_log(
 
     if let Some(ctime) = convert_duration {
         af_quant_info["time_info"]["conversion_time"] = json!(ctime);
+    }
+    if let Some(outputs) = prog_parsing_utils::requested_quant_outputs(
+        &quant_stage.gpl_output,
+        opts.dump_molecules,
+        false,
+    ) {
+        af_quant_info["quant_outputs"] = outputs;
     }
 
     io::write_json_pretty_atomic(&af_quant_info_file, &af_quant_info)?;

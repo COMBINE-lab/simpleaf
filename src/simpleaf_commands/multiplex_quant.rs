@@ -42,6 +42,94 @@ fn t2g_mode(opts: &MultiplexQuantOpts) -> probe_utils::ProbeT2gMode {
     }
 }
 
+/// Whether the reference is a probe set that simpleaf resolves itself: a
+/// `--probe-set` CSV or FASTA (with or without a pre-built `--index` built from
+/// it) or the chemistry's registered probe set. A `--t2g-map` marks a
+/// transcriptome reference, and a pre-built `--index` alone could hold either,
+/// so neither counts.
+fn is_probe_set_reference(opts: &MultiplexQuantOpts) -> bool {
+    opts.t2g_map.is_none() && (opts.probe_set.is_some() || opts.index.is_none())
+}
+
+/// Whether to pass `generate-permit-list --data-type flex`, which makes
+/// alevin-fry's quant resolve UMIs per probe before summing probes into genes.
+/// Only for a probe-set reference -- resolving per target on a transcriptome
+/// would discard UMIs shared by isoforms of one gene -- and only when the
+/// configured alevin-fry has the option. Otherwise nothing is passed and quant
+/// resolves per gene, as it always has.
+fn declares_flex_data_type(
+    opts: &MultiplexQuantOpts,
+    af_caps: &prog_utils::AlevinFryCapabilities,
+) -> bool {
+    af_caps.gpl_data_type && is_probe_set_reference(opts)
+}
+
+/// Reject, before any work starts, the options this run cannot honour with the
+/// configured alevin-fry. Without these checks each one fails only at the final
+/// quant step, after mapping, permit-list generation and collation.
+fn validate_alevin_fry_options(
+    opts: &MultiplexQuantOpts,
+    af_caps: &prog_utils::AlevinFryCapabilities,
+    declare_flex: bool,
+    alevin_fry: &Path,
+) -> anyhow::Result<()> {
+    if declare_flex {
+        // Probe-level quant rejects a 3-column (USA) t2g. Only `--usa` can supply
+        // one here: `--t2g-map` never declares Flex, and gene mode collapses any
+        // 3-column map simpleaf infers.
+        if opts.usa {
+            bail!(
+                "`--usa` is not available here: the configured alevin-fry quantifies Flex probe-set \
+                 data per probe, and probe-level quantification has no spliced/unspliced (USA) mode. \
+                 Rerun without `--usa` to get gene-level counts."
+            );
+        }
+        let gene_level_alternative = match opts.resolution.as_str() {
+            "parsimony-gene" => Some("parsimony"),
+            "parsimony-gene-em" => Some("parsimony-em"),
+            _ => None,
+        };
+        if let Some(alternative) = gene_level_alternative {
+            bail!(
+                "`--resolution {}` resolves UMIs over genes, but the configured alevin-fry \
+                 quantifies Flex probe-set data per probe. Use `--resolution {}` instead; probe \
+                 counts are still summed into genes in the output matrix.",
+                opts.resolution,
+                alternative
+            );
+        }
+    }
+    if opts.dump_molecules && !af_caps.quant_dump_molecules {
+        return Err(prog_utils::missing_alevin_fry_option(
+            alevin_fry,
+            "quant",
+            "--dump-molecules",
+        ));
+    }
+    if opts.probe_mtx {
+        if !is_probe_set_reference(opts) {
+            bail!(
+                "`--probe-mtx` needs a probe-set reference (the chemistry's registered probe set or \
+                 `--probe-set`), but this run uses {}.",
+                if opts.t2g_map.is_some() {
+                    "`--t2g-map`; rerun without `--probe-mtx`"
+                } else {
+                    "a pre-built `--index` without `--probe-set`; pass the probe set the index \
+                     was built from with `--probe-set`, or rerun without `--probe-mtx`"
+                }
+            );
+        }
+        if !af_caps.quant_probe_mtx {
+            return Err(prog_utils::missing_alevin_fry_option(
+                alevin_fry,
+                "quant",
+                "--probe-mtx",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn resolved_sample_bc_orientation<'a>(
     opts: &'a MultiplexQuantOpts,
     chemistry: Option<&'a CustomChemistry>,
@@ -290,6 +378,12 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
         .alevin_fry
         .as_ref()
         .context("alevin-fry is required; please run `simpleaf set-paths`")?;
+    // The version string cannot tell alevin-fry builds apart, so read what this
+    // one can do off its `--help`, then reject anything it cannot do for this run
+    // before any work starts.
+    let af_caps = prog_utils::AlevinFryCapabilities::detect(&alevin_fry_info.exe_path);
+    let declare_flex = declares_flex_data_type(&opts, &af_caps);
+    validate_alevin_fry_options(&opts, &af_caps, declare_flex, &alevin_fry_info.exe_path)?;
 
     // === Layered resolution: chemistry provides defaults, CLI flags override ===
 
@@ -495,6 +589,12 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
         gpl_cmd.arg("--sample-bc-ori").arg(ori);
     }
 
+    // Declare Flex so quant resolves UMIs per probe; see `declares_flex_data_type`.
+    if declare_flex {
+        info!("Probe-set reference: quantifying per probe (generate-permit-list --data-type flex)");
+        gpl_cmd.arg("--data-type").arg("flex");
+    }
+
     let gpl_cmd_str = prog_utils::get_cmd_line_string(&gpl_cmd);
     info!("generate-permit-list cmd: {}", gpl_cmd_str);
     let gpl_start = Instant::now();
@@ -543,6 +643,14 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
         quant_cmd
             .arg("--small-thresh")
             .arg(small_thresh.to_string());
+    }
+    // Optional outputs, forwarded only when requested; support was checked
+    // before any work started.
+    if opts.dump_molecules {
+        quant_cmd.arg("--dump-molecules");
+    }
+    if opts.probe_mtx {
+        quant_cmd.arg("--probe-mtx");
     }
 
     let quant_cmd_str = prog_utils::get_cmd_line_string(&quant_cmd);
@@ -596,6 +704,13 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
         "total_duration_secs": start.elapsed().as_secs_f64(),
         "simpleaf_version": env!("CARGO_PKG_VERSION"),
     });
+    if let Some(outputs) = prog_parsing_utils::requested_quant_outputs(
+        &quant_output,
+        opts.dump_molecules,
+        opts.probe_mtx,
+    ) {
+        meta["quant_outputs"] = outputs;
+    }
     write_multiplex_metadata(output_dir, &quant_output, &meta)?;
 
     if opts.anndata_out {
@@ -999,6 +1114,7 @@ fn derive_sample_bc_list(
 
 #[cfg(test)]
 mod tests {
+    use super::{declares_flex_data_type, validate_alevin_fry_options};
     use super::{
         derive_sample_bc_list, materialize_thread_policy, resolve_user_supplied_index,
         resolved_sample_bc_orientation, t2g_mode,
@@ -1006,6 +1122,7 @@ mod tests {
     use crate::simpleaf_commands::MultiplexQuantOpts;
     use crate::utils::chem_utils::{CustomChemistry, SampleBcListInfo};
     use crate::utils::probe_utils::ProbeT2gMode;
+    use crate::utils::prog_utils::AlevinFryCapabilities;
     use clap::Parser;
     use serde_json::json;
     use std::fs;
@@ -1205,6 +1322,151 @@ GATCCTCT\tGATCCTCT\tBC003
         assert_eq!(
             codec(&["-o", ".", "--compress", "none"]),
             CompressCodec::None
+        );
+    }
+
+    /// What each alevin-fry build offers: the 0.18.3 release has none of the
+    /// optional options, the RAD v2 integration build has the quant outputs but
+    /// infers Flex from the barcode layout, and a build with
+    /// `generate-permit-list --data-type` has all three.
+    fn caps(gpl_data_type: bool, quant_outputs: bool) -> AlevinFryCapabilities {
+        AlevinFryCapabilities {
+            gpl_data_type,
+            quant_dump_molecules: quant_outputs,
+            quant_probe_mtx: quant_outputs,
+        }
+    }
+
+    #[test]
+    fn flex_is_declared_only_for_probe_set_references_on_a_capable_alevin_fry() {
+        let declared = |args: &[&str], af_caps: &AlevinFryCapabilities| {
+            let mut cli = vec!["-o", "."];
+            cli.extend_from_slice(args);
+            declares_flex_data_type(&parse_multiplex_quant_opts(&cli), af_caps)
+        };
+        let with_data_type = caps(true, true);
+        // The chemistry's registered probe set, a probe CSV/FASTA, or a pre-built
+        // index named together with the probe set it was built from.
+        assert!(declared(&["-c", "10x-flexv2-gex-3p"], &with_data_type));
+        assert!(declared(&["--probe-set", "p.csv"], &with_data_type));
+        assert!(declared(&["--probe-set", "p.fa"], &with_data_type));
+        assert!(declared(
+            &["-i", "idx", "--probe-set", "p.csv"],
+            &with_data_type
+        ));
+        // A pre-built index alone could hold a transcriptome; a t2g map marks one.
+        assert!(!declared(&["-i", "idx"], &with_data_type));
+        assert!(!declared(&["-i", "idx", "-m", "t2g.tsv"], &with_data_type));
+        assert!(!declared(
+            &["--probe-set", "p.csv", "-m", "t2g.tsv"],
+            &with_data_type
+        ));
+        // Never on an alevin-fry without the option (0.18.3, integration build).
+        for af_caps in [caps(false, false), caps(false, true)] {
+            assert!(!declared(&["-c", "10x-flexv2-gex-3p"], &af_caps));
+            assert!(!declared(&["--probe-set", "p.csv"], &af_caps));
+        }
+    }
+
+    #[test]
+    fn probe_level_runs_reject_usa_and_gene_level_resolutions_up_front() {
+        let check = |args: &[&str], declare_flex: bool| {
+            let mut cli = vec!["-o", ".", "--probe-set", "p.csv"];
+            cli.extend_from_slice(args);
+            let opts = parse_multiplex_quant_opts(&cli);
+            validate_alevin_fry_options(
+                &opts,
+                &caps(declare_flex, true),
+                declare_flex,
+                Path::new("alevin-fry"),
+            )
+            .map_err(|e| format!("{e:#}"))
+        };
+
+        let err = check(&["--usa"], true).expect_err("--usa must be rejected");
+        assert!(err.contains("Rerun without `--usa`"), "{err}");
+        let err = check(&["-r", "parsimony-gene"], true).expect_err("must be rejected");
+        assert!(
+            err.contains("Use `--resolution parsimony` instead"),
+            "{err}"
+        );
+        let err = check(&["-r", "parsimony-gene-em"], true).expect_err("must be rejected");
+        assert!(
+            err.contains("Use `--resolution parsimony-em` instead"),
+            "{err}"
+        );
+        for ok in ["cr-like", "cr-like-em", "parsimony", "parsimony-em"] {
+            assert!(check(&["-r", ok], true).is_ok(), "{ok} should be accepted");
+        }
+
+        // Without `--data-type flex` nothing changes: these stay accepted and
+        // behave exactly as before.
+        assert!(check(&["--usa"], false).is_ok());
+        assert!(check(&["-r", "parsimony-gene"], false).is_ok());
+        assert!(check(&["--usa", "-r", "parsimony-gene-em"], false).is_ok());
+    }
+
+    #[test]
+    fn optional_quant_outputs_need_an_alevin_fry_that_has_them() {
+        let check = |args: &[&str], af_caps: AlevinFryCapabilities| {
+            let mut cli = vec!["-o", "."];
+            cli.extend_from_slice(args);
+            let opts = parse_multiplex_quant_opts(&cli);
+            let declare_flex = declares_flex_data_type(&opts, &af_caps);
+            validate_alevin_fry_options(
+                &opts,
+                &af_caps,
+                declare_flex,
+                Path::new("/opt/af/alevin-fry"),
+            )
+            .map_err(|e| format!("{e:#}"))
+        };
+
+        // Not requested: no requirement on alevin-fry (0.18.3 keeps working).
+        assert!(check(&["--probe-set", "p.csv"], caps(false, false)).is_ok());
+        assert!(check(&["-i", "idx", "-m", "t2g.tsv"], caps(false, false)).is_ok());
+
+        // Requested from an alevin-fry that lacks them.
+        let err = check(
+            &["--probe-set", "p.csv", "--dump-molecules"],
+            caps(false, false),
+        )
+        .expect_err("--dump-molecules must need alevin-fry support");
+        assert!(
+            err.contains("`/opt/af/alevin-fry quant --help` does not list it"),
+            "{err}"
+        );
+        let err = check(&["--probe-set", "p.csv", "--probe-mtx"], caps(false, false))
+            .expect_err("--probe-mtx must need alevin-fry support");
+        assert!(err.contains("`--probe-mtx` needs an alevin-fry"), "{err}");
+
+        // Requested from an alevin-fry that has them: the integration build
+        // (Flex inferred) and a build with `--data-type` (Flex declared).
+        for af_caps in [caps(false, true), caps(true, true)] {
+            assert!(
+                check(
+                    &["--probe-set", "p.csv", "--dump-molecules", "--probe-mtx"],
+                    af_caps
+                )
+                .is_ok()
+            );
+            assert!(check(&["-c", "10x-flexv2-gex-3p", "--probe-mtx"], af_caps).is_ok());
+            // The molecule table does not depend on the reference.
+            assert!(check(&["-i", "idx", "-m", "t2g.tsv", "--dump-molecules"], af_caps).is_ok());
+        }
+
+        // The probe matrix needs a probe-set reference, whatever alevin-fry has.
+        let err = check(
+            &["-i", "idx", "-m", "t2g.tsv", "--probe-mtx"],
+            caps(true, true),
+        )
+        .expect_err("--probe-mtx needs a probe-set reference");
+        assert!(err.contains("this run uses `--t2g-map`"), "{err}");
+        let err = check(&["-i", "idx", "--probe-mtx"], caps(false, true))
+            .expect_err("--probe-mtx needs a probe-set reference");
+        assert!(
+            err.contains("pass the probe set the index was built from"),
+            "{err}"
         );
     }
 

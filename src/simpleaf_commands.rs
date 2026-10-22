@@ -721,6 +721,15 @@ pub struct MapQuantOpts {
     /// output.
     #[arg(long, help_heading = "Output Options")]
     pub anndata_out: bool,
+
+    /// Also write alevin-fry's molecule table (`alevin/molecules.parquet`): one row per resolved
+    /// molecule (cell barcode, UMI, feature, supporting reads, status), before molecules are
+    /// summed into the count matrix.
+    ///
+    /// Requires an alevin-fry whose `quant` has `--dump-molecules`; simpleaf checks this before
+    /// any work starts.
+    #[arg(long, help_heading = "Output Options")]
+    pub dump_molecules: bool,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -1129,6 +1138,11 @@ pub struct MultiplexQuantOpts {
     /// `region` column (`spliced` / `unspliced`) or a pre-built index with an
     /// adjacent 3-column t2g file. By default, expression is grouped at the gene
     /// level.
+    ///
+    /// Not available with a probe-set reference (the chemistry's registered probe
+    /// set or `--probe-set`) when the configured alevin-fry quantifies Flex per
+    /// probe (its `generate-permit-list` has `--data-type`): probe-level
+    /// quantification has no USA mode, so simpleaf stops before any work starts.
     #[arg(long, help_heading = "Reference Options")]
     pub usa: bool,
 
@@ -1171,6 +1185,10 @@ pub struct MultiplexQuantOpts {
     pub reads2: Vec<PathBuf>,
 
     /// UMI resolution mode
+    ///
+    /// `parsimony-gene` and `parsimony-gene-em` resolve over genes, so they are not
+    /// available where alevin-fry quantifies Flex per probe (see `--usa`); use
+    /// `parsimony` or `parsimony-em` there.
     #[arg(short, long, default_value = "cr-like",
         help_heading = "Quantification Options",
         value_parser = clap::builder::PossibleValuesParser::new([
@@ -1227,6 +1245,24 @@ pub struct MultiplexQuantOpts {
     /// Generate an anndata (h5ad format) count matrix from the standard (matrix-market format) output
     #[arg(long, help_heading = "Output Options")]
     pub anndata_out: bool,
+
+    /// Also write alevin-fry's molecule table (`alevin/molecules.parquet`): one row per resolved
+    /// molecule (cell barcode, UMI, feature, supporting reads, status), before molecules are
+    /// summed into the count matrix.
+    ///
+    /// Requires an alevin-fry whose `quant` has `--dump-molecules`; simpleaf checks this before
+    /// any work starts.
+    #[arg(long, help_heading = "Output Options")]
+    pub dump_molecules: bool,
+
+    /// Also write the probe x cell count matrix that the gene matrix is summed from
+    /// (`alevin/probe_quants_mat.mtx`, with its row and column files).
+    ///
+    /// Requires a probe-set reference (the chemistry's registered probe set or `--probe-set`; not
+    /// `--t2g-map`) and an alevin-fry whose `quant` has `--probe-mtx`; simpleaf checks both
+    /// before any work starts.
+    #[arg(long, help_heading = "Output Options")]
+    pub probe_mtx: bool,
 }
 
 #[derive(Debug, Subcommand)]

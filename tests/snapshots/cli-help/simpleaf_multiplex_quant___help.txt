@@ -146,7 +146,12 @@ Reference Options:
           Resolve expression separately into spliced and unspliced counts (USA mode). Requires
           splicing-aware probe annotations: either a probe CSV with a `region` column (`spliced` /
           `unspliced`) or a pre-built index with an adjacent 3-column t2g file. By default,
-          expression is grouped at the gene level
+          expression is grouped at the gene level.
+
+          Not available with a probe-set reference (the chemistry's registered probe set or
+          `--probe-set`) when the configured alevin-fry quantifies Flex per probe (its
+          `generate-permit-list` has `--data-type`): probe-level quantification has no USA mode, so
+          simpleaf stops before any work starts.
 
       --sample-bc-list <SAMPLE_BC_LIST>
           Path to sample/probe barcode file with rotation mapping (overrides auto-download).
@@ -163,6 +168,10 @@ Reference Options:
 Quantification Options:
   -r, --resolution <RESOLUTION>
           UMI resolution mode
+
+          `parsimony-gene` and `parsimony-gene-em` resolve over genes, so they are not available
+          where alevin-fry quantifies Flex per probe (see `--usa`); use `parsimony` or
+          `parsimony-em` there.
 
           [default: cr-like]
           [possible values: cr-like, cr-like-em, parsimony, parsimony-em, parsimony-gene,
@@ -226,3 +235,19 @@ Output Options:
       --anndata-out
           Generate an anndata (h5ad format) count matrix from the standard (matrix-market format)
           output
+
+      --dump-molecules
+          Also write alevin-fry's molecule table (`alevin/molecules.parquet`): one row per resolved
+          molecule (cell barcode, UMI, feature, supporting reads, status), before molecules are
+          summed into the count matrix.
+
+          Requires an alevin-fry whose `quant` has `--dump-molecules`; simpleaf checks this before
+          any work starts.
+
+      --probe-mtx
+          Also write the probe x cell count matrix that the gene matrix is summed from
+          (`alevin/probe_quants_mat.mtx`, with its row and column files).
+
+          Requires a probe-set reference (the chemistry's registered probe set or `--probe-set`; not
+          `--t2g-map`) and an alevin-fry whose `quant` has `--probe-mtx`; simpleaf checks both
+          before any work starts.
