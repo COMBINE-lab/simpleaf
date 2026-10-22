@@ -109,6 +109,14 @@
   leaves a truncated permit list, barcode list or probe set that later runs
   reuse. `multiplex-quant` checks downloaded barcode lists and probe sets
   against the registry's content hash and warns on a mismatch.
+* *(pending: `fix/index-files-dotted-prefix`)* An index at a dotted prefix
+  (`-i idx/gencode.v49`) is now checked at `idx/gencode.v49.ssi`, `.ctab`, …,
+  the names written by piscem built on piscem-rs 0.11.1 or later. Indexes
+  written by piscem built on piscem-rs 0.11.0 or earlier (`idx/gencode.ssi`, …)
+  are still accepted, with a warning that prefixes differing only after the
+  last dot share those names; complete files under both naming rules are also
+  warned about. Prefixes without a dot, including simpleaf's own `piscem_idx`,
+  are unaffected.
 
 ### Notes
 
