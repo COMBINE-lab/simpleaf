@@ -26,8 +26,9 @@ pub use self::workflow::{
 pub use crate::atac::commands::AtacCommand;
 pub use crate::defaults::{DefaultMappingParams, DefaultParams};
 
+use anyhow::Context;
 use clap::{ArgGroup, Args, Subcommand, ValueEnum, builder::ArgPredicate};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Dictionary backend to request from piscem build / map commands.
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,7 +52,8 @@ impl PiscemDict {
 ///
 /// From piscem 0.22.0 (piscem-rs 0.9.x), `-t` is a single execution-slot budget
 /// shared by mapping and decompression, and a live broker solves the split
-/// during the run. These two options steer that; simpleaf only forwards them.
+/// during the run. These two options steer that; simpleaf only forwards them
+/// (writing an inline-JSON `--thread-policy` to a file first).
 ///
 /// Flattened into every subcommand that invokes a piscem `map-*`, so the help
 /// text is written once.
@@ -106,17 +108,42 @@ pub const FLEX_DECODE_THREAD_POLICY: &str = r#"{"parallel_decode": {"min_threads
 impl PiscemDecoderOpts {
     /// Append these options to a piscem `map-*` invocation.
     ///
-    /// `--thread-policy` is passed through only when the user supplied one (so
-    /// piscem's own defaults apply otherwise), and only as a path — the value
-    /// reaches piscem unchanged. Callers that inject a default policy or need to
-    /// accept inline JSON (the Flex `multiplex-quant` path) resolve the policy to
-    /// a file themselves before building the command; see
-    /// `multiplex_quant::materialize_thread_policy` and [`FLEX_DECODE_THREAD_POLICY`].
-    pub fn append_to(&self, cmd: &mut std::process::Command) {
+    /// The user's `--thread-policy` wins; otherwise `default_policy` is used
+    /// (the Flex `multiplex-quant` path passes [`FLEX_DECODE_THREAD_POLICY`]).
+    /// With neither, no `--thread-policy` is emitted, so piscem's own defaults
+    /// apply. piscem accepts only a path for `--thread-policy`, so an inline-JSON
+    /// policy is first written to `output_dir`; see `materialize_thread_policy`.
+    pub fn append_to(
+        &self,
+        cmd: &mut std::process::Command,
+        output_dir: &Path,
+        default_policy: Option<&str>,
+    ) -> anyhow::Result<()> {
         cmd.arg("--decoder").arg(&self.decoder);
-        if let Some(policy) = self.thread_policy.as_deref() {
-            cmd.arg("--thread-policy").arg(policy);
+        if let Some(policy) = self.thread_policy.as_deref().or(default_policy) {
+            let policy_path = materialize_thread_policy(policy, output_dir)?;
+            cmd.arg("--thread-policy").arg(policy_path);
         }
+        Ok(())
+    }
+}
+
+/// Return a filesystem path for a thread-policy value. Inline JSON (a value
+/// whose first non-whitespace byte is `{`) is written into `output_dir` and its
+/// path returned; anything else is treated as an already-existing path. piscem's
+/// `--thread-policy` accepts a path on every release simpleaf targets today, so
+/// this keeps the Flex default (and any user-supplied inline value) working
+/// without requiring a newer piscem. A path is passed through unchanged and
+/// works with every piscem.
+fn materialize_thread_policy(policy: &str, output_dir: &Path) -> anyhow::Result<PathBuf> {
+    if policy.trim_start().starts_with('{') {
+        std::fs::create_dir_all(output_dir)?;
+        let path = output_dir.join("thread_policy.json");
+        std::fs::write(&path, policy)
+            .with_context(|| format!("could not write thread policy to {}", path.display()))?;
+        Ok(path)
+    } else {
+        Ok(PathBuf::from(policy))
     }
 }
 
@@ -1552,5 +1579,115 @@ mod barcode_forwarding_tests {
         for memory in ["", "0", "NaN", "1XB"] {
             assert!(memory_size_parser(memory).is_err(), "{memory}");
         }
+    }
+}
+
+#[cfg(test)]
+mod decoder_opts_tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    fn args_of(command: &std::process::Command) -> Vec<String> {
+        command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    fn decoder_opts(thread_policy: Option<&str>) -> PiscemDecoderOpts {
+        PiscemDecoderOpts {
+            decoder: "auto".to_string(),
+            thread_policy: thread_policy.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn inline_thread_policy_is_written_to_a_file() {
+        let dir = tempdir().unwrap();
+        let policy = r#"{"parallel_decode": {"min_threads_per_stream": 4}}"#;
+        let path = materialize_thread_policy(policy, dir.path()).unwrap();
+        assert!(path.starts_with(dir.path()));
+        assert_eq!(fs::read_to_string(&path).unwrap(), policy);
+    }
+
+    #[test]
+    fn path_thread_policy_is_passed_through_unchanged() {
+        let dir = tempdir().unwrap();
+        // A non-`{` value is treated as an existing path and returned as-is; no
+        // file is written into the output dir.
+        let path = materialize_thread_policy("/some/where/policy.json", dir.path()).unwrap();
+        assert_eq!(path, Path::new("/some/where/policy.json"));
+        assert!(!dir.path().join("thread_policy.json").exists());
+    }
+
+    #[test]
+    fn no_policy_and_no_default_emits_no_thread_policy() {
+        // quant and atac process pass no default: piscem keeps its own policy.
+        let dir = tempdir().unwrap();
+        let mut command = std::process::Command::new("piscem");
+        decoder_opts(None)
+            .append_to(&mut command, dir.path(), None)
+            .unwrap();
+        assert_eq!(args_of(&command), vec!["--decoder", "auto"]);
+        assert!(!dir.path().join("thread_policy.json").exists());
+    }
+
+    #[test]
+    fn inline_user_policy_reaches_piscem_as_a_file() {
+        let dir = tempdir().unwrap();
+        // The output directory need not exist yet.
+        let output = dir.path().join("out");
+        let policy = r#"{"parallel_decode": {"min_threads_per_stream": 2}}"#;
+        let mut command = std::process::Command::new("piscem");
+        decoder_opts(Some(policy))
+            .append_to(&mut command, &output, None)
+            .unwrap();
+        let written = output.join("thread_policy.json");
+        assert_eq!(
+            args_of(&command),
+            vec![
+                "--decoder".to_string(),
+                "auto".to_string(),
+                "--thread-policy".to_string(),
+                written.display().to_string(),
+            ]
+        );
+        assert_eq!(fs::read_to_string(&written).unwrap(), policy);
+    }
+
+    #[test]
+    fn default_policy_applies_only_when_the_user_gave_none() {
+        let dir = tempdir().unwrap();
+        let mut command = std::process::Command::new("piscem");
+        decoder_opts(None)
+            .append_to(&mut command, dir.path(), Some(FLEX_DECODE_THREAD_POLICY))
+            .unwrap();
+        let written = dir.path().join("thread_policy.json");
+        assert_eq!(
+            args_of(&command)[2..],
+            ["--thread-policy".to_string(), written.display().to_string()]
+        );
+        assert_eq!(
+            fs::read_to_string(&written).unwrap(),
+            FLEX_DECODE_THREAD_POLICY
+        );
+
+        // A user-supplied path overrides the default and is forwarded verbatim.
+        let dir = tempdir().unwrap();
+        let mut command = std::process::Command::new("piscem");
+        decoder_opts(Some("/some/where/policy.json"))
+            .append_to(&mut command, dir.path(), Some(FLEX_DECODE_THREAD_POLICY))
+            .unwrap();
+        assert_eq!(
+            args_of(&command),
+            vec![
+                "--decoder",
+                "auto",
+                "--thread-policy",
+                "/some/where/policy.json"
+            ]
+        );
+        assert!(!dir.path().join("thread_policy.json").exists());
     }
 }

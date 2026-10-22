@@ -442,7 +442,8 @@ fn run_mapping_stage(
                 // 0.18.0 these options needed, so the fallback that quietly
                 // dropped them could never be reached.
                 push_advanced_piscem_options(&mut piscem_quant_cmd, opts)?;
-                opts.decode.append_to(&mut piscem_quant_cmd);
+                opts.decode
+                    .append_to(&mut piscem_quant_cmd, &opts.output, None)?;
 
                 add_fragment_library_to_piscem(
                     setup.chem.fragment_geometry_str(),
