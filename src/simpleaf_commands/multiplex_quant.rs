@@ -691,6 +691,7 @@ fn resolve_probe_index(
     // Check cache
     let cache_dir = af_home.join("probe_indices");
     std::fs::create_dir_all(&cache_dir)?;
+    probe_index_cache::remove_abandoned(&cache_dir);
     let cache_key = probe_info.plist_name.as_deref().unwrap_or("unknown");
     // Indices built under the two `--excluded-probes` modes differ (one carries
     // a poison table, the other does not), so they must not share a cache slot.

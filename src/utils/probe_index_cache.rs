@@ -21,8 +21,8 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
-use tracing::warn;
+use std::time::{Duration, SystemTime};
+use tracing::{info, warn};
 
 use crate::utils::probe_utils::ExcludedProbeMode;
 use crate::utils::prog_utils::{self, ProgInfo};
@@ -271,6 +271,43 @@ fn retire(slot: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A staging or retired directory older than this was left behind by a run
+/// that was killed (a probe index builds in seconds, and a retired slot is
+/// deleted right after it is moved aside).
+const ABANDONED_AFTER: Duration = Duration::from_secs(60 * 60);
+
+/// Remove the staging and retired directories that killed runs (e.g. Ctrl-C
+/// during the build) left in `cache_dir`. Best-effort: failures are logged.
+pub fn remove_abandoned(cache_dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(cache_dir) else {
+        return;
+    };
+    let now = SystemTime::now();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let ours = name
+            .to_str()
+            .is_some_and(|n| n.starts_with('.') && (n.contains(".tmp-") || n.contains(".stale-")));
+        let abandoned = entry.metadata().is_ok_and(|m| {
+            m.is_dir()
+                && m.modified()
+                    .ok()
+                    .and_then(|t| now.duration_since(t).ok())
+                    .is_some_and(|age| age > ABANDONED_AFTER)
+        });
+        if ours && abandoned {
+            let path = entry.path();
+            match std::fs::remove_dir_all(&path) {
+                Ok(()) => info!(
+                    "Removed {}, left behind by an interrupted probe index build",
+                    path.display()
+                ),
+                Err(e) => warn!("could not remove {}: {e}", path.display()),
+            }
+        }
+    }
+}
+
 fn split_slot(slot: &Path) -> anyhow::Result<(&Path, &str)> {
     let cache_dir = slot
         .parent()
@@ -285,8 +322,8 @@ fn split_slot(slot: &Path) -> anyhow::Result<(&Path, &str)> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BUILD_RECORD_FILE, PiscemIdentity, ProbeIndexBuildRecord, SlotStatus, install, rebase,
-        slot_status, staging_dir, write_build_record,
+        ABANDONED_AFTER, BUILD_RECORD_FILE, PiscemIdentity, ProbeIndexBuildRecord, SlotStatus,
+        install, rebase, remove_abandoned, slot_status, staging_dir, write_build_record,
     };
     use crate::utils::probe_utils::ExcludedProbeMode;
     use crate::utils::prog_utils::ProgInfo;
@@ -577,5 +614,37 @@ mod tests {
                 "excluded_probes": "decoy"
             })
         );
+    }
+
+    #[test]
+    fn abandoned_staging_and_retired_dirs_are_removed() {
+        let td = tempdir().expect("failed to create tempdir");
+        let cache = td.path();
+        let make = |name: &str, age: Duration| {
+            let dir = cache.join(name);
+            fs::create_dir_all(dir.join("probe_index")).unwrap();
+            fs::File::open(&dir)
+                .and_then(|f| f.set_modified(SystemTime::now() - age))
+                .expect("failed to age dir");
+            dir
+        };
+        let old = ABANDONED_AFTER + Duration::from_secs(60);
+        let killed_build = make(".plist_23_decoy.tmp-AbC123", old);
+        let killed_retire = make(".plist_23.stale-XyZ789", old);
+        // A build that is still running, a cache slot and the downloads dir
+        // must all survive, however old.
+        let running_build = make(".plist_23_decoy.tmp-QrS456", Duration::from_secs(5));
+        let slot = make("plist_23_decoy", old);
+        let downloads = make("downloads", old);
+
+        remove_abandoned(cache);
+        assert!(!killed_build.exists());
+        assert!(!killed_retire.exists());
+        assert!(running_build.exists());
+        assert!(slot.exists());
+        assert!(downloads.exists());
+
+        // A missing cache dir is not an error.
+        remove_abandoned(&cache.join("missing"));
     }
 }
