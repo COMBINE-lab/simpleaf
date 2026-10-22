@@ -268,11 +268,37 @@ fn resolve_user_supplied_index(
     );
 }
 
+/// Check the read lists the way `quant` does before it maps: at least one
+/// file per read, as many R1 as R2 files, and every file present. piscem pairs
+/// `-1`/`-2` files by position and does not compare the counts, so an unpaired
+/// file would otherwise be dropped from the run without an error.
+fn check_read_pairs(reads1: &[PathBuf], reads2: &[PathBuf]) -> anyhow::Result<()> {
+    if reads1.is_empty() || reads2.is_empty() {
+        bail!("Both read1 and read2 files must be provided; Cannot proceed!");
+    }
+    if reads1.len() != reads2.len() {
+        bail!(
+            "{} read1 files and {} read2 files were given; Cannot proceed!",
+            reads1.len(),
+            reads2.len()
+        );
+    }
+    let mut read_inputs = Vec::with_capacity(reads1.len() + reads2.len());
+    read_inputs.extend_from_slice(reads1);
+    read_inputs.extend_from_slice(reads2);
+    prog_utils::check_files_exist(&read_inputs)
+}
+
 /// Main entry point for the multiplex-quant pipeline.
 pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> anyhow::Result<()> {
     let start = Instant::now();
     info!("Starting multiplex quantification pipeline");
     opts.threads = crate::core::runtime::cap_threads_warned(opts.threads);
+
+    // Before any resource is resolved: building or downloading the probe index
+    // can take a while, and a bad read list would otherwise only fail (or, with
+    // unequal counts, silently lose reads) once piscem runs.
+    check_read_pairs(&opts.reads1, &opts.reads2)?;
 
     // Load runtime context (program paths)
     let rt = context::load_runtime_context(af_home)?;
@@ -1174,14 +1200,22 @@ GATCCTCT\tGATCCTCT\tBC003
     /// the CLI breaks this file with an E0063 that only `--all-targets`
     /// surfaces -- `cargo build` does not compile tests. Parsing instead lets
     /// new options pick up their clap defaults, and anything genuinely
-    /// required fails loudly at parse time.
+    /// required fails loudly at parse time. The required `-1`/`-2` are
+    /// supplied here, since none of these tests looks at the reads.
     fn parse_multiplex_quant_opts(args: &[&str]) -> MultiplexQuantOpts {
-        let mut cli_args = vec!["simpleaf", "multiplex-quant"];
+        let mut cli_args = vec!["simpleaf", "multiplex-quant", "-1", "r1.fq", "-2", "r2.fq"];
         cli_args.extend_from_slice(args);
         match crate::Cli::parse_from(cli_args).command {
             crate::simpleaf_commands::Commands::MultiplexQuant(opts) => opts,
             cmd => panic!("expected multiplex-quant command, found {:?}", cmd),
         }
+    }
+
+    /// Parse `multiplex-quant -o . <args>` without supplying any reads.
+    fn try_parse_multiplex_quant(args: &[&str]) -> Result<crate::Cli, clap::Error> {
+        let mut cli_args = vec!["simpleaf", "multiplex-quant", "-o", "."];
+        cli_args.extend_from_slice(args);
+        crate::Cli::try_parse_from(cli_args)
     }
 
     #[test]
@@ -1206,6 +1240,67 @@ GATCCTCT\tGATCCTCT\tBC003
             codec(&["-o", ".", "--compress", "none"]),
             CompressCodec::None
         );
+    }
+
+    #[test]
+    fn expected_ori_accepts_what_alevin_fry_accepts() {
+        let ori = |value: &str| {
+            parse_multiplex_quant_opts(&["-o", ".", "--expected-ori", value]).expected_ori
+        };
+        assert_eq!(
+            parse_multiplex_quant_opts(&["-o", "."]).expected_ori,
+            "both"
+        );
+        for value in ["fw", "rc", "both", "either", "FW", "Both"] {
+            // Passed through as given; alevin-fry matches case-insensitively.
+            assert_eq!(ori(value), value);
+        }
+
+        let err =
+            try_parse_multiplex_quant(&["-1", "r1.fq", "-2", "r2.fq", "--expected-ori", "bogus"])
+                .expect_err("an orientation alevin-fry rejects must not parse");
+        assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
+    }
+
+    #[test]
+    fn reads_are_required() {
+        for args in [&[][..], &["-1", "r1.fq"][..], &["-2", "r2.fq"][..]] {
+            let err = try_parse_multiplex_quant(args)
+                .expect_err("multiplex-quant must require -1 and -2");
+            assert_eq!(
+                err.kind(),
+                clap::error::ErrorKind::MissingRequiredArgument,
+                "{args:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn read_pairs_must_match_and_exist() {
+        let td = tempdir().expect("failed to create tempdir");
+        let r1 = vec![td.path().join("r1.fq")];
+        let r2 = vec![td.path().join("r2.fq")];
+        fs::write(&r1[0], "").expect("failed to write r1");
+        fs::write(&r2[0], "").expect("failed to write r2");
+
+        super::check_read_pairs(&r1, &r2).expect("a valid pair");
+
+        // piscem would map only the first pair here, without an error.
+        let two_r1 = vec![r1[0].clone(), r1[0].clone()];
+        let err = super::check_read_pairs(&two_r1, &r2)
+            .expect_err("unequal read counts must be rejected");
+        assert!(
+            err.to_string()
+                .contains("2 read1 files and 1 read2 files were given"),
+            "{err:#}"
+        );
+
+        let missing = vec![td.path().join("missing_r2.fq")];
+        let err = super::check_read_pairs(&r1, &missing)
+            .expect_err("a missing read file must be rejected");
+        assert!(format!("{err:#}").contains("missing_r2.fq"), "{err:#}");
+
+        assert!(super::check_read_pairs(&[], &[]).is_err());
     }
 
     #[test]

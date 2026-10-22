@@ -1,6 +1,6 @@
 quantify a multiplexed sample (e.g. 10x Flex, or any custom multi-barcode protocol)
 
-Usage: simpleaf multiplex-quant [OPTIONS] --output <OUTPUT>
+Usage: simpleaf multiplex-quant [OPTIONS] --output <OUTPUT> --reads1 <READS1> --reads2 <READS2>
 
 Options:
   -c, --chemistry <CHEMISTRY>
@@ -21,9 +21,11 @@ Options:
           Path to cell barcode whitelist (one barcode per line, overrides chemistry default)
 
       --expected-ori <EXPECTED_ORI>
-          Expected read orientation: fw, rc, or both
+          Expected read orientation (case-insensitive; `either` is also accepted, as a synonym for
+          `both`)
 
           [default: both]
+          [possible values: fw, rc, both]
 
       --sample-bc-ori <SAMPLE_BC_ORI>
           Sample barcode orientation: `forward` (whitelist matches read as-is) or `reverse`
