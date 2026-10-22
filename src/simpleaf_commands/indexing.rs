@@ -4,7 +4,7 @@ use crate::utils::probe_utils;
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::ReqProgs;
 
-use anyhow::{Context, anyhow, bail};
+use anyhow::{Context, bail};
 use roers;
 use serde::Deserialize;
 use serde_json::json;
@@ -138,10 +138,6 @@ mod tests {
     }
 }
 
-fn validate_index_type_opts(_opts: &IndexOpts) -> anyhow::Result<()> {
-    Ok(())
-}
-
 enum CsvReader {
     Probe(csv::Reader<File>),
     Feature(csv::Reader<File>),
@@ -172,17 +168,6 @@ trait CsvRow<'de> {
 enum Included {
     TRUE,
     FALSE,
-}
-
-#[allow(dead_code)]
-impl Included {
-    fn from_str(s: &str) -> anyhow::Result<Self> {
-        match s {
-            "TRUE" => Ok(Included::TRUE),
-            "FALSE" => Ok(Included::FALSE),
-            _ => Err(anyhow!("Invalid include value: {}", s)),
-        }
-    }
 }
 
 impl From<Included> for bool {
@@ -277,16 +262,7 @@ enum ProbeRegion {
     unspliced,
 }
 
-#[allow(dead_code)]
 impl ProbeRegion {
-    fn from_str(s: &str) -> anyhow::Result<Self> {
-        match s {
-            "spliced" => Ok(ProbeRegion::spliced),
-            "unspliced" => Ok(ProbeRegion::unspliced),
-            _ => Err(anyhow!("Invalid probe region: {}", s)),
-        }
-    }
-
     fn as_str(&self) -> &str {
         match self {
             ProbeRegion::spliced => "S",
@@ -343,7 +319,6 @@ fn parse_csv_record(
 }
 
 pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Result<()> {
-    validate_index_type_opts(&opts)?;
     let mut threads = opts.threads;
     let output = opts.output;
     let rp: ReqProgs = context::load_required_programs(af_home_path)?;
@@ -630,7 +605,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     if rp.piscem.is_none() {
         bail!(
             "The construction of a piscem index was requested, but a valid piscem executable was not available. \n\
-                        Please either set a path using the `set-paths` command, or ensure the `PISCEM` environment variable is set properly."
+                        Please set its path using `simpleaf set-paths --piscem <path>`, or make `piscem` available on your PATH and run `simpleaf set-paths`."
         );
     }
 

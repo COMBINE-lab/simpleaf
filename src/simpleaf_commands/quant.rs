@@ -237,10 +237,6 @@ fn push_advanced_piscem_options(
     Ok(())
 }
 
-fn validate_map_and_quant_opts(_opts: &MapQuantOpts) -> anyhow::Result<()> {
-    Ok(())
-}
-
 #[derive(Debug)]
 struct QuantSetup {
     rp: ReqProgs,
@@ -610,7 +606,7 @@ fn run_quant_stage(
         match std::fs::copy(gene_name_path, &target_path) {
             Ok(_) => {
                 info!(
-                    "successfully copied the gene_name_to_id.tsv file into the quantification directory."
+                    "successfully copied the gene_id_to_name.tsv file into the quantification directory."
                 );
             }
             Err(err) => {
@@ -672,7 +668,6 @@ fn write_quant_log(
 }
 
 pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<()> {
-    validate_map_and_quant_opts(&opts)?;
     let (setup, mut pl_info) = resolve_quant_setup(af_home_path, &opts)?;
     let mapping = run_mapping_stage(&opts, &setup)?;
     let quant_stage = run_quant_stage(&opts, &setup, &mapping, &mut pl_info)?;
