@@ -251,7 +251,11 @@ pub fn install(
     match slot_status(slot, index_prefix, record) {
         SlotStatus::Fresh => return Ok(false),
         SlotStatus::Absent => {}
-        SlotStatus::Stale(_) => retire(slot)?,
+        SlotStatus::Stale(_) => {
+            if !retire(slot, index_prefix, record)? {
+                return Ok(false);
+            }
+        }
     }
     rename_into_slot(staging, slot, index_prefix, record)
 }
@@ -289,16 +293,34 @@ pub fn rebase(path: PathBuf, staging: &Path, slot: &Path) -> PathBuf {
 }
 
 /// Move a stale slot out of the way (a single rename, so no run ever sees it
-/// half-deleted), then delete it.
-fn retire(slot: &Path) -> anyhow::Result<()> {
+/// half-deleted), then delete it. Returns `false` if what it moved aside
+/// turned out to serve `record` after all, because another run installed it
+/// after the caller found the slot stale: that index is put back, not
+/// deleted, as that run is using it, and the caller uses it too.
+fn retire(
+    slot: &Path,
+    index_prefix: &Path,
+    record: &ProbeIndexBuildRecord,
+) -> anyhow::Result<bool> {
     let (cache_dir, slot_name) = split_slot(slot)?;
     let graveyard = tempfile::Builder::new()
         .prefix(&format!(".{slot_name}{RETIRED_TAG}"))
         .rand_bytes(RANDOM_LEN)
         .tempdir_in(cache_dir)
         .with_context(|| format!("could not create a directory in {}", cache_dir.display()))?;
-    match std::fs::rename(slot, graveyard.path().join(slot_name)) {
-        Ok(()) => {}
+    let moved = graveyard.path().join(slot_name);
+    match std::fs::rename(slot, &moved) {
+        Ok(()) => {
+            let moved_prefix = rebase(index_prefix.to_path_buf(), slot, &moved);
+            // If putting it back fails, yet another run has filled the slot
+            // since; the caller's rename then deals with what that run put
+            // there.
+            if slot_status(&moved, &moved_prefix, record) == SlotStatus::Fresh
+                && std::fs::rename(&moved, slot).is_ok()
+            {
+                return Ok(false);
+            }
+        }
         // A concurrent run retired it first.
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => {
@@ -317,7 +339,7 @@ fn retire(slot: &Path) -> anyhow::Result<()> {
             graveyard_path.display()
         );
     }
-    Ok(())
+    Ok(true)
 }
 
 /// A staging or retired directory older than this was left behind by a run
@@ -389,8 +411,8 @@ fn split_slot(slot: &Path) -> anyhow::Result<(&Path, &str)> {
 mod tests {
     use super::{
         ABANDONED_AFTER, BUILD_RECORD_FILE, PiscemIdentity, ProbeIndexBuildRecord, SlotStatus,
-        install, is_staging_or_retired, rebase, remove_abandoned, rename_into_slot, slot_status,
-        staging_dir, write_build_record,
+        install, is_staging_or_retired, rebase, remove_abandoned, rename_into_slot, retire,
+        slot_status, staging_dir, write_build_record,
     };
     use crate::utils::probe_utils::ExcludedProbeMode;
     use crate::utils::prog_utils::ProgInfo;
@@ -799,6 +821,45 @@ mod tests {
             "unexpected error: {err:#}"
         );
         assert!(slot.join("winner").exists());
+    }
+
+    #[test]
+    fn install_keeps_an_equivalent_index_installed_before_it_retires_the_slot() {
+        let td = tempdir().expect("failed to create tempdir");
+        let piscem = fake_piscem(td.path(), "piscem");
+        let record = ProbeIndexBuildRecord::for_run(&piscem, 23, ExcludedProbeMode::Decoy)
+            .expect("failed to build record");
+        let cache = td.path().join("probe_indices");
+        fs::create_dir_all(&cache).unwrap();
+        let slot = cache.join("plist_23_decoy");
+
+        // This run found the slot stale, but another run replaced it with an
+        // index that serves this run as well before this run moved it aside.
+        let ours = staging_dir(&slot).unwrap();
+        write_slot(ours.path(), Some(&record));
+        let prefix = write_slot(&slot, Some(&record));
+        fs::write(slot.join("winner"), "").unwrap();
+
+        // That index, which the other run is using, must survive.
+        assert!(!retire(&slot, &prefix, &record).unwrap());
+        assert!(slot.join("winner").exists());
+        assert_eq!(slot_status(&slot, &prefix, &record), SlotStatus::Fresh);
+        assert!(!rename_into_slot(ours.path(), &slot, &prefix, &record).unwrap());
+        assert!(slot.join("winner").exists());
+        drop(ours);
+        // Only the slot is left: no staging or retired directory.
+        let names: Vec<_> = fs::read_dir(&cache)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, vec![std::ffi::OsString::from("plist_23_decoy")]);
+
+        // A slot that is still stale is retired and deleted.
+        let mut newer = record.clone();
+        newer.piscem.version = "0.25.0".to_string();
+        assert!(retire(&slot, &prefix, &newer).unwrap());
+        assert_eq!(slot_status(&slot, &prefix, &newer), SlotStatus::Absent);
+        assert_eq!(fs::read_dir(&cache).unwrap().count(), 0);
     }
 
     #[test]
