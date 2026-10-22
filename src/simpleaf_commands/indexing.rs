@@ -605,7 +605,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     if rp.piscem.is_none() {
         bail!(
             "The construction of a piscem index was requested, but a valid piscem executable was not available. \n\
-                        Please set its path using `simpleaf set-paths --piscem <path>`, or make `piscem` available on your PATH and run `simpleaf set-paths`."
+                        Please set its path using `simpleaf set-paths --piscem <path>` (also pass `--alevin-fry <path>` if alevin-fry is not on your PATH)."
         );
     }
 
