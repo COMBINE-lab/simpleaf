@@ -1026,7 +1026,7 @@ pub struct SetPathOpts {
     /// path to piscem to use
     #[arg(short, long)]
     piscem: Option<PathBuf>,
-    /// path to alein-fry to use
+    /// path to alevin-fry to use
     #[arg(short, long)]
     alevin_fry: Option<PathBuf>,
     /// path to macs3 to use

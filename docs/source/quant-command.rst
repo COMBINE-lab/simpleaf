@@ -64,7 +64,7 @@ The relevant options (which you can obtain by running ``simpleaf quant -h``) are
           --map-dir <MAP_DIR>  Path to a mapped output directory containing a RAD file to skip mapping
 
     Piscem Mapping Options:
-          --struct-constraints                         If piscem >= 0.7.0, enable structural constraints
+          --struct-constraints                         Enable structural constraints when mapping
           --ignore-ambig-hits                          Skip checking of the equivalence classes of k-mers that were too ambiguous to be otherwise considered (passing
                                                        this flag can speed up mapping slightly, but may reduce specificity)
           --no-poison                                  Do not consider poison k-mers, even if the underlying index contains them. In this case, the mapping results
