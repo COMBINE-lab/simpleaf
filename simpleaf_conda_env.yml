@@ -6,12 +6,5 @@ channels:
   - bioconda
 
 dependencies:
-  # The `<0.24` cap is temporary and deliberately narrower than
-  # min_versions::PISCEM in src/utils/prog_utils.rs. piscem 0.24 writes RAD v2,
-  # which the alevin-fry 0.18.x release artifact CI puts first on PATH cannot
-  # read (generate-permit-list aborts), so without the cap CI breaks as soon as
-  # piscem 0.24 reaches bioconda. The RAD v2 release PR lifts it together with
-  # the alevin-fry floor (here, in min_versions, and the release artifact in
-  # .github/workflows/test_simpleaf.yml).
-  - piscem>=0.23.0,<0.24
-  - alevin-fry>=0.18.3
+  - piscem>=0.24.0
+  - alevin-fry>=0.19.0
