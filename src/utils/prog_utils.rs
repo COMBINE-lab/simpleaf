@@ -334,7 +334,10 @@ pub fn check_version_constraints_from_output<S1: AsRef<str>>(
         .split_whitespace()
         .last()
         .with_context(|| format!("`{} --version` did not report a version", prog_name))?;
-    let ver = if version.split(".").count() > 3 {
+    // Only fall back to major.minor.patch for words that are not semver
+    // (macs "2.2.9.1", "3.0.3.dev0"): a valid pre-release or build tag can
+    // contain dots too ("0.24.0-rc.1"), and cutting it would change the version.
+    let ver = if Version::parse(version).is_err() && version.split(".").count() > 3 {
         warn!(
             "version info {} is not a valid semver (more than 3 dotted version parts; looking only at the major, minor & patch versions).",
             version
@@ -682,6 +685,29 @@ mod tests {
         let v = version_from_output("macs2", ">=2.2.0", "macs2 2.2.9.1")
             .expect("2.2.9.1 is checked as 2.2.9");
         assert_eq!(v, Version::new(2, 2, 9));
+    }
+
+    #[test]
+    fn version_from_output_keeps_valid_semver_intact() {
+        // "0.24.0-rc.1" has 4 dotted parts but is valid semver; it used to be
+        // cut to "0.24.0-rc", which `>=0.24.0-rc.1` then rejected.
+        let v = version_from_output("piscem", ">=0.24.0-rc.1, <1.0.0", "piscem 0.24.0-rc.1")
+            .expect("0.24.0-rc.1 satisfies >=0.24.0-rc.1");
+        assert_eq!(v.to_string(), "0.24.0-rc.1");
+        let v = version_from_output(
+            "alevin-fry",
+            ">=0.18.3, <1.0.0",
+            "alevin-fry 0.19.0+g1a2b.3",
+        )
+        .expect("build metadata does not affect matching");
+        assert_eq!(v.to_string(), "0.19.0+g1a2b.3");
+        let err = version_from_output("piscem", ">=0.24.0, <1.0.0", "piscem 0.23.1-rc.1")
+            .expect_err("0.23.1-rc.1 is below the floor");
+        assert!(
+            err.to_string().contains("(\"0.23.1-rc.1\")"),
+            "unexpected error: {}",
+            err
+        );
     }
 
     #[test]
