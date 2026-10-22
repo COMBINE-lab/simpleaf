@@ -203,12 +203,20 @@ pub fn slot_status(
     SlotStatus::Fresh
 }
 
+/// The staging ([`staging_dir`]) and retired ([`retire`]) directories of a
+/// slot are named `.<slot><tag><random>`, with one of these tags and
+/// [`RANDOM_LEN`] random alphanumeric characters.
+const STAGING_TAG: &str = ".tmp-";
+const RETIRED_TAG: &str = ".stale-";
+const RANDOM_LEN: usize = 6;
+
 /// Create a private directory, next to `slot`, to build its index in. It is
 /// removed when dropped unless [`install`] has moved it into place.
 pub fn staging_dir(slot: &Path) -> anyhow::Result<tempfile::TempDir> {
     let (cache_dir, slot_name) = split_slot(slot)?;
     tempfile::Builder::new()
-        .prefix(&format!(".{slot_name}.tmp-"))
+        .prefix(&format!(".{slot_name}{STAGING_TAG}"))
+        .rand_bytes(RANDOM_LEN)
         .tempdir_in(cache_dir)
         .with_context(|| {
             format!(
@@ -285,7 +293,8 @@ pub fn rebase(path: PathBuf, staging: &Path, slot: &Path) -> PathBuf {
 fn retire(slot: &Path) -> anyhow::Result<()> {
     let (cache_dir, slot_name) = split_slot(slot)?;
     let graveyard = tempfile::Builder::new()
-        .prefix(&format!(".{slot_name}.stale-"))
+        .prefix(&format!(".{slot_name}{RETIRED_TAG}"))
+        .rand_bytes(RANDOM_LEN)
         .tempdir_in(cache_dir)
         .with_context(|| format!("could not create a directory in {}", cache_dir.display()))?;
     match std::fs::rename(slot, graveyard.path().join(slot_name)) {
@@ -324,10 +333,10 @@ pub fn remove_abandoned(cache_dir: &Path) {
     };
     let now = SystemTime::now();
     for entry in entries.flatten() {
-        let name = entry.file_name();
-        let ours = name
+        let ours = entry
+            .file_name()
             .to_str()
-            .is_some_and(|n| n.starts_with('.') && (n.contains(".tmp-") || n.contains(".stale-")));
+            .is_some_and(is_staging_or_retired);
         let abandoned = entry.metadata().is_ok_and(|m| {
             m.is_dir()
                 && m.modified()
@@ -348,6 +357,22 @@ pub fn remove_abandoned(cache_dir: &Path) {
     }
 }
 
+/// Whether `name` is that of a staging or retired directory (see
+/// [`STAGING_TAG`]).
+fn is_staging_or_retired(name: &str) -> bool {
+    let Some(name) = name.strip_prefix('.') else {
+        return false;
+    };
+    [STAGING_TAG, RETIRED_TAG].into_iter().any(|tag| {
+        name.rsplit_once(tag).is_some_and(|(slot, random)| {
+            !slot.is_empty()
+                && !slot.starts_with('.')
+                && random.len() == RANDOM_LEN
+                && random.bytes().all(|b| b.is_ascii_alphanumeric())
+        })
+    })
+}
+
 fn split_slot(slot: &Path) -> anyhow::Result<(&Path, &str)> {
     let cache_dir = slot
         .parent()
@@ -363,8 +388,8 @@ fn split_slot(slot: &Path) -> anyhow::Result<(&Path, &str)> {
 mod tests {
     use super::{
         ABANDONED_AFTER, BUILD_RECORD_FILE, PiscemIdentity, ProbeIndexBuildRecord, SlotStatus,
-        install, rebase, remove_abandoned, rename_into_slot, slot_status, staging_dir,
-        write_build_record,
+        install, is_staging_or_retired, rebase, remove_abandoned, rename_into_slot, slot_status,
+        staging_dir, write_build_record,
     };
     use crate::utils::probe_utils::ExcludedProbeMode;
     use crate::utils::prog_utils::ProgInfo;
@@ -824,6 +849,20 @@ mod tests {
         let running_build = make(".plist_23_decoy.tmp-QrS456", Duration::from_secs(5));
         let slot = make("plist_23_decoy", old);
         let downloads = make("downloads", old);
+        // So must anything else that is merely named alike.
+        let alike: Vec<_> = [
+            "plist_23.tmp-AbC123",
+            ".tmp-AbC123",
+            "..tmp-AbC123",
+            "..plist_23.tmp-AbC123",
+            ".plist_23.tmp-old",
+            ".plist_23.tmp-AbC123.bak",
+            ".plist_23.stale-AbC12!",
+            ".plist_23.tmp.d",
+        ]
+        .into_iter()
+        .map(|name| make(name, old))
+        .collect();
 
         remove_abandoned(cache);
         assert!(!killed_build.exists());
@@ -831,6 +870,15 @@ mod tests {
         assert!(running_build.exists());
         assert!(slot.exists());
         assert!(downloads.exists());
+        for dir in alike {
+            assert!(dir.exists(), "{} was removed", dir.display());
+        }
+
+        // The names staging_dir and retire create are recognised.
+        let staging = staging_dir(&slot).unwrap();
+        assert!(is_staging_or_retired(
+            staging.path().file_name().unwrap().to_str().unwrap()
+        ));
 
         // A missing cache dir is not an error.
         remove_abandoned(&cache.join("missing"));
