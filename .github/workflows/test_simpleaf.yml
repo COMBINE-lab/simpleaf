@@ -71,6 +71,8 @@ jobs:
       # The bioconda package can lag a newly published alevin-fry release.
       # Exercise simpleaf against the release artifact that satisfies the
       # version contract instead of silently testing an older conda package.
+      # piscem, by contrast, still comes from bioconda; simpleaf_conda_env.yml
+      # caps it to releases whose RAD output this alevin-fry can read.
       - name: Install alevin-fry 0.18.3 release artifact
         shell: bash -l {0}
         run: |
