@@ -266,6 +266,44 @@ pub struct ReqProgs {
     pub macs: Option<ProgInfo>,
 }
 
+/// [`VersionReq::matches`], except that a pre-release is also accepted when
+/// its release version satisfies `req`.
+///
+/// Plain semver only lets a pre-release match a comparator that carries a
+/// pre-release of the same major.minor.patch, so `0.24.0-rc.1` fails
+/// `>=0.24.0` (and `0.25.0-dev` fails even `>=0.24.0-0`), and rc/dev builds of
+/// the tools cannot pass the floors in [`min_versions`]. Here each
+/// comparator is checked against the release version (`0.24.0`) instead,
+/// except one that names a pre-release of that same release (`>=0.24.0-rc.2`),
+/// which still compares the full version. So versions below the floor stay
+/// rejected (`0.23.1-rc.1` vs `>=0.24.0`), and so does a pre-release of an
+/// excluded upper bound (`1.0.0-rc.1` vs `<1.0.0`). Note that `X.Y.Z-dev` is
+/// accepted by a floor of exactly `X.Y.Z`, although semver orders it below.
+fn matches_allowing_prerelease(req: &VersionReq, version: &Version) -> bool {
+    if req.matches(version) {
+        return true;
+    }
+    if version.pre.is_empty() {
+        return false;
+    }
+    let release = Version::new(version.major, version.minor, version.patch);
+    req.comparators.iter().all(|c| {
+        let names_same_release = !c.pre.is_empty()
+            && c.major == version.major
+            && c.minor == Some(version.minor)
+            && c.patch == Some(version.patch);
+        c.matches(if names_same_release {
+            version
+        } else {
+            &release
+        })
+    })
+}
+
+/// Checks that `prog_ver_string`, the version of `prog_name`, satisfies
+/// `req_string` by semantic versioning, also accepting a pre-release whose
+/// release version satisfies it (see [`matches_allowing_prerelease`]).
+/// Returns the parsed version, or an error saying why it is not compatible.
 pub fn check_version_constraints<S1: AsRef<str>>(
     prog_name: &str,
     req_string: S1,
@@ -282,7 +320,18 @@ pub fn check_version_constraints<S1: AsRef<str>>(
     })?;
     let req = VersionReq::parse(req_string.as_ref())
         .with_context(|| format!("invalid version requirement `{}`", req_string.as_ref()))?;
-    if req.matches(&parsed_version) {
+    if matches_allowing_prerelease(&req, &parsed_version) {
+        if !parsed_version.pre.is_empty() {
+            info!(
+                "using pre-release {} {} (required: {}); pre-releases are meant for testing and may lack features of the {}.{}.{} release.",
+                prog_name,
+                parsed_version,
+                req,
+                parsed_version.major,
+                parsed_version.minor,
+                parsed_version.patch
+            );
+        }
         Ok(parsed_version)
     } else {
         Err(anyhow!(
@@ -708,6 +757,49 @@ mod tests {
             "unexpected error: {}",
             err
         );
+    }
+
+    #[test]
+    fn check_version_constraints_accepts_prereleases_of_satisfying_releases() {
+        let ok = |v: &str, req: &str| super::check_version_constraints("piscem", req, v).is_ok();
+        // a pre-release is judged by its release version ...
+        assert!(ok("0.24.0-rc.1", ">=0.24.0, <1.0.0"));
+        assert!(ok("0.24.0-dev", ">=0.24.0, <1.0.0"));
+        assert!(ok("0.25.0-rc.1", ">=0.24.0, <1.0.0"));
+        assert!(ok("0.25.0-dev", ">=0.24.0-0, <1.0.0"));
+        assert!(ok("0.24.0-rc.3", ">=0.24.0-rc.2, <1.0.0"));
+        // ... so one below the floor, or of an excluded upper bound, is rejected
+        assert!(!ok("0.23.1-rc.1", ">=0.24.0, <1.0.0"));
+        assert!(!ok("0.22.9-rc.1", ">=0.23.0, <1.0.0"));
+        assert!(!ok("1.0.0-rc.1", ">=0.24.0, <1.0.0"));
+        assert!(!ok("0.24.0-rc.1", "<0.24.0"));
+        // a floor naming a pre-release still orders pre-releases of that release
+        assert!(!ok("0.24.0-rc.1", ">=0.24.0-rc.2, <1.0.0"));
+        // release versions are matched exactly as before
+        assert!(ok("0.24.0", ">=0.24.0, <1.0.0"));
+        assert!(ok("0.24.0+g1a2b", ">=0.24.0, <1.0.0"));
+        assert!(!ok("0.23.9", ">=0.24.0, <1.0.0"));
+        assert!(!ok("1.0.0", ">=0.24.0, <1.0.0"));
+        // the returned version keeps its pre-release tag
+        let v = super::check_version_constraints("piscem", ">=0.24.0, <1.0.0", "0.24.0-rc.1")
+            .expect("0.24.0-rc.1 is accepted");
+        assert_eq!(v.to_string(), "0.24.0-rc.1");
+    }
+
+    #[test]
+    fn version_from_output_accepts_release_candidates_of_the_floor() {
+        for (prog, req, output) in [
+            ("piscem", ">=0.24.0, <1.0.0", "piscem 0.24.0-rc.1"),
+            ("alevin-fry", ">=0.19.0, <1.0.0", "alevin-fry 0.19.0-rc.1"),
+        ] {
+            let v = version_from_output(prog, req, output).expect("an rc of the floor passes");
+            // set-paths records `v`; the cached re-checks must accept it too
+            let recorded = format!("{}", v);
+            assert_eq!(Some(recorded.as_str()), output.split_whitespace().last());
+            super::check_version_constraints(prog, req, &recorded)
+                .expect("recorded version re-checks");
+        }
+        assert!(version_from_output("piscem", ">=0.24.0, <1.0.0", "piscem 0.23.1-rc.1").is_err());
     }
 
     #[test]
