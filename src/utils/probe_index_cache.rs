@@ -236,6 +236,18 @@ pub fn install(
         SlotStatus::Absent => {}
         SlotStatus::Stale(_) => retire(slot)?,
     }
+    rename_into_slot(staging, slot, index_prefix, record)
+}
+
+/// The last step of [`install`]: rename `staging` to `slot`, which the check
+/// before found free (separate so that tests can let another run win the
+/// slot in between).
+fn rename_into_slot(
+    staging: &Path,
+    slot: &Path,
+    index_prefix: &Path,
+    record: &ProbeIndexBuildRecord,
+) -> anyhow::Result<bool> {
     match std::fs::rename(staging, slot) {
         Ok(()) => Ok(true),
         // Another run installed its index between our check and the rename.
@@ -342,7 +354,8 @@ fn split_slot(slot: &Path) -> anyhow::Result<(&Path, &str)> {
 mod tests {
     use super::{
         ABANDONED_AFTER, BUILD_RECORD_FILE, PiscemIdentity, ProbeIndexBuildRecord, SlotStatus,
-        install, rebase, remove_abandoned, slot_status, staging_dir, write_build_record,
+        install, rebase, remove_abandoned, rename_into_slot, slot_status, staging_dir,
+        write_build_record,
     };
     use crate::utils::probe_utils::ExcludedProbeMode;
     use crate::utils::prog_utils::ProgInfo;
@@ -684,6 +697,42 @@ mod tests {
         drop(second);
         assert!(!second_path.exists());
         assert_eq!(slot_status(&slot, &prefix, &record), SlotStatus::Fresh);
+    }
+
+    #[test]
+    fn install_defers_to_an_equivalent_index_installed_after_its_check() {
+        let td = tempdir().expect("failed to create tempdir");
+        let piscem = fake_piscem(td.path(), "piscem");
+        let record = ProbeIndexBuildRecord::for_run(&piscem, 23, ExcludedProbeMode::Decoy)
+            .expect("failed to build record");
+        let cache = td.path().join("probe_indices");
+        fs::create_dir_all(&cache).unwrap();
+        let slot = cache.join("plist_23_decoy");
+        let prefix = slot.join("probe_index").join("index");
+
+        // This run found the slot free, but another run renamed its index
+        // into place before this run's rename.
+        let ours = staging_dir(&slot).unwrap();
+        write_slot(ours.path(), Some(&record));
+        assert_eq!(slot_status(&slot, &prefix, &record), SlotStatus::Absent);
+        let theirs = staging_dir(&slot).unwrap();
+        write_slot(theirs.path(), Some(&record));
+        fs::write(theirs.path().join("winner"), "").unwrap();
+        assert!(rename_into_slot(theirs.path(), &slot, &prefix, &record).unwrap());
+
+        assert!(!rename_into_slot(ours.path(), &slot, &prefix, &record).unwrap());
+        assert!(slot.join("winner").exists());
+        assert!(ours.path().exists());
+        // What the other run installed must serve this run, though.
+        let mut other_k = record.clone();
+        other_k.kmer_length = 25;
+        let err = rename_into_slot(ours.path(), &slot, &prefix, &other_k)
+            .expect_err("a slot taken by an index that does not serve the run is an error");
+        assert!(
+            format!("{err:#}").contains("could not move the probe index built in"),
+            "unexpected error: {err:#}"
+        );
+        assert!(slot.join("winner").exists());
     }
 
     #[test]
