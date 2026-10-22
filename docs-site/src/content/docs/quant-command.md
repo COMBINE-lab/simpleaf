@@ -85,6 +85,17 @@ On a 73k-cell PBMC run, `--small-thresh 0` recovers about 0.53% of total UMI
 mass and empties no cells, against 132 zero-count cells at the default.
 :::
 
+## The molecule table (`--dump-molecules`)
+
+`--dump-molecules` asks `alevin-fry quant` to also write
+`af_quant/alevin/molecules.parquet`: one row per resolved molecule (cell
+barcode, UMI, feature, supporting reads, status), before molecules are summed
+into the count matrix. The count matrix is unchanged. It needs an `alevin-fry`
+whose `quant` has `--dump-molecules`. `simpleaf` checks this before any work
+starts, reading `alevin-fry quant --help` because the version string does not
+tell builds apart. The table's `quant.json` entry (`molecule_table`) is copied
+under `quant_outputs` into `simpleaf_quant_log.json`.
+
 ## Threads, and the shared decode budget
 
 As of `piscem` 0.22.0, the `-t`/`--threads` value is a single budget of execution
@@ -285,4 +296,12 @@ Output Options:
       --anndata-out
           Generate an anndata (h5ad format) count matrix from the standard (matrix-market format)
           output
+
+      --dump-molecules
+          Also write alevin-fry's molecule table (`alevin/molecules.parquet`): one row per resolved
+          molecule (cell barcode, UMI, feature, supporting reads, status), before molecules are
+          summed into the count matrix.
+
+          Requires an alevin-fry whose `quant` has `--dump-molecules`; simpleaf checks this before
+          any work starts.
 ```
