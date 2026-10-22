@@ -1690,4 +1690,22 @@ mod decoder_opts_tests {
         );
         assert!(!dir.path().join("thread_policy.json").exists());
     }
+
+    #[test]
+    fn inline_user_policy_overrides_the_default() {
+        // An inline user policy also wins over the default: the file holds the
+        // user's JSON, not the Flex default.
+        let dir = tempdir().unwrap();
+        let policy = r#"{"parallel_decode": {"min_threads_per_stream": 2}}"#;
+        let mut command = std::process::Command::new("piscem");
+        decoder_opts(Some(policy))
+            .append_to(&mut command, dir.path(), Some(FLEX_DECODE_THREAD_POLICY))
+            .unwrap();
+        let written = dir.path().join("thread_policy.json");
+        assert_eq!(
+            args_of(&command)[2..],
+            ["--thread-policy".to_string(), written.display().to_string()]
+        );
+        assert_eq!(fs::read_to_string(&written).unwrap(), policy);
+    }
 }
