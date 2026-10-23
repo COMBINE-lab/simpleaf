@@ -1139,12 +1139,22 @@ pub struct MultiplexQuantOpts {
     /// adjacent 3-column t2g file. By default, expression is grouped at the gene
     /// level.
     ///
-    /// Not available with a probe-set reference (the chemistry's registered probe
-    /// set or `--probe-set`) when the configured alevin-fry quantifies Flex per
-    /// probe (its `generate-permit-list` has `--data-type`): probe-level
-    /// quantification has no USA mode, so simpleaf stops before any work starts.
+    /// USA mode resolves over genes, so a probe-set reference is quantified by
+    /// `quant` rather than per probe by `quant-probe`, which rejects a 3-column
+    /// map. `--probe-mtx` is therefore not available with `--usa`.
     #[arg(long, help_heading = "Reference Options")]
     pub usa: bool,
+
+    /// Quantify per gene with alevin-fry's `quant`, even for a probe-set
+    /// reference, which is otherwise quantified per probe by `quant-probe`.
+    ///
+    /// Counts differ slightly between the two: resolving UMIs over probes
+    /// treats a UMI whose reads hit two probes of one gene as ambiguous, which
+    /// the gene axis counts. Pass this to reproduce a run made before per-probe
+    /// quantification became the default. `--probe-mtx` is not available with
+    /// it, since only `quant-probe` writes that matrix.
+    #[arg(long, help_heading = "Quantification Options")]
+    pub gene_level: bool,
 
     /// Path to sample/probe barcode file with rotation mapping
     /// (overrides auto-download). 3-column TSV: observed, canonical, sample_name.
@@ -1186,9 +1196,10 @@ pub struct MultiplexQuantOpts {
 
     /// UMI resolution mode
     ///
-    /// `parsimony-gene` and `parsimony-gene-em` resolve over genes, so they are not
-    /// available where alevin-fry quantifies Flex per probe (see `--usa`); use
-    /// `parsimony` or `parsimony-em` there.
+    /// `parsimony-gene` and `parsimony-gene-em` build equivalence classes with
+    /// reads already projected to genes, so no per-probe assignment survives to
+    /// sum. They are not available where a probe-set reference is quantified per
+    /// probe: use `parsimony` or `parsimony-em`, or pass `--gene-level`.
     #[arg(short, long, default_value = "cr-like",
         help_heading = "Quantification Options",
         value_parser = clap::builder::PossibleValuesParser::new([
@@ -1258,9 +1269,11 @@ pub struct MultiplexQuantOpts {
     /// Also write the probe x cell count matrix that the gene matrix is summed from
     /// (`alevin/probe_quants_mat.mtx`, with its row and column files).
     ///
-    /// Requires a probe-set reference (the chemistry's registered probe set or `--probe-set`; not
-    /// `--t2g-map`) and an alevin-fry whose `quant` has `--probe-mtx`; simpleaf checks both
-    /// before any work starts.
+    /// Only a run quantified per probe has one, so this needs a probe-set
+    /// reference (the chemistry's registered probe set or `--probe-set`; not
+    /// `--t2g-map`), neither `--usa` nor `--gene-level`, and an alevin-fry whose
+    /// `quant-probe` has `--probe-mtx`. simpleaf checks all of these before any
+    /// work starts.
     #[arg(long, help_heading = "Output Options")]
     pub probe_mtx: bool,
 }
