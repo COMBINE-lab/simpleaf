@@ -36,6 +36,22 @@
   Requiring piscem 0.24 keeps the piscem that builds an index and the piscem
   that maps against it format-consistent, and makes the excluded-probe decoy
   default (below) cost almost no mapping time.
+* *(pending: `feat/multiplex-quant-new-alevin-fry-options`)* **Flex gene
+  counts now come from per-probe resolution.** `multiplex-quant` quantifies a
+  probe-set reference with alevin-fry's `quant-probe`, which resolves UMIs over
+  the probes the reads hit and sums each gene's probes into its count. A
+  probe-set reference is the chemistry's registered probe set, `--probe-set`, or
+  a pre-built `--index` that simpleaf built from a probe CSV. Counts differ
+  slightly from earlier releases: a UMI whose reads do not single out one probe
+  of its gene (a tie between two of its probes, or reads that match both) is
+  dropped by `cr-like` and divided between the probes by the EM strategies,
+  where the gene axis counted it once. Pass the new `--gene-level` to resolve
+  over genes with `quant` and reproduce earlier counts exactly. `--usa` keeps
+  working as before: it also runs `quant`, over the 3-column map. `--t2g-map`
+  (transcriptome) runs and pre-built indices that do not say what they hold
+  stay on `quant` too, the latter with a log line. `-r parsimony-gene` and
+  `parsimony-gene-em` cannot be resolved per probe and are refused before any
+  work, pointing at `parsimony` / `parsimony-em` or `--gene-level`.
 
 ### Features
 
@@ -54,17 +70,15 @@
   paralog probe. They never enter the reference, the t2g map, or the gene set.
   Auto-built probe indices cache decoy builds separately (`<plist>_<k>_decoy`).
   Pass `--excluded-probes ignore` for the previous drop behavior.
-* *(pending: `feat/multiplex-quant-new-alevin-fry-options`)* `multiplex-quant`
-  declares Flex to alevin-fry (`generate-permit-list --data-type flex`) for
-  probe-set references when the registered alevin-fry has that option, so that
-  Flex UMIs are resolved per probe and summed into genes. It never does so for a
-  `--t2g-map` (transcriptome) or a bare pre-built `--index`. When it does, it
-  rejects `--usa` and `-r parsimony-gene`/`parsimony-gene-em` before any work,
-  since probe-level quantification cannot honour them. New `--dump-molecules`
-  (`quant`, `multiplex-quant`) and `--probe-mtx` (`multiplex-quant`) forward
-  alevin-fry's molecule table and probe x cell matrix, only when given and only
-  to an alevin-fry whose `--help` lists them; their outputs are recorded under
-  `quant_outputs` in the run's JSON log.
+* *(pending: `feat/multiplex-quant-new-alevin-fry-options`)* New
+  `--dump-molecules` (`quant`, `multiplex-quant`) writes alevin-fry's molecule
+  table, and `--probe-mtx` (`multiplex-quant`) the probe x cell matrix that
+  `quant-probe` sums the gene matrix from. Each is forwarded only when given and
+  checked before any work against the alevin-fry subcommand the run will invoke;
+  `--probe-mtx` is refused, with the reason, on a run that does not go to
+  `quant-probe` (`--usa`, `--gene-level`, a transcriptome, or an index that does
+  not say what it holds). Their outputs are recorded under `quant_outputs` in
+  the run's JSON log.
 
 ### Bug fixes
 
