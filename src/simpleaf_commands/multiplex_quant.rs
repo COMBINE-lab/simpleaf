@@ -42,13 +42,47 @@ fn t2g_mode(opts: &MultiplexQuantOpts) -> probe_utils::ProbeT2gMode {
     }
 }
 
-/// Whether the reference is a probe set that simpleaf resolves itself: a
-/// `--probe-set` CSV or FASTA (with or without a pre-built `--index` built from
-/// it) or the chemistry's registered probe set. A `--t2g-map` marks a
-/// transcriptome reference, and a pre-built `--index` alone could hold either,
-/// so neither counts.
+/// Whether the reference is a probe set: a `--probe-set` CSV or FASTA (with or
+/// without a pre-built `--index` built from it), the chemistry's registered
+/// probe set, or a pre-built `--index` that identifies itself as a probe index
+/// (see `index_holds_probe_set`). A `--t2g-map` marks a transcriptome
+/// reference, and any other pre-built `--index` could hold either, so neither
+/// counts.
 fn is_probe_set_reference(opts: &MultiplexQuantOpts) -> bool {
-    opts.t2g_map.is_none() && (opts.probe_set.is_some() || opts.index.is_none())
+    opts.t2g_map.is_none()
+        && (opts.probe_set.is_some() || opts.index.as_deref().is_none_or(index_holds_probe_set))
+}
+
+/// Whether a pre-built index was built by simpleaf from a probe CSV, read off
+/// the metadata simpleaf writes beside it, for every layout `--index` accepts:
+///
+/// - a multiplex-quant probe index (a directory, or its `index` prefix) has
+///   `probe_set_info.json` next to the index files;
+/// - a `simpleaf index --probe-csv` output (its root, its `index/`
+///   subdirectory, or the `piscem_idx` prefix inside that) records the CSV as
+///   `args.probe-csv` in `index_info.json` at the root.
+///
+/// Anything else, including a probe index built from a FASTA, which records
+/// neither, is not recognised.
+fn index_holds_probe_set(index: &Path) -> bool {
+    let index_dir = if index.is_dir() {
+        Some(index)
+    } else {
+        index.parent()
+    };
+    let Some(index_dir) = index_dir else {
+        return false;
+    };
+    if index_dir.join("probe_set_info.json").is_file() {
+        return true;
+    }
+    let records_probe_csv = |root: &Path| {
+        std::fs::read_to_string(root.join("index_info.json"))
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            .is_some_and(|info| info["args"]["probe-csv"].is_string())
+    };
+    records_probe_csv(index_dir) || index_dir.parent().is_some_and(records_probe_csv)
 }
 
 /// Why a run is quantified per gene by alevin-fry's `quant` rather than per
@@ -65,8 +99,9 @@ enum GeneAxis {
     /// `--t2g-map`: a transcriptome, where resolving per target would discard
     /// UMIs shared by the isoforms of one gene.
     Transcriptome,
-    /// A pre-built `--index` without `--probe-set`, which could hold either
-    /// kind of reference; the gene axis is the reading that is never wrong.
+    /// A pre-built `--index` without `--probe-set` that does not identify
+    /// itself as a probe index, so it could hold either kind of reference; the
+    /// gene axis is the reading that is never wrong.
     UnknownIndex,
     /// `--usa`: USA mode resolves over a 3-column map, which `quant-probe`
     /// rejects outright.
@@ -85,9 +120,9 @@ impl GeneAxis {
                  no probes; rerun without `--probe-mtx`"
                 .to_string(),
             GeneAxis::UnknownIndex => "this run uses a pre-built `--index` without \
-                 `--probe-set`, which could hold either a probe set or a transcriptome; pass \
-                 the probe set the index was built from with `--probe-set`, or rerun without \
-                 `--probe-mtx`"
+                 `--probe-set` that does not say whether it holds a probe set or a \
+                 transcriptome; pass the probe set the index was built from with \
+                 `--probe-set`, or rerun without `--probe-mtx`"
                 .to_string(),
             GeneAxis::Usa => "`--usa` runs `quant` over a 3-column map, which has no probe \
                  axis; rerun without `--usa`"
@@ -452,14 +487,22 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
     let af_caps = prog_utils::AlevinFryCapabilities::detect(&alevin_fry_info.exe_path);
     let gene_axis = gene_axis_reason(&opts, &af_caps);
     let per_probe = gene_axis.is_none();
-    // Say when a probe-set reference is not quantified per probe, but only
-    // where the reason is not already in what the user typed: `--gene-level`
-    // names its own effect, while `--usa` does not say that it also picks the
-    // axis, and an alevin-fry without `quant-probe` is invisible from the
-    // command line. A reference with no probes needs no announcement either.
+    // Say when a run that could be quantified per probe is not, but only where
+    // the reason is not already in what the user typed: `--gene-level` names
+    // its own effect, while `--usa` does not say that it also picks the axis,
+    // and neither an index that does not say what it holds nor an alevin-fry
+    // without `quant-probe` is visible from the command line. A transcriptome
+    // needs no announcement.
     match gene_axis {
         Some(GeneAxis::Usa) => {
             info!("Falling back to `quant`: USA mode is only available there.");
+        }
+        Some(GeneAxis::UnknownIndex) => {
+            info!(
+                "Quantifying per gene with `quant`: the pre-built `--index` does not say \
+                 whether it holds a probe set. If it does, pass the probe set it was built \
+                 from with `--probe-set` to quantify per probe with `quant-probe`."
+            );
         }
         Some(GeneAxis::NoQuantProbe) => {
             info!(
@@ -470,7 +513,7 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
         }
         // Listed rather than matched with `_`, so that a new variant has to
         // decide here too instead of silently saying nothing.
-        Some(GeneAxis::Transcriptome | GeneAxis::UnknownIndex | GeneAxis::GeneLevel) | None => {}
+        Some(GeneAxis::Transcriptome | GeneAxis::GeneLevel) | None => {}
     }
     validate_alevin_fry_options(&opts, &af_caps, gene_axis, &alevin_fry_info.exe_path)?;
 
@@ -1516,6 +1559,63 @@ GATCCTCT\tGATCCTCT\tBC003
             assert!(!per_probe(&["-c", "10x-flexv2-gex-3p"], &af_caps));
             assert!(!per_probe(&["--probe-set", "p.csv"], &af_caps));
         }
+    }
+
+    /// A pre-built index counts as a probe set when simpleaf's own metadata
+    /// says so, in every layout `--index` accepts; anything else stays unknown.
+    #[test]
+    fn prebuilt_probe_indices_are_recognised_from_their_metadata() {
+        let axis = |index: &Path, extra: &[&str]| {
+            let index = index.to_str().expect("utf-8 tempdir path");
+            let mut cli = vec!["-o", ".", "-i", index];
+            cli.extend_from_slice(extra);
+            gene_axis_reason(&parse_multiplex_quant_opts(&cli), &caps(true, true))
+        };
+        let td = tempdir().expect("failed to create tempdir");
+
+        // multiplex-quant's probe index: `probe_set_info.json` beside the
+        // `index` prefix, given as the directory or as the prefix.
+        let multiplex = td.path().join("probe_index");
+        fs::create_dir_all(&multiplex).unwrap();
+        fs::write(multiplex.join("probe_set_info.json"), "{}").unwrap();
+        assert_eq!(axis(&multiplex, &[]), None);
+        assert_eq!(axis(&multiplex.join("index"), &[]), None);
+
+        // `simpleaf index --probe-csv`: given as the root, its `index/`
+        // subdirectory, or the `piscem_idx` prefix inside that.
+        let probe_csv = td.path().join("probe_csv_index");
+        fs::create_dir_all(probe_csv.join("index")).unwrap();
+        fs::write(
+            probe_csv.join("index_info.json"),
+            json!({"args": {"probe-csv": "probes.csv"}}).to_string(),
+        )
+        .unwrap();
+        assert_eq!(axis(&probe_csv, &[]), None);
+        assert_eq!(axis(&probe_csv.join("index"), &[]), None);
+        assert_eq!(axis(&probe_csv.join("index").join("piscem_idx"), &[]), None);
+        // A t2g map still marks a transcriptome, whatever the index says.
+        assert_eq!(
+            axis(&probe_csv, &["-m", "t2g.tsv"]),
+            Some(GeneAxis::Transcriptome)
+        );
+
+        // A transcriptome index built by `simpleaf index`, and a directory
+        // with no simpleaf metadata at all, do not say what they hold.
+        let txome = td.path().join("txome_index");
+        fs::create_dir_all(txome.join("index")).unwrap();
+        fs::write(
+            txome.join("index_info.json"),
+            json!({"args": {"fasta": "genome.fa", "gtf": "genes.gtf"}}).to_string(),
+        )
+        .unwrap();
+        assert_eq!(axis(&txome, &[]), Some(GeneAxis::UnknownIndex));
+        assert_eq!(
+            axis(&txome.join("index"), &[]),
+            Some(GeneAxis::UnknownIndex)
+        );
+        let bare = td.path().join("bare");
+        fs::create_dir_all(&bare).unwrap();
+        assert_eq!(axis(&bare, &[]), Some(GeneAxis::UnknownIndex));
     }
 
     #[test]

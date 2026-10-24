@@ -1148,11 +1148,13 @@ pub struct MultiplexQuantOpts {
     /// Quantify per gene with alevin-fry's `quant`, even for a probe-set
     /// reference, which is otherwise quantified per probe by `quant-probe`.
     ///
-    /// Counts differ slightly between the two: resolving UMIs over probes
-    /// treats a UMI whose reads hit two probes of one gene as ambiguous, which
-    /// the gene axis counts. Pass this to reproduce a run made before per-probe
-    /// quantification became the default. `--probe-mtx` is not available with
-    /// it, since only `quant-probe` writes that matrix.
+    /// Counts differ slightly between the two. Over probes, a UMI whose reads
+    /// do not single out one probe of its gene (they tie between two of its
+    /// probes, or every read matches both) has no winning probe: `cr-like`
+    /// drops it and the EM strategies divide it between those probes, while
+    /// the gene axis counts it once. Pass this to reproduce a run made before
+    /// per-probe quantification became the default. `--probe-mtx` is not
+    /// available with it, since only `quant-probe` writes that matrix.
     #[arg(long, help_heading = "Quantification Options")]
     pub gene_level: bool,
 
@@ -1270,7 +1272,8 @@ pub struct MultiplexQuantOpts {
     /// (`alevin/probe_quants_mat.mtx`, with its row and column files).
     ///
     /// Only a run quantified per probe has one, so this needs a probe-set
-    /// reference (the chemistry's registered probe set or `--probe-set`; not
+    /// reference (the chemistry's registered probe set, `--probe-set`, or a
+    /// pre-built `--index` that simpleaf built from a probe CSV; not
     /// `--t2g-map`), neither `--usa` nor `--gene-level`, and an alevin-fry whose
     /// `quant-probe` has `--probe-mtx`. simpleaf checks all of these before any
     /// work starts.
