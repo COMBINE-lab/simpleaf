@@ -1093,8 +1093,14 @@ pub struct MultiplexQuantOpts {
     #[arg(long)]
     pub cell_bc_list: Option<PathBuf>,
 
-    /// Expected read orientation: fw, rc, or both
-    #[arg(long, default_value = "both")]
+    /// Expected read orientation (case-insensitive; `either` is also accepted,
+    /// as a synonym for `both`)
+    #[arg(long, default_value = "both", ignore_case = true,
+        value_parser = clap::builder::PossibleValuesParser::new([
+            clap::builder::PossibleValue::new("fw"),
+            clap::builder::PossibleValue::new("rc"),
+            clap::builder::PossibleValue::new("both").alias("either"),
+        ]))]
     pub expected_ori: String,
 
     /// Sample barcode orientation: `forward` (whitelist matches read as-is) or
@@ -1188,6 +1194,7 @@ pub struct MultiplexQuantOpts {
     #[arg(
         short = '1',
         long,
+        required = true,
         value_delimiter = ',',
         help_heading = "Mapping Options"
     )]
@@ -1197,6 +1204,7 @@ pub struct MultiplexQuantOpts {
     #[arg(
         short = '2',
         long,
+        required = true,
         value_delimiter = ',',
         help_heading = "Mapping Options"
     )]
