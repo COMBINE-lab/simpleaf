@@ -25,15 +25,23 @@ use file_requirements::{FileRequirement, FileRequirementBuildError, FileRequirem
 /// Keep `simpleaf_conda_env.yml` in step when these change; it pins the same
 /// programs for CI and cannot read these constants.
 pub mod min_versions {
-    /// piscem 0.23.0 is the first release built against piscem-rs 0.10
-    /// (sshash-lib 0.7, the unified canonical minimizer scheme): its index
+    /// piscem 0.24.0 is the first release built against piscem-rs 0.11
+    /// (sshash-lib 0.8, whose MPHF changes the serialized format): its index
     /// format is incompatible with earlier releases in BOTH directions —
-    /// 0.23 rejects old indexes with a rebuild message, and older piscem
-    /// cannot read 0.23-built indexes. Requiring >=0.23 keeps the piscem
-    /// simpleaf indexes with and the piscem it maps with format-consistent.
+    /// 0.24 rejects 0.23-built indexes with a rebuild message (contig/EC
+    /// tables are now `PCTAB04`/`PECTB04`), and older piscem cannot read
+    /// 0.24-built indexes or the `PPOIS02` poison tables 0.24 writes.
+    /// Requiring >=0.24 keeps the piscem simpleaf indexes with and the piscem
+    /// it maps with format-consistent. It is also what makes the
+    /// `--excluded-probes decoy` default affordable: 0.24 filters poison
+    /// k-mers at almost no cost, where 0.23 maps 10x Flex reads 40-55% slower
+    /// once the decoys are indexed.
+    /// 0.24.0 also writes RAD v2, unconditionally. That is the reason for the
+    /// [`ALEVIN_FRY`] floor, not for this one: the alevin-fry that reads RAD v2
+    /// still reads the RAD v1 that piscem 0.23 writes.
     /// (0.22.0 introduced `--decoder`/`--thread-policy` and the shared `-t`
     /// budget, which simpleaf forwards unconditionally.)
-    pub const PISCEM: &str = ">=0.23.0, <1.0.0";
+    pub const PISCEM: &str = ">=0.24.0, <1.0.0";
 
     /// alevin-fry 0.18.0 provides deterministic compiled barcode-correction
     /// plans and the correction/resource controls forwarded by simpleaf 0.28.
@@ -41,7 +49,13 @@ pub mod min_versions {
     /// (per-chunk codec, on by default): earlier releases spell `--compress` as a
     /// bare boolean flag and reject the `=<codec>` value, which would fail at
     /// collate on every run.
-    pub const ALEVIN_FRY: &str = ">=0.18.3, <1.0.0";
+    /// 0.19.0 is required because piscem >= 0.24 writes RAD v2: it is the first
+    /// release built on a libradicl (0.21) that reads RAD v2, and it still reads
+    /// RAD v1. alevin-fry 0.18.x cannot parse a RAD v2 header, and
+    /// `generate-permit-list` aborts on it ("invalid utf-8 sequence"), only
+    /// after mapping has finished. This floor also covers `--map-dir`, whose
+    /// RAD file simpleaf never inspects.
+    pub const ALEVIN_FRY: &str = ">=0.19.0, <1.0.0";
 
     /// Only consulted when peak calling is actually requested.
     pub const MACS3: &str = ">=3.0.2, <4.0.0";
@@ -1306,10 +1320,12 @@ Options:
 
     #[test]
     fn ensure_alevin_fry_version_accepts_current_and_rejects_old_or_missing() {
-        // meets the >=0.18.3 floor
-        assert!(ensure_alevin_fry_version(&req_progs_with_af("0.18.3")).is_ok());
+        // meets the >=0.19.0 floor
+        assert!(ensure_alevin_fry_version(&req_progs_with_af("0.19.0")).is_ok());
         assert!(ensure_alevin_fry_version(&req_progs_with_af("0.20.0")).is_ok());
-        // below the floor -> clear error before any work
+        // below the floor -> clear error before any work (0.18.3 cannot read
+        // the RAD v2 that piscem >= 0.24 writes)
+        assert!(ensure_alevin_fry_version(&req_progs_with_af("0.18.3")).is_err());
         assert!(ensure_alevin_fry_version(&req_progs_with_af("0.18.2")).is_err());
         assert!(ensure_alevin_fry_version(&req_progs_with_af("0.18.0")).is_err());
         // not registered at all -> error pointing at set-paths

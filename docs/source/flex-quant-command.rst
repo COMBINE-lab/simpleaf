@@ -78,7 +78,7 @@ The relevant options (which you can obtain by running ``simpleaf multiplex-quant
 
     Piscem Mapping Options:
           --skipping-strategy <SKIPPING_STRATEGY>  The skipping strategy to use for k-mer collection [default: permissive] [possible values: permissive, strict]
-          --struct-constraints                     If piscem >= 0.7.0, enable structural constraints
+          --struct-constraints                     Enable structural constraints when mapping
           --max-ec-card <MAX_EC_CARD>              Maximum cardinality equivalence class to examine [default: 4096]
           --dict <DICT>                            Piscem dictionary backend to use at map time: ``auto`` (default, honors the index's embedded choice), ``sshash``, or ``tiny`` [default: auto] [possible values: auto, sshash, tiny]
 

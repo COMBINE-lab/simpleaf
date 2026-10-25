@@ -11,7 +11,7 @@ The ``set-paths`` command is used to set the paths to the relevant executables a
   
   Options:
     -p, --piscem <PISCEM>          path to piscem to use
-    -a, --alevin-fry <ALEVIN_FRY>  path to alein-fry to use
+    -a, --alevin-fry <ALEVIN_FRY>  path to alevin-fry to use
     -m, --macs <MACS>              path to macs3 to use
     -h, --help                     Print help information
     -V, --version                  Print version information
