@@ -266,7 +266,44 @@ pub struct ReqProgs {
     pub macs: Option<ProgInfo>,
 }
 
-#[allow(dead_code)]
+/// [`VersionReq::matches`], except that a pre-release is also accepted when
+/// its release version satisfies `req`.
+///
+/// Plain semver only lets a pre-release match a comparator that carries a
+/// pre-release of the same major.minor.patch, so `0.24.0-rc.1` fails
+/// `>=0.24.0` (and `0.25.0-dev` fails even `>=0.24.0-0`), and rc/dev builds of
+/// the tools cannot pass the floors in [`min_versions`]. Here each
+/// comparator is checked against the release version (`0.24.0`) instead,
+/// except one that names a pre-release of that same release (`>=0.24.0-rc.2`),
+/// which still compares the full version. So versions below the floor stay
+/// rejected (`0.23.1-rc.1` vs `>=0.24.0`), and so does a pre-release of an
+/// excluded upper bound (`1.0.0-rc.1` vs `<1.0.0`). Note that `X.Y.Z-dev` is
+/// accepted by a floor of exactly `X.Y.Z`, although semver orders it below.
+fn matches_allowing_prerelease(req: &VersionReq, version: &Version) -> bool {
+    if req.matches(version) {
+        return true;
+    }
+    if version.pre.is_empty() {
+        return false;
+    }
+    let release = Version::new(version.major, version.minor, version.patch);
+    req.comparators.iter().all(|c| {
+        let names_same_release = !c.pre.is_empty()
+            && c.major == version.major
+            && c.minor == Some(version.minor)
+            && c.patch == Some(version.patch);
+        c.matches(if names_same_release {
+            version
+        } else {
+            &release
+        })
+    })
+}
+
+/// Checks that `prog_ver_string`, the version of `prog_name`, satisfies
+/// `req_string` by semantic versioning, also accepting a pre-release whose
+/// release version satisfies it (see [`matches_allowing_prerelease`]).
+/// Returns the parsed version, or an error saying why it is not compatible.
 pub fn check_version_constraints<S1: AsRef<str>>(
     prog_name: &str,
     req_string: S1,
@@ -283,7 +320,18 @@ pub fn check_version_constraints<S1: AsRef<str>>(
     })?;
     let req = VersionReq::parse(req_string.as_ref())
         .with_context(|| format!("invalid version requirement `{}`", req_string.as_ref()))?;
-    if req.matches(&parsed_version) {
+    if matches_allowing_prerelease(&req, &parsed_version) {
+        if !parsed_version.pre.is_empty() {
+            info!(
+                "using pre-release {} {} (required: {}); pre-releases are meant for testing and may lack features of the {}.{}.{} release.",
+                prog_name,
+                parsed_version,
+                req,
+                parsed_version.major,
+                parsed_version.minor,
+                parsed_version.patch
+            );
+        }
         Ok(parsed_version)
     } else {
         Err(anyhow!(
@@ -319,8 +367,9 @@ pub fn ensure_alevin_fry_version(rp: &ReqProgs) -> Result<()> {
 }
 
 /// Checks that the version returned from a given program's `--version`
-/// flag is compatible with the provided `req_string`.  The interpretation
-/// of compatible is according to the standard meaning of Semantic versioning.
+/// flag is compatible with the provided `req_string`.  The version is taken
+/// to be the last whitespace-separated word of the output, and the check
+/// itself is [`check_version_constraints`].
 /// This returns either `Ok(Version)` of the parsed, compatible, version or
 /// an `anyhow::Error` describing the incompatibility of the version is not
 /// compatible.
@@ -329,54 +378,29 @@ pub fn check_version_constraints_from_output<S1: AsRef<str>>(
     req_string: S1,
     prog_output: std::result::Result<String, std::io::Error>,
 ) -> Result<Version> {
-    match prog_output {
-        Ok(vs) => {
-            let x = vs.split_whitespace();
-            if let Some(version) = x.last() {
-                let ver = if version.split(".").count() > 3 {
-                    warn!(
-                        "version info {} is not a valid semver (more than 3 dotted version parts; looking only at the major, minor & patch versions).",
-                        version
-                    );
-                    version
-                        .split(".")
-                        .take(3)
-                        .collect::<Vec<&str>>()
-                        .join(".")
-                        .to_string()
-                } else {
-                    version.to_string()
-                };
-                // See the note in `check_version_constraints`: a tool printing
-                // something unparseable is a bad install, not a panic.
-                let parsed_version = Version::parse(&ver).with_context(|| {
-                    format!(
-                        "could not parse the version of {} (`{}`) as a semantic version; \
-                         the program reported: {:?}",
-                        prog_name, ver, version
-                    )
-                })?;
-                let req = VersionReq::parse(req_string.as_ref()).with_context(|| {
-                    format!("invalid version requirement `{}`", req_string.as_ref())
-                })?;
-                if req.matches(&parsed_version) {
-                    return Ok(parsed_version);
-                } else {
-                    return Err(anyhow!(
-                        "Parsed version of {} ({:?}) does not satisfy constraints {}. Please install a compatible version.",
-                        prog_name,
-                        ver,
-                        req
-                    ));
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("Error running {} {}", prog_name, e);
-            return Err(anyhow!("could not parse program output"));
-        }
-    }
-    Err(anyhow!("invalid version string"))
+    let vs = prog_output.with_context(|| format!("could not run `{} --version`", prog_name))?;
+    let version = vs
+        .split_whitespace()
+        .last()
+        .with_context(|| format!("`{} --version` did not report a version", prog_name))?;
+    // Only fall back to major.minor.patch for words that are not semver
+    // (macs "2.2.9.1", "3.0.3.dev0"): a valid pre-release or build tag can
+    // contain dots too ("0.24.0-rc.1"), and cutting it would change the version.
+    let ver = if Version::parse(version).is_err() && version.split(".").count() > 3 {
+        warn!(
+            "version info {} is not a valid semver (more than 3 dotted version parts; looking only at the major, minor & patch versions).",
+            version
+        );
+        version
+            .split(".")
+            .take(3)
+            .collect::<Vec<&str>>()
+            .join(".")
+            .to_string()
+    } else {
+        version.to_string()
+    };
+    check_version_constraints(prog_name, req_string, &ver)
 }
 
 pub fn get_which_executable(prog_name: &str) -> Result<PathBuf> {
@@ -585,6 +609,7 @@ mod tests {
         ProgInfo, ReqProgs, check_files_exist, check_piscem_index_files, ensure_alevin_fry_version,
     };
     use cmd_lib::run_fun;
+    use semver::Version;
     use std::fs;
     use tempfile::tempdir;
 
@@ -684,5 +709,119 @@ mod tests {
         let st = script.display().to_string();
         let version = run_fun!(${st} --version).expect("failed to run fake tool");
         assert_eq!(version, "fake-tool 0.1.0");
+    }
+
+    fn version_from_output(prog: &str, req: &str, output: &str) -> anyhow::Result<Version> {
+        super::check_version_constraints_from_output(prog, req, Ok(output.to_string()))
+    }
+
+    #[test]
+    fn version_from_output_checks_the_last_word() {
+        let v = version_from_output("alevin-fry", ">=0.18.3, <1.0.0", "alevin-fry 0.19.0\n")
+            .expect("0.19.0 satisfies >=0.18.3");
+        assert_eq!(v, Version::new(0, 19, 0));
+        let err = version_from_output("piscem", ">=0.24.0, <1.0.0", "piscem 0.23.0")
+            .expect_err("0.23.0 is below the floor");
+        assert_eq!(
+            err.to_string(),
+            "Parsed version of piscem (\"0.23.0\") does not satisfy constraints >=0.24.0, <1.0.0. \
+             Please install a compatible version."
+        );
+        // more than 3 dotted parts (macs) -> only major.minor.patch is checked
+        let v = version_from_output("macs3", ">=3.0.2, <4.0.0", "macs3 3.0.3.dev0")
+            .expect("3.0.3.dev0 is checked as 3.0.3");
+        assert_eq!(v, Version::new(3, 0, 3));
+        let v = version_from_output("macs2", ">=2.2.0", "macs2 2.2.9.1")
+            .expect("2.2.9.1 is checked as 2.2.9");
+        assert_eq!(v, Version::new(2, 2, 9));
+    }
+
+    #[test]
+    fn version_from_output_keeps_valid_semver_intact() {
+        // "0.24.0-rc.1" has 4 dotted parts but is valid semver; it used to be
+        // cut to "0.24.0-rc", which `>=0.24.0-rc.1` then rejected.
+        let v = version_from_output("piscem", ">=0.24.0-rc.1, <1.0.0", "piscem 0.24.0-rc.1")
+            .expect("0.24.0-rc.1 satisfies >=0.24.0-rc.1");
+        assert_eq!(v.to_string(), "0.24.0-rc.1");
+        let v = version_from_output(
+            "alevin-fry",
+            ">=0.18.3, <1.0.0",
+            "alevin-fry 0.19.0+g1a2b.3",
+        )
+        .expect("build metadata does not affect matching");
+        assert_eq!(v.to_string(), "0.19.0+g1a2b.3");
+        let err = version_from_output("piscem", ">=0.24.0, <1.0.0", "piscem 0.23.1-rc.1")
+            .expect_err("0.23.1-rc.1 is below the floor");
+        assert!(
+            err.to_string().contains("(\"0.23.1-rc.1\")"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn check_version_constraints_accepts_prereleases_of_satisfying_releases() {
+        let ok = |v: &str, req: &str| super::check_version_constraints("piscem", req, v).is_ok();
+        // a pre-release is judged by its release version ...
+        assert!(ok("0.24.0-rc.1", ">=0.24.0, <1.0.0"));
+        assert!(ok("0.24.0-dev", ">=0.24.0, <1.0.0"));
+        assert!(ok("0.25.0-rc.1", ">=0.24.0, <1.0.0"));
+        assert!(ok("0.25.0-dev", ">=0.24.0-0, <1.0.0"));
+        assert!(ok("0.24.0-rc.3", ">=0.24.0-rc.2, <1.0.0"));
+        // ... so one below the floor, or of an excluded upper bound, is rejected
+        assert!(!ok("0.23.1-rc.1", ">=0.24.0, <1.0.0"));
+        assert!(!ok("0.22.9-rc.1", ">=0.23.0, <1.0.0"));
+        assert!(!ok("1.0.0-rc.1", ">=0.24.0, <1.0.0"));
+        assert!(!ok("0.24.0-rc.1", "<0.24.0"));
+        // a floor naming a pre-release still orders pre-releases of that release
+        assert!(!ok("0.24.0-rc.1", ">=0.24.0-rc.2, <1.0.0"));
+        // release versions are matched exactly as before
+        assert!(ok("0.24.0", ">=0.24.0, <1.0.0"));
+        assert!(ok("0.24.0+g1a2b", ">=0.24.0, <1.0.0"));
+        assert!(!ok("0.23.9", ">=0.24.0, <1.0.0"));
+        assert!(!ok("1.0.0", ">=0.24.0, <1.0.0"));
+        // the returned version keeps its pre-release tag
+        let v = super::check_version_constraints("piscem", ">=0.24.0, <1.0.0", "0.24.0-rc.1")
+            .expect("0.24.0-rc.1 is accepted");
+        assert_eq!(v.to_string(), "0.24.0-rc.1");
+    }
+
+    #[test]
+    fn version_from_output_accepts_release_candidates_of_the_floor() {
+        for (prog, req, output) in [
+            ("piscem", ">=0.24.0, <1.0.0", "piscem 0.24.0-rc.1"),
+            ("alevin-fry", ">=0.19.0, <1.0.0", "alevin-fry 0.19.0-rc.1"),
+        ] {
+            let v = version_from_output(prog, req, output).expect("an rc of the floor passes");
+            // set-paths records `v`; the cached re-checks must accept it too
+            let recorded = format!("{}", v);
+            assert_eq!(Some(recorded.as_str()), output.split_whitespace().last());
+            super::check_version_constraints(prog, req, &recorded)
+                .expect("recorded version re-checks");
+        }
+        assert!(version_from_output("piscem", ">=0.24.0, <1.0.0", "piscem 0.23.1-rc.1").is_err());
+    }
+
+    #[test]
+    fn version_from_output_reports_run_failures_and_empty_output() {
+        let err = super::check_version_constraints_from_output(
+            "piscem",
+            ">=0.24.0, <1.0.0",
+            Err(std::io::Error::other("exited with status 127")),
+        )
+        .expect_err("a failed `--version` run is an error");
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("could not run `piscem --version`") && msg.contains("status 127"),
+            "unexpected error: {}",
+            msg
+        );
+        let err = version_from_output("piscem", ">=0.24.0, <1.0.0", " \n")
+            .expect_err("empty output has no version");
+        assert!(
+            format!("{:#}", err).contains("`piscem --version`"),
+            "unexpected error: {:#}",
+            err
+        );
     }
 }
