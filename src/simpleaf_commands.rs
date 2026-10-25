@@ -753,6 +753,15 @@ pub struct MapQuantOpts {
     /// output.
     #[arg(long, help_heading = "Output Options")]
     pub anndata_out: bool,
+
+    /// Also write alevin-fry's molecule table (`alevin/molecules.parquet`): one row per resolved
+    /// molecule (cell barcode, UMI, feature, supporting reads, status), before molecules are
+    /// summed into the count matrix.
+    ///
+    /// Requires an alevin-fry whose `quant` has `--dump-molecules`; simpleaf checks this before
+    /// any work starts.
+    #[arg(long, help_heading = "Output Options")]
+    pub dump_molecules: bool,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -1167,8 +1176,25 @@ pub struct MultiplexQuantOpts {
     /// `region` column (`spliced` / `unspliced`) or a pre-built index with an
     /// adjacent 3-column t2g file. By default, expression is grouped at the gene
     /// level.
+    ///
+    /// USA mode resolves over genes, so a probe-set reference is quantified by
+    /// `quant` rather than per probe by `quant-probe`, which rejects a 3-column
+    /// map. `--probe-mtx` is therefore not available with `--usa`.
     #[arg(long, help_heading = "Reference Options")]
     pub usa: bool,
+
+    /// Quantify per gene with alevin-fry's `quant`, even for a probe-set
+    /// reference, which is otherwise quantified per probe by `quant-probe`.
+    ///
+    /// Counts differ slightly between the two. Over probes, a UMI whose reads
+    /// do not single out one probe of its gene (they tie between two of its
+    /// probes, or every read matches both) has no winning probe: `cr-like`
+    /// drops it and the EM strategies divide it between those probes, while
+    /// the gene axis counts it once. Pass this to reproduce a run made before
+    /// per-probe quantification became the default. `--probe-mtx` is not
+    /// available with it, since only `quant-probe` writes that matrix.
+    #[arg(long, help_heading = "Quantification Options")]
+    pub gene_level: bool,
 
     /// Path to sample/probe barcode file with rotation mapping
     /// (overrides auto-download). 3-column TSV: observed, canonical, sample_name.
@@ -1211,6 +1237,11 @@ pub struct MultiplexQuantOpts {
     pub reads2: Vec<PathBuf>,
 
     /// UMI resolution mode
+    ///
+    /// `parsimony-gene` and `parsimony-gene-em` build equivalence classes with
+    /// reads already projected to genes, so no per-probe assignment survives to
+    /// sum. They are not available where a probe-set reference is quantified per
+    /// probe: use `parsimony` or `parsimony-em`, or pass `--gene-level`.
     #[arg(short, long, default_value = "cr-like",
         help_heading = "Quantification Options",
         value_parser = clap::builder::PossibleValuesParser::new([
@@ -1267,6 +1298,27 @@ pub struct MultiplexQuantOpts {
     /// Generate an anndata (h5ad format) count matrix from the standard (matrix-market format) output
     #[arg(long, help_heading = "Output Options")]
     pub anndata_out: bool,
+
+    /// Also write alevin-fry's molecule table (`alevin/molecules.parquet`): one row per resolved
+    /// molecule (cell barcode, UMI, feature, supporting reads, status), before molecules are
+    /// summed into the count matrix.
+    ///
+    /// Requires an alevin-fry whose `quant` has `--dump-molecules`; simpleaf checks this before
+    /// any work starts.
+    #[arg(long, help_heading = "Output Options")]
+    pub dump_molecules: bool,
+
+    /// Also write the probe x cell count matrix that the gene matrix is summed from
+    /// (`alevin/probe_quants_mat.mtx`, with its row and column files).
+    ///
+    /// Only a run quantified per probe has one, so this needs a probe-set
+    /// reference (the chemistry's registered probe set, `--probe-set`, or a
+    /// pre-built `--index` that simpleaf built from a probe CSV; not
+    /// `--t2g-map`), neither `--usa` nor `--gene-level`, and an alevin-fry whose
+    /// `quant-probe` has `--probe-mtx`. simpleaf checks all of these before any
+    /// work starts.
+    #[arg(long, help_heading = "Output Options")]
+    pub probe_mtx: bool,
 }
 
 #[derive(Debug, Subcommand)]

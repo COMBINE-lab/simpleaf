@@ -83,6 +83,7 @@ The relevant options (which you can obtain by running ``simpleaf multiplex-quant
           --dict <DICT>                            Piscem dictionary backend to use at map time: ``auto`` (default, honors the index's embedded choice), ``sshash``, or ``tiny`` [default: auto] [possible values: auto, sshash, tiny]
 
     Quantification Options:
+          --gene-level               Quantify per gene with ``quant``, even for a probe-set reference, which is otherwise quantified per probe by ``quant-probe``
       -r, --resolution <RESOLUTION>  UMI resolution mode [default: cr-like] [possible values: cr-like, cr-like-em, parsimony, parsimony-em, parsimony-gene, parsimony-gene-em]
 
     Permit List Options:
@@ -184,6 +185,24 @@ If ``--usa`` is provided, the reference must carry splicing-aware annotations:
 - FASTA probe sets do not encode splicing status, so they are not compatible with ``--usa`` unless you also provide an explicit splicing-aware ``--t2g-map``.
 
 If the required splicing annotations are not available, ``simpleaf`` will stop with an error that explains which input is missing the needed information and suggests rerunning without ``--usa``.
+
+``--usa`` resolves over genes, so it runs ``alevin-fry quant`` rather than ``quant-probe``; see `Per-probe quantification`_.
+
+Per-probe quantification
+------------------------
+
+A probe-set reference is quantified per probe: ``alevin-fry quant-probe`` resolves UMIs over the probes the reads hit, then sums each gene's probes into its count. This is the default, and it is the subcommand that decides the axis -- nothing is recorded in the permit list, and ``quant`` is unchanged.
+
+Four things keep a run on ``quant`` instead:
+
+- the reference is not a probe set. ``--t2g-map`` marks a transcriptome, where resolving per target would discard UMIs shared by the isoforms of one gene; a pre-built ``--index`` given without ``--probe-set`` is quantified per probe only when simpleaf's own metadata says it holds a probe set (``probe_set_info.json`` beside a ``multiplex-quant`` probe index, or ``args.probe-csv`` in the ``index_info.json`` of a ``simpleaf index --probe-csv`` output). Any other index could hold either kind of reference, so it is quantified per gene, and the log says so; pass ``--probe-set`` with the probe set it was built from to quantify it per probe.
+- the configured ``alevin-fry`` has no ``quant-probe`` (releases before 0.19.0). ``simpleaf`` reads this from ``alevin-fry quant-probe --help``, because the version string does not tell builds apart, and says so in the log when it falls back.
+- ``--usa``, which resolves spliced and unspliced counts over a 3-column map. The probe axis has no counterpart for that and rejects such a map outright, so a USA run is quantified per gene exactly as before.
+- ``--gene-level``, which asks for the gene axis to reproduce a run made before per-probe quantification became the default.
+
+``--resolution parsimony-gene`` and ``parsimony-gene-em`` build equivalence classes with reads already projected to genes, so no per-probe assignment survives to sum. On a run that goes to ``quant-probe`` they are refused before any work starts, pointing at ``parsimony`` / ``parsimony-em``, or at ``--gene-level``.
+
+Two optional outputs are forwarded only when requested: ``--dump-molecules`` writes the molecule table ``af_quant/alevin/molecules.parquet`` and does not depend on the axis, and ``--probe-mtx`` writes the probe x cell matrix that the gene matrix is summed from (``af_quant/alevin/probe_quants_mat.mtx``, with its row and column files). Only ``quant-probe`` writes the probe matrix, so ``--probe-mtx`` needs a run that goes there; with ``--usa``, ``--gene-level``, a non-probe-set reference, or an ``alevin-fry`` without ``quant-probe``, ``simpleaf`` stops and names which of the four applies. Each needs an ``alevin-fry`` that has the option, checked before any work starts. The matching ``quant.json`` entries are copied under ``quant_outputs`` into ``simpleaf_multiplex_quant_info.json``.
 
 Examples
 --------

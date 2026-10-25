@@ -193,3 +193,11 @@ Output Options:
       --anndata-out
           Generate an anndata (h5ad format) count matrix from the standard (matrix-market format)
           output
+
+      --dump-molecules
+          Also write alevin-fry's molecule table (`alevin/molecules.parquet`): one row per resolved
+          molecule (cell barcode, UMI, feature, supporting reads, status), before molecules are
+          summed into the count matrix.
+
+          Requires an alevin-fry whose `quant` has `--dump-molecules`; simpleaf checks this before
+          any work starts.

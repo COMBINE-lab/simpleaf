@@ -43,6 +43,197 @@ fn t2g_mode(opts: &MultiplexQuantOpts) -> probe_utils::ProbeT2gMode {
     }
 }
 
+/// Whether the reference is a probe set: a `--probe-set` CSV or FASTA (with or
+/// without a pre-built `--index` built from it), the chemistry's registered
+/// probe set, or a pre-built `--index` that identifies itself as a probe index
+/// (see `index_holds_probe_set`). A `--t2g-map` marks a transcriptome
+/// reference, and any other pre-built `--index` could hold either, so neither
+/// counts.
+fn is_probe_set_reference(opts: &MultiplexQuantOpts) -> bool {
+    opts.t2g_map.is_none()
+        && (opts.probe_set.is_some() || opts.index.as_deref().is_none_or(index_holds_probe_set))
+}
+
+/// Whether a pre-built index was built by simpleaf from a probe CSV, read off
+/// the metadata simpleaf writes beside it, for every layout `--index` accepts:
+///
+/// - a multiplex-quant probe index (a directory, or its `index` prefix) has
+///   `probe_set_info.json` next to the index files;
+/// - a `simpleaf index --probe-csv` output (its root, its `index/`
+///   subdirectory, or the `piscem_idx` prefix inside that) records the CSV as
+///   `args.probe-csv` in `index_info.json` at the root.
+///
+/// Anything else, including a probe index built from a FASTA, which records
+/// neither, is not recognised.
+fn index_holds_probe_set(index: &Path) -> bool {
+    let index_dir = if index.is_dir() {
+        Some(index)
+    } else {
+        index.parent()
+    };
+    let Some(index_dir) = index_dir else {
+        return false;
+    };
+    if index_dir.join("probe_set_info.json").is_file() {
+        return true;
+    }
+    let records_probe_csv = |root: &Path| {
+        std::fs::read_to_string(root.join("index_info.json"))
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            .is_some_and(|info| info["args"]["probe-csv"].is_string())
+    };
+    records_probe_csv(index_dir) || index_dir.parent().is_some_and(records_probe_csv)
+}
+
+/// Why a run is quantified per gene by alevin-fry's `quant` rather than per
+/// probe by `quant-probe`, which resolves UMIs over the probes the reads hit
+/// and then sums each gene's probes into its count.
+///
+/// Per probe is the default for a probe-set reference, which is what such a
+/// reference describes, so these are the exceptions. The variant is the single
+/// answer to "which axis, and why": the quant step, the log and the
+/// `--probe-mtx` refusal all read it, instead of each re-deriving the
+/// conditions and drifting apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GeneAxis {
+    /// `--t2g-map`: a transcriptome, where resolving per target would discard
+    /// UMIs shared by the isoforms of one gene.
+    Transcriptome,
+    /// A pre-built `--index` without `--probe-set` that does not identify
+    /// itself as a probe index, so it could hold either kind of reference; the
+    /// gene axis is the reading that is never wrong.
+    UnknownIndex,
+    /// `--usa`: USA mode resolves over a 3-column map, which `quant-probe`
+    /// rejects outright.
+    Usa,
+    /// `--gene-level`: the gene axis was asked for, to reproduce an earlier run.
+    GeneLevel,
+    /// The configured alevin-fry has no `quant-probe` subcommand.
+    NoQuantProbe,
+}
+
+impl GeneAxis {
+    /// Why `--probe-mtx` cannot be honoured, phrased as the thing to change.
+    fn probe_mtx_reason(self, alevin_fry: &Path) -> String {
+        match self {
+            GeneAxis::Transcriptome => "`--t2g-map` marks a transcriptome reference, which has \
+                 no probes; rerun without `--probe-mtx`"
+                .to_string(),
+            GeneAxis::UnknownIndex => "this run uses a pre-built `--index` without \
+                 `--probe-set` that does not say whether it holds a probe set or a \
+                 transcriptome; pass the probe set the index was built from with \
+                 `--probe-set`, or rerun without `--probe-mtx`"
+                .to_string(),
+            GeneAxis::Usa => "`--usa` runs `quant` over a 3-column map, which has no probe \
+                 axis; rerun without `--usa`"
+                .to_string(),
+            GeneAxis::GeneLevel => {
+                "`--gene-level` runs `quant`; rerun without `--gene-level`".to_string()
+            }
+            GeneAxis::NoQuantProbe => format!(
+                "`{}` has no `quant-probe` subcommand. Install an alevin-fry that has it and \
+                 re-run `simpleaf set-paths`, or rerun without `--probe-mtx`",
+                alevin_fry.display()
+            ),
+        }
+    }
+}
+
+/// `None` when the run is quantified per probe.
+///
+/// The order is the order the user would have to act in, so that the reason
+/// reported is always one they must fix: a reference with no probes cannot be
+/// rescued by dropping a flag, a flag that forces the gene axis has to go
+/// before the installed alevin-fry matters at all, and only then is the
+/// install the one thing left to change.
+fn gene_axis_reason(
+    opts: &MultiplexQuantOpts,
+    af_caps: &prog_utils::AlevinFryCapabilities,
+) -> Option<GeneAxis> {
+    if !is_probe_set_reference(opts) {
+        // Which shape it is decides the advice, not the outcome.
+        Some(if opts.t2g_map.is_some() {
+            GeneAxis::Transcriptome
+        } else {
+            GeneAxis::UnknownIndex
+        })
+    } else if opts.usa {
+        Some(GeneAxis::Usa)
+    } else if opts.gene_level {
+        Some(GeneAxis::GeneLevel)
+    } else if !af_caps.quant_probe {
+        Some(GeneAxis::NoQuantProbe)
+    } else {
+        None
+    }
+}
+
+/// Reject, before any work starts, the options this run cannot honour with the
+/// configured alevin-fry. Without these checks each one fails only at the final
+/// quant step, after mapping, permit-list generation and collation.
+fn validate_alevin_fry_options(
+    opts: &MultiplexQuantOpts,
+    af_caps: &prog_utils::AlevinFryCapabilities,
+    gene_axis: Option<GeneAxis>,
+    alevin_fry: &Path,
+) -> anyhow::Result<()> {
+    let per_probe = gene_axis.is_none();
+    if per_probe {
+        let gene_level_alternative = match opts.resolution.as_str() {
+            "parsimony-gene" => Some("parsimony"),
+            "parsimony-gene-em" => Some("parsimony-em"),
+            _ => None,
+        };
+        if let Some(alternative) = gene_level_alternative {
+            bail!(
+                "`--resolution {}` resolves UMIs over genes, but a probe-set reference is \
+                 quantified per probe, so no per-probe assignment would survive to sum. Use \
+                 `--resolution {}` instead -- probe counts are still summed into genes in the \
+                 output matrix -- or `--gene-level` to quantify per gene as before.",
+                opts.resolution,
+                alternative
+            );
+        }
+    }
+    if opts.dump_molecules {
+        // Checked against the subcommand this run will actually invoke, not
+        // against `quant` always: the two need not carry the same options.
+        let (subcommand, defined) = if per_probe {
+            ("quant-probe", af_caps.quant_probe_dump_molecules)
+        } else {
+            ("quant", af_caps.quant_dump_molecules)
+        };
+        if !defined {
+            return Err(prog_utils::missing_alevin_fry_option(
+                alevin_fry,
+                subcommand,
+                "--dump-molecules",
+            ));
+        }
+    }
+    if opts.probe_mtx {
+        // The probe matrix is the one `quant-probe` summed the gene matrix
+        // from, so it exists only on a run that goes there. Name the reason
+        // this run does not: a bare "needs a probe-set reference" would not
+        // say which of the four to change.
+        if let Some(reason) = gene_axis {
+            bail!(
+                "`--probe-mtx` needs a run quantified per probe, but {}.",
+                reason.probe_mtx_reason(alevin_fry)
+            );
+        }
+        if !af_caps.probe_mtx {
+            return Err(prog_utils::missing_alevin_fry_option(
+                alevin_fry,
+                "quant-probe",
+                "--probe-mtx",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn resolved_sample_bc_orientation<'a>(
     opts: &'a MultiplexQuantOpts,
     chemistry: Option<&'a CustomChemistry>,
@@ -293,6 +484,41 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
         .alevin_fry
         .as_ref()
         .context("alevin-fry is required; please run `simpleaf set-paths`")?;
+    // The version string cannot tell alevin-fry builds apart, so read what this
+    // one can do off its `--help`, then reject anything it cannot do for this run
+    // before any work starts.
+    let af_caps = prog_utils::AlevinFryCapabilities::detect(&alevin_fry_info.exe_path);
+    let gene_axis = gene_axis_reason(&opts, &af_caps);
+    let per_probe = gene_axis.is_none();
+    // Say when a run that could be quantified per probe is not, but only where
+    // the reason is not already in what the user typed: `--gene-level` names
+    // its own effect, while `--usa` does not say that it also picks the axis,
+    // and neither an index that does not say what it holds nor an alevin-fry
+    // without `quant-probe` is visible from the command line. A transcriptome
+    // needs no announcement.
+    match gene_axis {
+        Some(GeneAxis::Usa) => {
+            info!("Falling back to `quant`: USA mode is only available there.");
+        }
+        Some(GeneAxis::UnknownIndex) => {
+            info!(
+                "Quantifying per gene with `quant`: the pre-built `--index` does not say \
+                 whether it holds a probe set. If it does, pass the probe set it was built \
+                 from with `--probe-set` to quantify per probe with `quant-probe`."
+            );
+        }
+        Some(GeneAxis::NoQuantProbe) => {
+            info!(
+                "Falling back to `quant`: the configured alevin-fry has no `quant-probe` \
+                 subcommand, unchanged from earlier releases. Install a newer alevin-fry to \
+                 use `quant-probe` for per-probe quantification."
+            );
+        }
+        // Listed rather than matched with `_`, so that a new variant has to
+        // decide here too instead of silently saying nothing.
+        Some(GeneAxis::Transcriptome | GeneAxis::GeneLevel) | None => {}
+    }
+    validate_alevin_fry_options(&opts, &af_caps, gene_axis, &alevin_fry_info.exe_path)?;
 
     // === Layered resolution: chemistry provides defaults, CLI flags override ===
 
@@ -512,10 +738,13 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
     let collate_duration = collate_start.elapsed();
 
     // === Step 7: Quantify ===
+    // The feature axis is the subcommand: `quant-probe` resolves UMIs over
+    // probes and sums each gene's probes into its count, `quant` resolves over
+    // genes. See `gene_axis_reason`.
     info!("Quantifying...");
     let mut quant_cmd = std::process::Command::new(&alevin_fry_info.exe_path);
     quant_cmd
-        .arg("quant")
+        .arg(if per_probe { "quant-probe" } else { "quant" })
         .arg("-i")
         .arg(&quant_output)
         .arg("-o")
@@ -534,6 +763,16 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
         quant_cmd
             .arg("--small-thresh")
             .arg(small_thresh.to_string());
+    }
+    // Optional outputs, forwarded only when requested; support was checked
+    // before any work started.
+    if opts.dump_molecules {
+        quant_cmd.arg("--dump-molecules");
+    }
+    // Only `quant-probe` defines it, and `validate_alevin_fry_options` has
+    // already refused the combination where this run is not going there.
+    if opts.probe_mtx {
+        quant_cmd.arg("--probe-mtx");
     }
 
     let quant_cmd_str = prog_utils::get_cmd_line_string(&quant_cmd);
@@ -587,6 +826,13 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
         "total_duration_secs": start.elapsed().as_secs_f64(),
         "simpleaf_version": env!("CARGO_PKG_VERSION"),
     });
+    if let Some(outputs) = prog_parsing_utils::requested_quant_outputs(
+        &quant_output,
+        opts.dump_molecules,
+        opts.probe_mtx,
+    ) {
+        meta["quant_outputs"] = outputs;
+    }
     write_multiplex_metadata(output_dir, &quant_output, &meta)?;
 
     if opts.anndata_out {
@@ -1187,6 +1433,7 @@ fn derive_sample_bc_list(
 
 #[cfg(test)]
 mod tests {
+    use super::{GeneAxis, gene_axis_reason, validate_alevin_fry_options};
     use super::{
         derive_sample_bc_list, resolve_user_supplied_index, resolved_sample_bc_orientation,
         t2g_mode,
@@ -1194,6 +1441,7 @@ mod tests {
     use crate::simpleaf_commands::MultiplexQuantOpts;
     use crate::utils::chem_utils::{CustomChemistry, SampleBcListInfo};
     use crate::utils::probe_utils::ProbeT2gMode;
+    use crate::utils::prog_utils::AlevinFryCapabilities;
     use clap::Parser;
     use serde_json::json;
     use std::fs;
@@ -1382,6 +1630,316 @@ GATCCTCT\tGATCCTCT\tBC003
         assert_eq!(
             codec(&["-o", ".", "--compress", "none"]),
             CompressCodec::None
+        );
+    }
+
+    /// What each alevin-fry build offers: the 0.18.3 release has none of
+    /// these, the RAD v2 integration build writes the molecule table but has
+    /// no `quant-probe`, and a build with `quant-probe` has all three.
+    /// `--probe-mtx` lives on `quant-probe`, so it cannot be had without it.
+    fn caps(quant_probe: bool, quant_outputs: bool) -> AlevinFryCapabilities {
+        AlevinFryCapabilities {
+            quant_probe,
+            quant_dump_molecules: quant_outputs,
+            quant_probe_dump_molecules: quant_probe && quant_outputs,
+            probe_mtx: quant_probe && quant_outputs,
+        }
+    }
+
+    /// Every variant, and which one is reported when several apply: the
+    /// reference first, since no flag change rescues it, then the flags that
+    /// force the gene axis, and only then the installed alevin-fry, which is
+    /// the one thing left when everything the user controls is already right.
+    #[test]
+    fn gene_axis_reason_names_what_to_change_first() {
+        let axis = |args: &[&str], af_caps: &AlevinFryCapabilities| {
+            let mut cli = vec!["-o", "."];
+            cli.extend_from_slice(args);
+            gene_axis_reason(&parse_multiplex_quant_opts(&cli), af_caps)
+        };
+        let modern = caps(true, true);
+        let older = caps(false, false);
+
+        assert_eq!(axis(&["--probe-set", "p.csv"], &modern), None);
+        assert_eq!(
+            axis(&["-i", "idx", "-m", "t2g.tsv"], &modern),
+            Some(GeneAxis::Transcriptome)
+        );
+        assert_eq!(axis(&["-i", "idx"], &modern), Some(GeneAxis::UnknownIndex));
+        assert_eq!(
+            axis(&["--probe-set", "p.csv", "--usa"], &modern),
+            Some(GeneAxis::Usa)
+        );
+        assert_eq!(
+            axis(&["--probe-set", "p.csv", "--gene-level"], &modern),
+            Some(GeneAxis::GeneLevel)
+        );
+        assert_eq!(
+            axis(&["--probe-set", "p.csv"], &older),
+            Some(GeneAxis::NoQuantProbe)
+        );
+
+        // Precedence when several apply at once: "drop `--usa`" on a
+        // transcriptome, or "install a newer alevin-fry" on a run that also
+        // passed `--gene-level`, would each be advice that does not help.
+        assert_eq!(
+            axis(
+                &["-i", "idx", "-m", "t2g.tsv", "--usa", "--gene-level"],
+                &older
+            ),
+            Some(GeneAxis::Transcriptome)
+        );
+        assert_eq!(
+            axis(&["-i", "idx", "--usa"], &older),
+            Some(GeneAxis::UnknownIndex)
+        );
+        assert_eq!(
+            axis(&["--probe-set", "p.csv", "--usa", "--gene-level"], &older),
+            Some(GeneAxis::Usa)
+        );
+        assert_eq!(
+            axis(&["--probe-set", "p.csv", "--gene-level"], &older),
+            Some(GeneAxis::GeneLevel)
+        );
+    }
+
+    #[test]
+    fn probe_set_references_are_quantified_per_probe_by_default() {
+        let per_probe = |args: &[&str], af_caps: &AlevinFryCapabilities| {
+            let mut cli = vec!["-o", "."];
+            cli.extend_from_slice(args);
+            gene_axis_reason(&parse_multiplex_quant_opts(&cli), af_caps).is_none()
+        };
+        let modern = caps(true, true);
+        // The chemistry's registered probe set, a probe CSV/FASTA, or a
+        // pre-built index named together with the probe set it was built from.
+        assert!(per_probe(&["-c", "10x-flexv2-gex-3p"], &modern));
+        assert!(per_probe(&["--probe-set", "p.csv"], &modern));
+        assert!(per_probe(&["--probe-set", "p.fa"], &modern));
+        assert!(per_probe(&["-i", "idx", "--probe-set", "p.csv"], &modern));
+        // A pre-built index alone could hold a transcriptome; a t2g map marks one.
+        assert!(!per_probe(&["-i", "idx"], &modern));
+        assert!(!per_probe(&["-i", "idx", "-m", "t2g.tsv"], &modern));
+        assert!(!per_probe(
+            &["--probe-set", "p.csv", "-m", "t2g.tsv"],
+            &modern
+        ));
+        // The two ways to ask for the gene axis on a probe set.
+        assert!(!per_probe(&["--probe-set", "p.csv", "--usa"], &modern));
+        assert!(!per_probe(
+            &["--probe-set", "p.csv", "--gene-level"],
+            &modern
+        ));
+        // Never on an alevin-fry without the subcommand (0.18.3, the RAD v2
+        // integration build): those runs are quantified per gene as before.
+        for af_caps in [caps(false, false), caps(false, true)] {
+            assert!(!per_probe(&["-c", "10x-flexv2-gex-3p"], &af_caps));
+            assert!(!per_probe(&["--probe-set", "p.csv"], &af_caps));
+        }
+    }
+
+    /// A pre-built index counts as a probe set when simpleaf's own metadata
+    /// says so, in every layout `--index` accepts; anything else stays unknown.
+    #[test]
+    fn prebuilt_probe_indices_are_recognised_from_their_metadata() {
+        let axis = |index: &Path, extra: &[&str]| {
+            let index = index.to_str().expect("utf-8 tempdir path");
+            let mut cli = vec!["-o", ".", "-i", index];
+            cli.extend_from_slice(extra);
+            gene_axis_reason(&parse_multiplex_quant_opts(&cli), &caps(true, true))
+        };
+        let td = tempdir().expect("failed to create tempdir");
+
+        // multiplex-quant's probe index: `probe_set_info.json` beside the
+        // `index` prefix, given as the directory or as the prefix.
+        let multiplex = td.path().join("probe_index");
+        fs::create_dir_all(&multiplex).unwrap();
+        fs::write(multiplex.join("probe_set_info.json"), "{}").unwrap();
+        assert_eq!(axis(&multiplex, &[]), None);
+        assert_eq!(axis(&multiplex.join("index"), &[]), None);
+
+        // `simpleaf index --probe-csv`: given as the root, its `index/`
+        // subdirectory, or the `piscem_idx` prefix inside that.
+        let probe_csv = td.path().join("probe_csv_index");
+        fs::create_dir_all(probe_csv.join("index")).unwrap();
+        fs::write(
+            probe_csv.join("index_info.json"),
+            json!({"args": {"probe-csv": "probes.csv"}}).to_string(),
+        )
+        .unwrap();
+        assert_eq!(axis(&probe_csv, &[]), None);
+        assert_eq!(axis(&probe_csv.join("index"), &[]), None);
+        assert_eq!(axis(&probe_csv.join("index").join("piscem_idx"), &[]), None);
+        // A t2g map still marks a transcriptome, whatever the index says.
+        assert_eq!(
+            axis(&probe_csv, &["-m", "t2g.tsv"]),
+            Some(GeneAxis::Transcriptome)
+        );
+
+        // A transcriptome index built by `simpleaf index`, and a directory
+        // with no simpleaf metadata at all, do not say what they hold.
+        let txome = td.path().join("txome_index");
+        fs::create_dir_all(txome.join("index")).unwrap();
+        fs::write(
+            txome.join("index_info.json"),
+            json!({"args": {"fasta": "genome.fa", "gtf": "genes.gtf"}}).to_string(),
+        )
+        .unwrap();
+        assert_eq!(axis(&txome, &[]), Some(GeneAxis::UnknownIndex));
+        assert_eq!(
+            axis(&txome.join("index"), &[]),
+            Some(GeneAxis::UnknownIndex)
+        );
+        let bare = td.path().join("bare");
+        fs::create_dir_all(&bare).unwrap();
+        assert_eq!(axis(&bare, &[]), Some(GeneAxis::UnknownIndex));
+    }
+
+    #[test]
+    fn per_probe_runs_reject_gene_level_resolutions_up_front() {
+        let check = |args: &[&str], af_caps: AlevinFryCapabilities| {
+            let mut cli = vec!["-o", ".", "--probe-set", "p.csv"];
+            cli.extend_from_slice(args);
+            let opts = parse_multiplex_quant_opts(&cli);
+            let axis = gene_axis_reason(&opts, &af_caps);
+            validate_alevin_fry_options(&opts, &af_caps, axis, Path::new("alevin-fry"))
+                .map_err(|e| format!("{e:#}"))
+        };
+        let modern = caps(true, true);
+
+        let err = check(&["-r", "parsimony-gene"], modern).expect_err("must be rejected");
+        assert!(
+            err.contains("Use `--resolution parsimony` instead"),
+            "{err}"
+        );
+        let err = check(&["-r", "parsimony-gene-em"], modern).expect_err("must be rejected");
+        assert!(
+            err.contains("Use `--resolution parsimony-em` instead"),
+            "{err}"
+        );
+        for ok in ["cr-like", "cr-like-em", "parsimony", "parsimony-em"] {
+            assert!(
+                check(&["-r", ok], modern).is_ok(),
+                "{ok} should be accepted"
+            );
+        }
+
+        // The refusal belongs to the probe axis alone. `--usa`, `--gene-level`
+        // and an alevin-fry without `quant-probe` all stay on the gene axis,
+        // where these resolutions are what they have always been.
+        assert!(check(&["-r", "parsimony-gene", "--usa"], modern).is_ok());
+        assert!(check(&["-r", "parsimony-gene", "--gene-level"], modern).is_ok());
+        assert!(check(&["-r", "parsimony-gene"], caps(false, true)).is_ok());
+    }
+
+    #[test]
+    fn optional_quant_outputs_need_an_alevin_fry_that_has_them() {
+        let check = |args: &[&str], af_caps: AlevinFryCapabilities| {
+            let mut cli = vec!["-o", "."];
+            cli.extend_from_slice(args);
+            let opts = parse_multiplex_quant_opts(&cli);
+            let axis = gene_axis_reason(&opts, &af_caps);
+            validate_alevin_fry_options(&opts, &af_caps, axis, Path::new("/opt/af/alevin-fry"))
+                .map_err(|e| format!("{e:#}"))
+        };
+
+        // Not requested: no requirement on alevin-fry (0.18.3 keeps working).
+        assert!(check(&["--probe-set", "p.csv"], caps(false, false)).is_ok());
+        assert!(check(&["-i", "idx", "-m", "t2g.tsv"], caps(false, false)).is_ok());
+
+        // Requested from an alevin-fry that lacks them.
+        let err = check(
+            &["--probe-set", "p.csv", "--dump-molecules"],
+            caps(false, false),
+        )
+        .expect_err("--dump-molecules must need alevin-fry support");
+        assert!(
+            err.contains("`/opt/af/alevin-fry quant --help` does not list it"),
+            "{err}"
+        );
+        let err = check(&["--probe-set", "p.csv", "--probe-mtx"], caps(false, false))
+            .expect_err("--probe-mtx must need the quant-probe subcommand");
+        assert!(err.contains("has no `quant-probe` subcommand"), "{err}");
+
+        // Requested from a build that has them.
+        let modern = caps(true, true);
+        assert!(
+            check(
+                &["--probe-set", "p.csv", "--dump-molecules", "--probe-mtx"],
+                modern
+            )
+            .is_ok()
+        );
+        assert!(check(&["-c", "10x-flexv2-gex-3p", "--probe-mtx"], modern).is_ok());
+        // The molecule table depends on neither the reference nor the axis.
+        for af_caps in [modern, caps(false, true)] {
+            assert!(check(&["-i", "idx", "-m", "t2g.tsv", "--dump-molecules"], af_caps).is_ok());
+        }
+
+        // `--probe-mtx` says which of the four reasons put this run on `quant`,
+        // since three of them are the user's own flags.
+        let cases: [(&[&str], &str); 4] = [
+            (&["--probe-set", "p.csv", "--usa"], "`--usa` runs `quant`"),
+            (
+                &["--probe-set", "p.csv", "--gene-level"],
+                "`--gene-level` runs `quant`",
+            ),
+            (
+                &["-i", "idx", "-m", "t2g.tsv"],
+                "`--t2g-map` marks a transcriptome reference",
+            ),
+            (
+                &["-i", "idx"],
+                "pass the probe set the index was built from",
+            ),
+        ];
+        for (args, expected) in cases {
+            let mut cli = args.to_vec();
+            cli.push("--probe-mtx");
+            let err = check(&cli, modern).expect_err("--probe-mtx needs a per-probe run");
+            assert!(err.contains(expected), "expected {expected:?} in: {err}");
+        }
+
+        // The molecule table is checked against the subcommand the run will
+        // invoke: here `quant` lists it and `quant-probe` does not, so the
+        // same flag passes on the gene axis and fails on the probe axis.
+        let probe_axis_without_molecules = AlevinFryCapabilities {
+            quant_probe: true,
+            quant_dump_molecules: true,
+            quant_probe_dump_molecules: false,
+            probe_mtx: true,
+        };
+        assert!(
+            check(
+                &["-i", "idx", "-m", "t2g.tsv", "--dump-molecules"],
+                probe_axis_without_molecules
+            )
+            .is_ok()
+        );
+        let err = check(
+            &["--probe-set", "p.csv", "--dump-molecules"],
+            probe_axis_without_molecules,
+        )
+        .expect_err("--dump-molecules must be listed by the subcommand that runs");
+        assert!(
+            err.contains("`/opt/af/alevin-fry quant-probe --help` does not list it"),
+            "{err}"
+        );
+
+        // A build whose `quant-probe` does not list `--probe-mtx`.
+        let err = check(
+            &["--probe-set", "p.csv", "--probe-mtx"],
+            AlevinFryCapabilities {
+                quant_probe: true,
+                quant_dump_molecules: true,
+                quant_probe_dump_molecules: true,
+                probe_mtx: false,
+            },
+        )
+        .expect_err("--probe-mtx must be listed by quant-probe");
+        assert!(
+            err.contains("`/opt/af/alevin-fry quant-probe --help` does not list it"),
+            "{err}"
         );
     }
 

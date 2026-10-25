@@ -148,7 +148,11 @@ Reference Options:
           Resolve expression separately into spliced and unspliced counts (USA mode). Requires
           splicing-aware probe annotations: either a probe CSV with a `region` column (`spliced` /
           `unspliced`) or a pre-built index with an adjacent 3-column t2g file. By default,
-          expression is grouped at the gene level
+          expression is grouped at the gene level.
+
+          USA mode resolves over genes, so a probe-set reference is quantified by `quant` rather
+          than per probe by `quant-probe`, which rejects a 3-column map. `--probe-mtx` is therefore
+          not available with `--usa`.
 
       --sample-bc-list <SAMPLE_BC_LIST>
           Path to sample/probe barcode file with rotation mapping (overrides auto-download).
@@ -163,8 +167,24 @@ Reference Options:
           combined with --sample-bc-list
 
 Quantification Options:
+      --gene-level
+          Quantify per gene with alevin-fry's `quant`, even for a probe-set reference, which is
+          otherwise quantified per probe by `quant-probe`.
+
+          Counts differ slightly between the two. Over probes, a UMI whose reads do not single out
+          one probe of its gene (they tie between two of its probes, or every read matches both) has
+          no winning probe: `cr-like` drops it and the EM strategies divide it between those probes,
+          while the gene axis counts it once. Pass this to reproduce a run made before per-probe
+          quantification became the default. `--probe-mtx` is not available with it, since only
+          `quant-probe` writes that matrix.
+
   -r, --resolution <RESOLUTION>
           UMI resolution mode
+
+          `parsimony-gene` and `parsimony-gene-em` build equivalence classes with reads already
+          projected to genes, so no per-probe assignment survives to sum. They are not available
+          where a probe-set reference is quantified per probe: use `parsimony` or `parsimony-em`, or
+          pass `--gene-level`.
 
           [default: cr-like]
           [possible values: cr-like, cr-like-em, parsimony, parsimony-em, parsimony-gene,
@@ -228,3 +248,21 @@ Output Options:
       --anndata-out
           Generate an anndata (h5ad format) count matrix from the standard (matrix-market format)
           output
+
+      --dump-molecules
+          Also write alevin-fry's molecule table (`alevin/molecules.parquet`): one row per resolved
+          molecule (cell barcode, UMI, feature, supporting reads, status), before molecules are
+          summed into the count matrix.
+
+          Requires an alevin-fry whose `quant` has `--dump-molecules`; simpleaf checks this before
+          any work starts.
+
+      --probe-mtx
+          Also write the probe x cell count matrix that the gene matrix is summed from
+          (`alevin/probe_quants_mat.mtx`, with its row and column files).
+
+          Only a run quantified per probe has one, so this needs a probe-set reference (the
+          chemistry's registered probe set, `--probe-set`, or a pre-built `--index` that simpleaf
+          built from a probe CSV; not `--t2g-map`), neither `--usa` nor `--gene-level`, and an
+          alevin-fry whose `quant-probe` has `--probe-mtx`. simpleaf checks all of these before any
+          work starts.
