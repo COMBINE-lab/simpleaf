@@ -128,6 +128,8 @@ pub fn download_to_file_compute_hash<T: AsRef<str>>(
     Ok(hasher.finalize())
 }
 
+/// Downloads `url` to `file_path`. The file appears under `file_path` only once
+/// the download is complete (see [`write_to_file_atomically`]).
 pub fn download_to_file<T: AsRef<str>>(url: T, file_path: &Path) -> Result<()> {
     let url = url.as_ref();
 
@@ -148,10 +150,9 @@ pub fn download_to_file<T: AsRef<str>>(url: T, file_path: &Path) -> Result<()> {
         Ok(mut response) => {
             if response.status().is_success() {
                 let mut req = response.body_mut().as_reader();
-                let f = std::fs::File::create(file_path)
-                    .with_context(|| format!("could not create file {}", file_path.display()))?;
-                let mut ofile = std::io::BufWriter::new(f);
-                std::io::copy(&mut req, &mut ofile)?;
+                write_to_file_atomically(&mut req, file_path).with_context(|| {
+                    format!("could not save {} to {}", url, file_path.display())
+                })?;
             } else {
                 // A non-success HTTP status (404, 403, rate-limit, 5xx, ...)
                 // must be a hard error: otherwise this function returns Ok(())
@@ -173,6 +174,60 @@ pub fn download_to_file<T: AsRef<str>>(url: T, file_path: &Path) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// Writes everything `reader` yields to `file_path`, such that `file_path`
+/// never holds partial content.
+///
+/// The bytes go to a uniquely named temporary file in the directory of
+/// `file_path` (`.<file name>.<random>.part`), which is renamed over
+/// `file_path` only once the copy and the final flush have succeeded. On an
+/// error the temporary file is removed and `file_path` is left as it was.
+/// Writing in place instead leaves a truncated file under the final name when
+/// a download is cut short, and the callers of [`download_to_file`] treat an
+/// existing file as a complete, cached download. The unique name also keeps
+/// concurrent runs that share an `ALEVIN_FRY_HOME` from writing into one file.
+fn write_to_file_atomically<R: std::io::Read + ?Sized>(
+    reader: &mut R,
+    file_path: &Path,
+) -> Result<()> {
+    let dir = match file_path.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d,
+        _ => Path::new("."),
+    };
+    let file_name = file_path
+        .file_name()
+        .map_or_else(|| "download".into(), |n| n.to_string_lossy());
+    let prefix = format!(".{}.", file_name);
+
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(&prefix).suffix(".part");
+    // Temporary files are created owner-only (0o600); ask for the mode that
+    // `File::create` used (0o666, less the umask) so the renamed file is as
+    // readable as before, e.g. in an `ALEVIN_FRY_HOME` shared by a group.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(std::fs::Permissions::from_mode(0o666));
+    }
+    let tmp = builder
+        .tempfile_in(dir)
+        .with_context(|| format!("could not create a temporary file in {}", dir.display()))?;
+
+    let mut ofile = std::io::BufWriter::new(tmp);
+    std::io::copy(reader, &mut ofile)?;
+    // Flush explicitly: dropping a `BufWriter` discards the error of its final
+    // flush (e.g. a full disk), which would let a truncated file through.
+    let tmp = ofile.into_inner().map_err(|e| e.into_error())?;
+    tmp.persist(file_path)
+        .map_err(|e| e.error)
+        .with_context(|| {
+            format!(
+                "could not move the temporary file into place at {}",
+                file_path.display()
+            )
+        })?;
     Ok(())
 }
 
@@ -639,6 +694,106 @@ mod tests {
             macs: None,
         };
         assert!(ensure_alevin_fry_version(&none).is_err());
+    }
+
+    /// Yields `data` and then fails, like a connection dropped mid-download.
+    struct CutShortReader {
+        data: &'static [u8],
+    }
+
+    impl std::io::Read for CutShortReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.data.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionReset,
+                    "peer disconnected",
+                ));
+            }
+            let n = buf.len().min(self.data.len());
+            buf[..n].copy_from_slice(&self.data[..n]);
+            self.data = &self.data[n..];
+            Ok(n)
+        }
+    }
+
+    fn dir_entries(dir: &std::path::Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(dir)
+            .expect("failed to read dir")
+            .map(|e| {
+                e.expect("bad dir entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn write_to_file_atomically_writes_content_and_leaves_no_temp_file() {
+        let td = tempdir().expect("failed to create tempdir");
+        let dest = td.path().join("list.txt");
+        let content = b"AAAC\nAAAG\nAAAT\n";
+        super::write_to_file_atomically(&mut &content[..], &dest).expect("write should succeed");
+        assert_eq!(fs::read(&dest).expect("failed to read dest"), content);
+        assert_eq!(dir_entries(td.path()), vec!["list.txt".to_string()]);
+
+        // an existing file is replaced, as `File::create` truncated it before
+        super::write_to_file_atomically(&mut &b"AAAC\n"[..], &dest)
+            .expect("overwrite should succeed");
+        assert_eq!(fs::read(&dest).expect("failed to read dest"), b"AAAC\n");
+        assert_eq!(dir_entries(td.path()), vec!["list.txt".to_string()]);
+    }
+
+    #[test]
+    fn write_to_file_atomically_leaves_nothing_when_the_reader_fails() {
+        let td = tempdir().expect("failed to create tempdir");
+        let dest = td.path().join("list.txt");
+        let mut reader = CutShortReader {
+            data: b"AAAC\nAAAG\nAA",
+        };
+        let err = super::write_to_file_atomically(&mut reader, &dest)
+            .expect_err("a reader error must fail the write");
+        assert!(
+            format!("{:#}", err).contains("peer disconnected"),
+            "unexpected error: {:#}",
+            err
+        );
+        // neither the partial content nor the temporary file is left behind
+        assert!(!dest.exists());
+        assert!(dir_entries(td.path()).is_empty());
+    }
+
+    #[test]
+    fn write_to_file_atomically_keeps_the_previous_file_when_the_reader_fails() {
+        let td = tempdir().expect("failed to create tempdir");
+        let dest = td.path().join("list.txt");
+        fs::write(&dest, b"previous\n").expect("failed to write previous file");
+        let mut reader = CutShortReader { data: b"new con" };
+        super::write_to_file_atomically(&mut reader, &dest).expect_err("a reader error must fail");
+        assert_eq!(fs::read(&dest).expect("failed to read dest"), b"previous\n");
+        assert_eq!(dir_entries(td.path()), vec!["list.txt".to_string()]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_to_file_atomically_uses_the_file_create_mode() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let td = tempdir().expect("failed to create tempdir");
+        let dest = td.path().join("list.txt");
+        super::write_to_file_atomically(&mut &b"AAAC\n"[..], &dest).expect("write should succeed");
+        let reference = td.path().join("reference.txt");
+        fs::File::create(&reference).expect("failed to create reference file");
+        let mode = |p: &std::path::Path| {
+            fs::metadata(p)
+                .expect("failed to stat")
+                .permissions()
+                .mode()
+                & 0o777
+        };
+        assert_eq!(mode(&dest), mode(&reference));
     }
 
     #[test]
