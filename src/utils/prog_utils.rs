@@ -12,7 +12,7 @@ use tracing::{debug, error, info, warn};
 use ureq::ResponseExt;
 use which::which;
 
-use file_requirements::{FileRequirementBuildError, FileRequirementBuilder};
+use file_requirements::{FileRequirement, FileRequirementBuildError, FileRequirementBuilder};
 
 /// The versions of the external programs this release of simpleaf requires.
 ///
@@ -567,41 +567,414 @@ pub fn check_files_exist(file_vec: &[PathBuf]) -> Result<()> {
         .map_err(|e| anyhow!("Required input files were missing; cannot proceed! {}", e))
 }
 
-/// Check that a piscem index base contains all required files for either supported
-/// on-disk layout:
+/// The path of the piscem index artifact `<prefix>.<ext>`, formed by appending
+/// `.<ext>` to the whole prefix, the way piscem names index files.
+///
+/// Unlike [`Path::with_extension`], this keeps a dotted prefix intact:
+/// `idx/gencode.v49` gives `idx/gencode.v49.ssi`, not `idx/gencode.ssi`. For a
+/// prefix with no dot in its last component, such as simpleaf's own
+/// `piscem_idx`, the two give the same path.
+///
+/// This is `Path::with_added_extension` (Rust 1.91), spelled out to keep the
+/// 1.89 floor: a trailing separator is dropped, and a prefix that names no
+/// file (empty, `/`, `.`, `..`) is returned unchanged.
+pub fn index_artifact_path(prefix: &Path, ext: &str) -> PathBuf {
+    let Some(name) = prefix.file_name() else {
+        return prefix.to_path_buf();
+    };
+    let mut name = name.to_os_string();
+    name.push(".");
+    name.push(ext);
+    prefix.with_file_name(name)
+}
+
+/// Extensions of the core files of a piscem index: the files piscem-rs's
+/// `build` writes, plus the C++ `.sshash` that [`piscem_index_requirement`]
+/// still accepts. piscem built on piscem-rs 0.11.0 or earlier named these by
+/// replacing the prefix's last suffix; the poison table and signatures were
+/// always appended.
+const PISCEM_CORE_EXTS: [&str; 8] = [
+    "ssi", "ssi.mphf", "ctab", "refinfo", "ectab", "tdct", "tct", "sshash",
+];
+
+/// Extensions that, ending a prefix, name one of the index's own files
+/// (`-i idx/piscem_idx.ssi` for the index at `idx/piscem_idx`): piscem-rs's
+/// list, plus the C++ `.sshash`.
+const PISCEM_FILE_NAME_EXTS: [&str; 8] = [
+    "ssi", "ctab", "refinfo", "ectab", "tdct", "tct", "poison", "sshash",
+];
+
+/// The required piscem index files, for either supported on-disk layout:
 ///
 /// 1. C++ layout: includes `<base>.sshash`
 /// 2. Rust layout: includes both `<base>.ssi` and `<base>.ssi.mphf`
 ///
 /// In both cases the common files must exist (`.ctab` and `.refinfo`).
-pub fn check_piscem_index_files(index_base: &Path) -> Result<()> {
+/// `artifact` maps an extension to the file that carries it.
+fn piscem_index_requirement(artifact: impl Fn(&str) -> PathBuf) -> Result<FileRequirement> {
     let mut builder = FileRequirementBuilder::new();
     builder
         .require_all(|all| {
-            all.require_file(index_base.with_extension("ctab"))?;
-            all.require_file(index_base.with_extension("refinfo"))?;
+            all.require_file(artifact("ctab"))?;
+            all.require_file(artifact("refinfo"))?;
             Ok(())
         })
         .map_err(map_file_requirement_build_err)?;
     builder
         .require_any(|any| {
-            any.require_file(index_base.with_extension("sshash"))?;
+            any.require_file(artifact("sshash"))?;
             any.require_all(|rust_all| {
-                rust_all.require_file(index_base.with_extension("ssi"))?;
-                rust_all.require_file(index_base.with_extension("ssi.mphf"))?;
+                rust_all.require_file(artifact("ssi"))?;
+                rust_all.require_file(artifact("ssi.mphf"))?;
                 Ok(())
             })?;
             Ok(())
         })
         .map_err(map_file_requirement_build_err)?;
+    Ok(builder.build())
+}
 
-    builder.build().check().map_err(|e| {
+/// Check that a piscem index base contains all required files (see
+/// [`piscem_index_requirement`]) at `<base>.<ext>` ([`index_artifact_path`]).
+///
+/// For a prefix with an extension, the files at the replaced-suffix paths
+/// (`idx/gencode.v49` -> `idx/gencode.ssi`, what `with_extension` gives) are
+/// accepted instead in two cases, following the rule piscem-rs 0.11.1 uses to
+/// resolve a prefix:
+///
+/// - the prefix names one of the index's files (`idx/piscem_idx.ssi`), or
+/// - the index was built by piscem on piscem-rs 0.11.0 or earlier, which named
+///   its core files that way. This is used only when no core file exists at
+///   the appended paths, so the two layouts are never mixed, and it logs a
+///   warning, since prefixes that differ only after the last dot share those
+///   names.
+///
+/// A dotted prefix with complete files under both rules is accepted at the
+/// appended paths, with a warning: piscem on piscem-rs 0.11.0 or earlier reads
+/// the other set, and one of the two may belong to another index.
+///
+/// For a prefix without an extension both rules name the same files, so the
+/// files checked, the outcome and the error are those `with_extension` gave.
+pub fn check_piscem_index_files(index_base: &Path) -> Result<()> {
+    if let Some(warning) = piscem_index_files_warning(index_base)? {
+        warn!("{warning}");
+    }
+    Ok(())
+}
+
+/// [`check_piscem_index_files`], returning the warning about the accepted
+/// files (if any) instead of logging it.
+fn piscem_index_files_warning(index_base: &Path) -> Result<Option<String>> {
+    let missing = |e: &dyn std::fmt::Display, note: &str| {
         anyhow!(
-            "Required piscem index files were missing or incomplete for base {}. {}",
+            "Required piscem index files were missing or incomplete for base {}. {}{}",
             index_base.display(),
-            e
+            e,
+            note
         )
-    })
+    };
+    let appended = |ext: &str| index_artifact_path(index_base, ext);
+    let appended_check = piscem_index_requirement(appended)?.check();
+    if index_base.extension().is_none() {
+        return appended_check.map(|()| None).map_err(|e| missing(&e, ""));
+    }
+
+    let replaced = |ext: &str| index_base.with_extension(ext);
+    let replaced_check = piscem_index_requirement(replaced)?.check();
+    let (new_ssi, old_ssi) = (appended("ssi"), replaced("ssi"));
+    let e = match appended_check {
+        Ok(()) if replaced_check.is_ok() => {
+            return Ok(Some(format!(
+                "Found complete piscem index files for prefix {} under both naming rules: {}, \
+                 ... (appended to the whole prefix) and {}, ... (its last suffix replaced). \
+                 Checked the first set, which piscem built on piscem-rs 0.11.1 or later loads; \
+                 piscem built on piscem-rs 0.11.0 or earlier loads the second. One set may \
+                 belong to another index in this directory: piscem built on piscem-rs 0.11.0 \
+                 or earlier also writes the first set for an index at {}.<suffix>. Make sure \
+                 the piscem you run loads the index you intend.",
+                index_base.display(),
+                new_ssi.display(),
+                old_ssi.display(),
+                index_base.display()
+            )));
+        }
+        Ok(()) => return Ok(None),
+        Err(e) => e,
+    };
+
+    let names_index_file = index_base
+        .extension()
+        .and_then(OsStr::to_str)
+        .is_some_and(|ext| PISCEM_FILE_NAME_EXTS.contains(&ext));
+    let any_core_file = |artifact: &dyn Fn(&str) -> PathBuf| {
+        PISCEM_CORE_EXTS.iter().any(|ext| artifact(ext).exists())
+    };
+    match replaced_check {
+        Ok(()) if names_index_file => Ok(None),
+        Ok(()) if !any_core_file(&appended) => Ok(Some(format!(
+            "Using the piscem index for prefix {} from files named by replacing the prefix's \
+             last suffix ({} rather than {}), the layout written by piscem built on piscem-rs \
+             0.11.0 or earlier. In that layout, indexes built in the same directory at prefixes \
+             that differ only after the last dot overwrite each other's files, so make sure \
+             these files belong to this index. piscem built on piscem-rs 0.11.1 or later \
+             appends to the whole prefix instead; rebuilding the index with it gives the index \
+             its own file names.",
+            index_base.display(),
+            old_ssi.display(),
+            new_ssi.display()
+        ))),
+        Err(old_e) if !any_core_file(&appended) && any_core_file(&replaced) => Err(anyhow!(
+            "Required piscem index files were missing or incomplete for base {}, under the \
+             names formed by replacing its last suffix (the layout written by piscem built on \
+             piscem-rs 0.11.0 or earlier), since none of its core files exist under the \
+             appended names (e.g. {}). {}",
+            index_base.display(),
+            new_ssi.display(),
+            old_e
+        )),
+        _ => Err(missing(
+            &e,
+            &format!(
+                " piscem built on piscem-rs 0.11.0 or earlier names an index's core files by \
+                 replacing the prefix's last suffix instead (e.g. {}); those names are used \
+                 only when none of the core files exist under the appended names (e.g. {}).",
+                old_ssi.display(),
+                new_ssi.display()
+            ),
+        )),
+    }
+}
+
+// Kept apart from `mod tests` at the end of the file so that these tests sit
+// next to the code they cover, and so that edits to the two modules do not
+// conflict.
+#[cfg(test)]
+mod index_artifact_path_tests {
+    use super::{
+        check_piscem_index_files, index_artifact_path, piscem_index_files_warning,
+        piscem_index_requirement,
+    };
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use tempfile::tempdir;
+
+    const RUST_LAYOUT: [&str; 4] = ["ctab", "refinfo", "ssi", "ssi.mphf"];
+    const CPP_LAYOUT: [&str; 3] = ["ctab", "refinfo", "sshash"];
+
+    fn touch_all(paths: impl IntoIterator<Item = PathBuf>) {
+        for p in paths {
+            fs::write(&p, "").unwrap_or_else(|e| panic!("failed to write {}: {e}", p.display()));
+        }
+    }
+
+    fn shown(p: &Path) -> String {
+        p.display().to_string()
+    }
+
+    #[test]
+    fn appends_to_the_whole_prefix() {
+        let p = Path::new("idx/gencode.v49");
+        assert_eq!(
+            index_artifact_path(p, "ssi"),
+            Path::new("idx/gencode.v49.ssi")
+        );
+        assert_eq!(
+            index_artifact_path(p, "ssi.mphf"),
+            Path::new("idx/gencode.v49.ssi.mphf")
+        );
+        assert_eq!(
+            index_artifact_path(p, "poison.json"),
+            Path::new("idx/gencode.v49.poison.json")
+        );
+    }
+
+    // Undotted prefixes (simpleaf's own `piscem_idx`, the probe cache's `index`)
+    // must keep resolving to exactly the paths `with_extension` gave, and so
+    // must prefixes that name no file at all.
+    #[test]
+    fn matches_with_extension_for_undotted_prefixes() {
+        for prefix in [
+            "piscem_idx",
+            "out/index/piscem_idx",
+            "/abs/my.dir/piscem_idx",
+            "./index",
+            "out/piscem_idx/",
+            ".hidden",
+            "",
+            ".",
+            "..",
+            "/",
+        ] {
+            let prefix = Path::new(prefix);
+            for ext in [
+                "ctab",
+                "refinfo",
+                "sshash",
+                "ssi",
+                "ssi.mphf",
+                "poison.json",
+            ] {
+                assert_eq!(
+                    index_artifact_path(prefix, ext),
+                    prefix.with_extension(ext),
+                    "prefix {} ext {ext}",
+                    prefix.display()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn appended_layout_is_accepted_without_warning() {
+        for name in ["gencode.v49", "piscem_idx"] {
+            let td = tempdir().expect("failed to create tempdir");
+            let base = td.path().join(name);
+            touch_all(RUST_LAYOUT.map(|ext| index_artifact_path(&base, ext)));
+            let warning =
+                piscem_index_files_warning(&base).unwrap_or_else(|e| panic!("{name}: {e:#}"));
+            assert_eq!(warning, None, "{name}");
+        }
+    }
+
+    #[test]
+    fn dotted_prefix_accepts_legacy_replaced_layout_with_warning() {
+        let td = tempdir().expect("failed to create tempdir");
+        let base = td.path().join("gencode.v49");
+        touch_all(RUST_LAYOUT.map(|ext| base.with_extension(ext)));
+        // Older piscem already appended these, so a legacy index has them here.
+        touch_all([index_artifact_path(&base, "sigs.json")]);
+        let warning = piscem_index_files_warning(&base)
+            .expect("legacy replaced layout should be accepted")
+            .expect("the legacy layout should be warned about");
+        for part in [
+            shown(&base.with_extension("ssi")),
+            "written by piscem built on piscem-rs 0.11.0 or earlier".to_string(),
+            "piscem built on piscem-rs 0.11.1 or later".to_string(),
+        ] {
+            assert!(warning.contains(&part), "missing {part:?} in: {warning}");
+        }
+        check_piscem_index_files(&base).expect("legacy replaced layout should be accepted");
+    }
+
+    // `-i idx/piscem_idx.ssi` names a file of the index at `idx/piscem_idx`;
+    // `with_extension` accepted that, and piscem resolves it the same way. The
+    // stray file under the appended names rules out the legacy fallback, so
+    // only the names-a-file rule can accept these.
+    #[test]
+    fn prefix_naming_an_index_file_is_accepted() {
+        for (layout, named) in [(&RUST_LAYOUT[..], "ssi"), (&CPP_LAYOUT[..], "sshash")] {
+            let td = tempdir().expect("failed to create tempdir");
+            let base = td.path().join("piscem_idx");
+            let prefix = base.with_extension(named);
+            touch_all(layout.iter().map(|ext| index_artifact_path(&base, ext)));
+            touch_all([index_artifact_path(&prefix, "ctab")]);
+            let warning = piscem_index_files_warning(&prefix)
+                .unwrap_or_else(|e| panic!("{}: {e:#}", prefix.display()));
+            assert_eq!(warning, None, "{}", prefix.display());
+        }
+    }
+
+    #[test]
+    fn dotted_prefix_does_not_mix_layouts() {
+        let td = tempdir().expect("failed to create tempdir");
+        let base = td.path().join("gencode.v49");
+        touch_all(RUST_LAYOUT.map(|ext| base.with_extension(ext)));
+        // A partial index at the appended names (e.g. an interrupted rebuild)
+        // takes precedence over the complete legacy one.
+        touch_all([index_artifact_path(&base, "ctab")]);
+        let err = check_piscem_index_files(&base).expect_err("mixed layouts must fail");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("gencode.v49.ssi.mphf"),
+            "unexpected error: {msg}"
+        );
+        assert!(
+            msg.contains("piscem built on piscem-rs 0.11.0 or earlier"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn dotted_prefix_missing_reports_both_layouts() {
+        let td = tempdir().expect("failed to create tempdir");
+        let base = td.path().join("gencode.v49");
+        let err = check_piscem_index_files(&base).expect_err("missing index must fail");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("Required piscem index files were missing or incomplete"),
+            "unexpected error: {msg}"
+        );
+        assert!(
+            msg.contains("gencode.v49.refinfo"),
+            "unexpected error: {msg}"
+        );
+        assert!(msg.contains("gencode.ssi"), "unexpected error: {msg}");
+    }
+
+    // An incomplete index from piscem on piscem-rs <= 0.11.0 is reported by the
+    // files missing under its own names, as the check did before.
+    #[test]
+    fn dotted_prefix_incomplete_legacy_reports_legacy_files() {
+        let td = tempdir().expect("failed to create tempdir");
+        let base = td.path().join("gencode.v49");
+        touch_all(["ctab", "refinfo", "ssi"].map(|ext| base.with_extension(ext)));
+        let msg = format!("{:#}", check_piscem_index_files(&base).unwrap_err());
+        let legacy_err = piscem_index_requirement(|ext| base.with_extension(ext))
+            .expect("requirement should build")
+            .check()
+            .expect_err("legacy layout is incomplete");
+        assert!(
+            msg.ends_with(&legacy_err.to_string()),
+            "unexpected error: {msg}"
+        );
+        assert!(
+            msg.contains(&shown(&base.with_extension("ssi.mphf"))),
+            "unexpected error: {msg}"
+        );
+        assert!(
+            !msg.contains(&shown(&index_artifact_path(&base, "refinfo"))),
+            "unexpected error: {msg}"
+        );
+    }
+
+    // Released piscem built `human.splici` (files `human.*`) and
+    // `human.splici.k23` (files `human.splici.*`). For `human.splici` the
+    // second index sits under the appended names; it is accepted there, as
+    // piscem-rs 0.11.1 resolves it, but not silently.
+    #[test]
+    fn dotted_prefix_with_both_layouts_warns() {
+        let td = tempdir().expect("failed to create tempdir");
+        let base = td.path().join("human.splici");
+        touch_all(RUST_LAYOUT.map(|ext| base.with_extension(ext)));
+        let nested = td.path().join("human.splici.k23");
+        touch_all(RUST_LAYOUT.map(|ext| nested.with_extension(ext)));
+        let warning = piscem_index_files_warning(&base)
+            .expect("the appended layout should be accepted")
+            .expect("finding both layouts should be warned about");
+        for part in [
+            "under both naming rules".to_string(),
+            shown(&index_artifact_path(&base, "ssi")),
+            shown(&base.with_extension("ssi")),
+        ] {
+            assert!(warning.contains(&part), "missing {part:?} in: {warning}");
+        }
+    }
+
+    #[test]
+    fn undotted_prefix_error_is_unchanged() {
+        let td = tempdir().expect("failed to create tempdir");
+        let base = td.path().join("piscem_idx");
+        touch_all(["ctab", "refinfo", "ssi"].map(|ext| base.with_extension(ext)));
+        let msg = format!("{:#}", check_piscem_index_files(&base).unwrap_err());
+        let expected_prefix = format!(
+            "Required piscem index files were missing or incomplete for base {}. \
+             Required input files were missing or incomplete (missing files: {}",
+            base.display(),
+            base.with_extension("sshash").display()
+        );
+        assert!(msg.starts_with(&expected_prefix), "unexpected error: {msg}");
+        assert!(!msg.contains("piscem-rs"), "unexpected error: {msg}");
+    }
 }
 
 fn map_file_requirement_build_err(err: FileRequirementBuildError) -> anyhow::Error {
