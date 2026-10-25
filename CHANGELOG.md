@@ -4,7 +4,7 @@
 > (2024-07-01); releases 0.18.0 through 0.26.2 are not recorded here. See the
 > git history and the GitHub releases page for that range.
 
-## [Unreleased]
+## [0.31.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.30.0...v0.31.0) (2026-10-25)
 
 ### Breaking changes
 
@@ -15,49 +15,52 @@
   after mapping has finished. alevin-fry 0.19.0 is the first release that reads
   RAD v2, and it still reads RAD v1, so mapped directories from earlier runs
   (`quant --map-dir`) keep working. `set-paths` rejects older binaries, and
-  `quant`, `multiplex-quant` and `atac process` check the registered alevin-fry
-  before mapping, so a home registered by an earlier simpleaf with alevin-fry
-  0.18.x fails at once, with an actionable message. Upgrade both tools together;
+  `quant`, `multiplex-quant` and `atac process` check both registered tools
+  (`index` and `atac index` check piscem) before any work, so a home registered
+  by an earlier simpleaf with piscem 0.23 or alevin-fry 0.18.x fails at once,
+  with an actionable message. Upgrade both tools together;
   `simpleaf_conda_env.yml` and CI use the same floors.
 * **Rebuild every index.** piscem 0.24.0 changes the index format again
   (sshash-lib 0.8 MPHF; contig and EC tables `PCTAB04`/`PECTB04`; poison tables
-  `PPOIS02`), incompatibly in both directions: piscem 0.24 stops on a
-  0.23-built index with an "unsupported ... format ... must be rebuilt" error
-  (through simpleaf it can start with `failed to load <prefix>.ectab`, with the
-  rebuild message on the `Caused by` line), and piscem 0.23 cannot read
-  0.24-built indexes. Rebuild with `simpleaf index` or `simpleaf atac index`.
-  This includes the Flex probe indexes that `multiplex-quant` caches under
-  `$ALEVIN_FRY_HOME/probe_indices`: delete that directory to have them rebuilt
-  (see also the probe-index cache entry below).
-  Requiring piscem 0.24 keeps the piscem that builds an index and the piscem
-  that maps against it format-consistent, and makes the excluded-probe decoy
-  default (below) cost almost no mapping time.
-* **Flex gene
-  counts now come from per-probe resolution.** `multiplex-quant` quantifies a
-  probe-set reference with alevin-fry's `quant-probe`, which resolves UMIs over
-  the probes the reads hit and sums each gene's probes into its count. A
-  probe-set reference is the chemistry's registered probe set, `--probe-set`, or
-  a pre-built `--index` that simpleaf built from a probe CSV. Counts differ
-  slightly from earlier releases: a UMI whose reads do not single out one probe
-  of its gene (a tie between two of its probes, or reads that match both) is
-  dropped by `cr-like` and divided between the probes by the EM strategies,
-  where the gene axis counted it once. Pass the new `--gene-level` to resolve
-  over genes with `quant` and reproduce earlier counts exactly. `--usa` keeps
-  working as before: it also runs `quant`, over the 3-column map. `--t2g-map`
-  (transcriptome) runs and pre-built indices that do not say what they hold
-  stay on `quant` too, the latter with a log line. `-r parsimony-gene` and
-  `parsimony-gene-em` cannot be resolved per probe and are refused before any
-  work, pointing at `parsimony` / `parsimony-em` or `--gene-level`.
+  `PPOIS02`), incompatibly in both directions: piscem 0.24 stops on a 0.23-built
+  index with an "unsupported ... format ... must be rebuilt" error (through
+  simpleaf it can start with `failed to load <prefix>.ectab`, with the rebuild
+  message on the `Caused by` line), and piscem 0.23 cannot read 0.24-built
+  indexes. Rebuild with `simpleaf index` or `simpleaf atac index`. The Flex
+  probe indexes that `multiplex-quant` caches under
+  `$ALEVIN_FRY_HOME/probe_indices` are rebuilt automatically on first use (see
+  the probe-index cache entry below); delete that directory only if the cache is
+  read-only to the user running simpleaf. Requiring piscem 0.24 keeps the piscem
+  that builds an index and the piscem that maps against it format-consistent,
+  and makes the excluded-probe decoy default (below) cost almost no mapping
+  time.
+* **Flex gene counts now come from per-probe resolution.** `multiplex-quant`
+  quantifies a probe-set reference with alevin-fry's `quant-probe`, which
+  resolves UMIs over the probes the reads hit and sums each gene's probes into
+  its count. A probe-set reference is the chemistry's registered probe set,
+  `--probe-set`, or a pre-built `--index` that simpleaf built from a probe CSV.
+  Counts differ slightly from earlier releases: a UMI whose reads do not single
+  out one probe of its gene (a tie between two of its probes, or reads that
+  match both) is dropped by `cr-like` and divided between the probes by the EM
+  strategies, where the gene axis counted it once. Pass the new `--gene-level`
+  to resolve over genes with `quant`; together with `--excluded-probes ignore`
+  (the decoy default below also changes a few counts) it reproduces earlier
+  counts exactly. `--usa` keeps working as before: it also runs `quant`, over
+  the 3-column map. `--t2g-map` (transcriptome) runs and pre-built indices that
+  do not say what they hold stay on `quant` too, the latter with a log line. `-r
+  parsimony-gene` and `parsimony-gene-em` cannot be resolved per probe and are
+  refused before any work, pointing at `parsimony` / `parsimony-em` or
+  `--gene-level`.
 
 ### Features
 
 * Compress the collated RAD by default. `quant` and `multiplex-quant` now expose
-  `--compress <lz4|zstd|none>` (default `lz4`), forwarded to `alevin-fry collate`.
-  The per-chunk framing keeps the collated RAD chunk-seekable, so the parallel
-  reader still engages; on 10x Flex data the collated RAD is ~2.7–2.85x smaller
-  with equivalent quantification. Pass `--compress none` to restore the previous
-  uncompressed output. `zstd` additionally requires an alevin-fry built with the
-  `zstd` feature.
+  `--compress <lz4|zstd|none>` (default `lz4`), forwarded to `alevin-fry
+  collate`. The per-chunk framing keeps the collated RAD chunk-seekable, so the
+  parallel reader still engages; on 10x Flex data the collated RAD is ~2.7–2.85x
+  smaller with equivalent quantification. Pass `--compress none` to restore the
+  previous uncompressed output. `zstd` additionally requires an alevin-fry built
+  with the `zstd` feature.
 * Index 10x Flex `__EXCLUDED` probes (CSV `included == FALSE`) as piscem decoys
   instead of dropping them. `multiplex-quant` and `index --probe-csv` gain
   `--excluded-probes <decoy|ignore>` (default `decoy`); excluded probes are
@@ -66,74 +69,78 @@
   paralog probe. They never enter the reference, the t2g map, or the gene set.
   Auto-built probe indices cache decoy builds separately (`<plist>_<k>_decoy`).
   Pass `--excluded-probes ignore` for the previous drop behavior.
-* New
-  `--dump-molecules` (`quant`, `multiplex-quant`) writes alevin-fry's molecule
-  table, and `--probe-mtx` (`multiplex-quant`) the probe x cell matrix that
-  `quant-probe` sums the gene matrix from. Each is forwarded only when given and
-  checked before any work against the alevin-fry subcommand the run will invoke;
-  `--probe-mtx` is refused, with the reason, on a run that does not go to
-  `quant-probe` (`--usa`, `--gene-level`, a transcriptome, or an index that does
-  not say what it holds). Their outputs are recorded under `quant_outputs` in
-  the run's JSON log.
+* New `--dump-molecules` (`quant`, `multiplex-quant`) writes alevin-fry's
+  molecule table, and `--probe-mtx` (`multiplex-quant`) the probe x cell matrix
+  that `quant-probe` sums the gene matrix from. Each is forwarded only when
+  given and checked before any work against the alevin-fry subcommand the run
+  will invoke; `--probe-mtx` is refused, with the reason, on a run that does not
+  go to `quant-probe` (`--usa`, `--gene-level`, a transcriptome, or an index
+  that does not say what it holds). Their outputs are recorded under
+  `quant_outputs` in the run's JSON log.
 
 ### Bug fixes
 
-* Pre-release builds can be
-  registered: a version such as `0.24.0-rc.1` or `0.19.0-dev` satisfies a
-  requirement when its release version does (logged at info level), except
-  against a comparator that names a pre-release of the same version. Valid
-  semver with a dotted pre-release tag is no longer truncated (`0.24.0-rc.1` was
-  read as `0.24.0-rc`). `set-paths` and the cached checks before each run apply
-  one rule, and a failing `<prog> --version` reports its cause.
-* An inline `--thread-policy` JSON
-  value now works on `quant` and `atac process` as well: it is written to
-  `<output>/thread_policy.json` and that path is passed to piscem. Before, the
-  raw string was forwarded and piscem failed after loading the index (also in
-  0.30.0). Malformed inline JSON is rejected before piscem runs, and `quant`
-  checks the index and read files before writing anything.
-* `multiplex-quant`
-  validates its inputs before mapping: `--expected-ori` must be `fw`, `rc` or
-  `both` (`either` is an alias), `-1`/`-2` are required, and the R1/R2 lists
-  must have the same length with every file present (before, piscem silently
-  mapped only as many pairs as the shorter list had). Each probe-index build gets its own piscem work
-  directory under the index directory, so nothing is left in the current
-  directory and concurrent builds no longer corrupt each other's indexes.
-* Flex probe indexes
-  auto-built under `$ALEVIN_FRY_HOME/probe_indices` carry a build record (piscem
-  version and executable, k, excluded-probe mode) and are rebuilt when it does
-  not match the run, so an index cached by an earlier piscem or simpleaf is
-  rebuilt once instead of failing at mapping with "must be rebuilt". Builds are
-  staged and renamed into place, so no half-built index is ever used; a stale
-  index that cannot be rebuilt is used with a warning; a piscem registered by
-  bare name is found on `PATH`; and staging directories left by killed builds
-  are removed after an hour.
-* `simpleaf --help`, `--version` and
-  `<command> --help` work without `ALEVIN_FRY_HOME`. `workflow` steps with
-  invalid arguments or an unsupported `simpleaf` command are reported as errors
-  instead of exiting the process, and `simpleaf multiplex-quant` or
-  `simpleaf atac index` steps are no longer run as `quant` or `index`.
-  `quant --map-dir` records the real mapping statistics from `map_info.json`
-  when that file exists. Dead code and stale messages are removed.
-* Downloads are written to a
-  temporary file and renamed into place, so an interrupted download no longer
-  leaves a truncated permit list, barcode list or probe set that later runs
-  reuse. `multiplex-quant` checks downloaded barcode lists and probe sets
-  against the registry's content hash and warns on a mismatch.
-* An index at a dotted prefix
-  (`-i idx/gencode.v49`) is now checked at `idx/gencode.v49.ssi`, `.ctab`, …,
-  the names written by piscem built on piscem-rs 0.11.1 or later. Indexes
-  written by piscem built on piscem-rs 0.11.0 or earlier (`idx/gencode.ssi`, …)
-  are still accepted, with a warning that prefixes differing only after the
-  last dot share those names; complete files under both naming rules are also
-  warned about. Prefixes without a dot, including simpleaf's own `piscem_idx`,
-  are unaffected.
+* Pre-release builds can be registered: a version such as `0.24.0-rc.1` or
+  `0.19.0-dev` satisfies a requirement when its release version does (logged at
+  info level), except against a comparator that names a pre-release of the same
+  version. Valid semver with a dotted pre-release tag is no longer truncated
+  (`0.24.0-rc.1` was read as `0.24.0-rc`). `set-paths` and the cached checks
+  before each run apply one rule, and a failing `<prog> --version` reports its
+  cause.
+* An inline `--thread-policy` JSON value now works on `quant` and `atac process`
+  as well: it is written to `<output>/thread_policy.json` and that path is
+  passed to piscem. Before, the raw string was forwarded and piscem failed after
+  loading the index (also in 0.30.0). Malformed inline JSON is rejected before
+  piscem runs, and `quant` checks the index and read files before writing
+  anything.
+* `multiplex-quant` validates its inputs before mapping: `--expected-ori` must
+  be `fw`, `rc` or `both` (`either` is an alias), `-1`/`-2` are required, and
+  the R1/R2 lists must have the same length with every file present (before,
+  piscem silently mapped only as many pairs as the shorter list had). Each
+  probe-index build gets its own piscem work directory under the index
+  directory, so nothing is left in the current directory and concurrent builds
+  no longer corrupt each other's indexes.
+* Flex probe indexes auto-built under `$ALEVIN_FRY_HOME/probe_indices` carry a
+  build record (piscem version and executable, k, excluded-probe mode) and are
+  rebuilt when it does not match the run, so an index cached by an earlier
+  piscem or simpleaf is rebuilt once instead of failing at mapping with "must be
+  rebuilt". Builds are staged and renamed into place, so no half-built index is
+  ever used; a stale index that cannot be rebuilt is used with a warning; a
+  piscem registered by bare name is found on `PATH`; and staging directories
+  left by killed builds are removed after an hour.
+* `simpleaf --help`, `--version` and `<command> --help` work without
+  `ALEVIN_FRY_HOME`. `workflow` steps with invalid arguments or an unsupported
+  `simpleaf` command are reported as errors instead of exiting the process, and
+  `simpleaf multiplex-quant` or `simpleaf atac index` steps are no longer run as
+  `quant` or `index`. `quant --map-dir` records the real mapping statistics from
+  `map_info.json` when that file exists. Dead code and stale messages are
+  removed.
+* Downloads are written to a temporary file and renamed into place, so an
+  interrupted download no longer leaves a truncated permit list, barcode list or
+  probe set that later runs reuse. `multiplex-quant` checks downloaded barcode
+  lists and probe sets against the registry's content hash and warns on a
+  mismatch.
+* An index at a dotted prefix (`-i idx/gencode.v49`) is now checked at
+  `idx/gencode.v49.ssi`, `.ctab`, …, the names written by piscem built on
+  piscem-rs 0.11.1 or later. Indexes written by piscem built on piscem-rs 0.11.0
+  or earlier (`idx/gencode.ssi`, …) are still accepted, with a warning that
+  prefixes differing only after the last dot share those names; complete files
+  under both naming rules are also warned about. Prefixes without a dot,
+  including simpleaf's own `piscem_idx`, are unaffected.
+
+### Security
+
+* Dependencies refreshed (#210), including rustls 0.23.45 for RUSTSEC-2026-0285,
+  and `yoke-derive` moved off the yanked 0.8.3.
 
 ### Notes
 
-* `quant`/`multiplex-quant` now verify the registered alevin-fry version up
-  front and fail with an actionable message, rather than only at `set-paths`,
-  so a stale registration no longer surfaces deep in the pipeline
-  (`collate --compress <codec>` needs alevin-fry 0.18.3, RAD v2 needs 0.19.0).
+* `quant`/`multiplex-quant` now verify the registered alevin-fry and piscem
+  versions up front, and `index` the piscem version, failing with an actionable
+  message rather than only at `set-paths`, so a stale registration no longer
+  surfaces deep in the pipeline (`collate --compress <codec>` needs alevin-fry
+  0.18.3, RAD v2 needs 0.19.0, and a piscem 0.23 would build an index in the old
+  format).
 * The collated RAD (`map.collated.rad`) is now per-chunk lz4 by default;
   third-party readers must use a `libradicl`/reader new enough to parse the
   per-chunk codec, or run with `--compress none`.
@@ -144,19 +151,19 @@
   table came back empty.
 * With the `--excluded-probes decoy` default, Flex runs map and count slightly
   fewer reads than with `ignore`: reads from excluded probes are now discarded
-  instead of being counted for a retained paralog probe. On a 150M-read-pair
-  10x Flex v2 run (Chromium Human probe set v2.0.0, 499 excluded probes), 4,359
+  instead of being counted for a retained paralog probe. On a 150M-read-pair 10x
+  Flex v2 run (Chromium Human probe set v2.0.0, 499 excluded probes), 4,359
   reads were poisoned (86.74% mapped vs 86.75%) and 3,749 of 112.4M UMIs were
   removed, almost all from about ten genes whose excluded probes target a
   paralog (e.g. CCZ1, PAGE2, CSNK2A1, GK3). With piscem 0.24 the decoys cost
   almost no mapping time (about +2% single-threaded, nothing measurable at 16
   threads); piscem 0.23 mapped such runs about 40-55% slower.
-* piscem 0.24 and RAD v2 by themselves change no results: on the evaluation
-  data (toy scRNA USA-mode matrices, scATAC fragments, and 10x Flex gene
-  matrices at 20M and 150M read pairs with `--excluded-probes ignore`), the new
-  stack reproduced the simpleaf 0.30.0 / piscem 0.23 / alevin-fry 0.18.3
-  outputs exactly. Changes in Flex counts come from the decoy default above and
-  from alevin-fry's per-probe resolution.
+* piscem 0.24 and RAD v2 by themselves change no results: on the evaluation data
+  (toy scRNA USA-mode matrices, scATAC fragments, and 10x Flex gene matrices at
+  20M and 150M read pairs with `--excluded-probes ignore`), the new stack
+  reproduced the simpleaf 0.30.0 / piscem 0.23 / alevin-fry 0.18.3 outputs
+  exactly. Changes in Flex counts come from the decoy default above and from
+  alevin-fry's per-probe resolution.
 
 ## [0.30.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.29.0...v0.30.0) (2026-08-31)
 

@@ -72,7 +72,7 @@ The relevant options (which you can obtain by running `simpleaf multiplex-quant 
 ```sh
 quantify a multiplexed sample (e.g. 10x Flex, or any custom multi-barcode protocol)
 
-Usage: simpleaf multiplex-quant [OPTIONS] --output <OUTPUT>
+Usage: simpleaf multiplex-quant [OPTIONS] --output <OUTPUT> --reads1 <READS1> --reads2 <READS2>
 
 Options:
   -c, --chemistry <CHEMISTRY>
@@ -81,8 +81,8 @@ Options:
           --geometry and --cell-bc-list are required
 
   -g, --geometry <GEOMETRY>
-          Override the read geometry string (e.g.
-          '1{b[16]u[12]x[0-3]hamming(f[TTGCTAGGACCG],1)s[10]x:}2{r:}')
+          Override the read geometry string (for example,
+          `1{b[16]u[12]x[0-3]hamming(f[TTGCTAGGACCG],1)s[10]x:}2{r:}`)
 
       --organism <ORGANISM>
           Target organism for automatic probe set selection
@@ -93,9 +93,11 @@ Options:
           Path to cell barcode whitelist (one barcode per line, overrides chemistry default)
 
       --expected-ori <EXPECTED_ORI>
-          Expected read orientation: fw, rc, or both
+          Expected read orientation (case-insensitive; `either` is also accepted, as a synonym for
+          `both`)
 
           [default: both]
+          [possible values: fw, rc, both]
 
       --sample-bc-ori <SAMPLE_BC_ORI>
           Sample barcode orientation: `forward` (whitelist matches read as-is) or `reverse`
@@ -110,7 +112,7 @@ Options:
           Path to output directory
 
   -t, --threads <THREADS>
-          Number of threads to use
+          Number of threads to use. Values below two warn and use two
 
           [default: 16]
 
@@ -160,12 +162,19 @@ Advanced Resource Options:
       --collate-memory-limit <SIZE>
           Collation buffer budget (inherited default: 2 GiB)
 
-Permit List Options:
+      --compress [<CODEC>]
+          Compress the collated RAD file with a per-chunk codec. Compression is ON by default (lz4);
+          pass `--compress none` to disable it, or `--compress zstd` (needs an alevin-fry build with
+          the `zstd` feature — otherwise alevin-fry rejects `zstd` when the collate step runs).
+          `--compress` with no value also selects lz4. The per-chunk framing keeps the collated RAD
+          chunk-seekable, so the parallel reader still engages
 
-      --min-reads <MIN_READS>
-          Minimum read count threshold for unfiltered permit list
+          Possible values:
+          - lz4:  lz4 (pure-Rust; always available in alevin-fry)
+          - zstd: zstd (needs an alevin-fry built with the `zstd` feature)
+          - none: No compression
 
-          [default: 10]
+          [default: lz4]
 
 Mapping Options:
   -i, --index <INDEX>
@@ -221,6 +230,14 @@ Reference Options:
           Path to sample/probe barcode file with rotation mapping (overrides auto-download).
           3-column TSV: observed, canonical, sample_name
 
+      --samples <SHEET>
+          Select and name a subset of the chemistry's samples without hand-writing barcodes. TSV
+          mapping a registry sample id to your name, one per line (e.g. `BC001<TAB>kidney`); a
+          single-column line keeps the registry id as the name. The barcode sequences — every
+          spelling — always come from the chemistry's registry list, so omitting a spelling (the
+          usual cause of silent demultiplexing loss) is impossible. Requires --chemistry; cannot be
+          combined with --sample-bc-list
+
 Quantification Options:
       --gene-level
           Quantify per gene with alevin-fry's `quant`, even for a probe-set reference, which is
@@ -229,9 +246,10 @@ Quantification Options:
           Counts differ slightly between the two. Over probes, a UMI whose reads do not single out
           one probe of its gene (they tie between two of its probes, or every read matches both) has
           no winning probe: `cr-like` drops it and the EM strategies divide it between those probes,
-          while the gene axis counts it once. Pass this to reproduce a run made before per-probe
-          quantification became the default. `--probe-mtx` is not available with it, since only
-          `quant-probe` writes that matrix.
+          while the gene axis counts it once. Pass this, together with `--excluded-probes ignore`,
+          to reproduce a run made before per-probe quantification and excluded-probe decoys became
+          the defaults. `--probe-mtx` is not available with it, since only `quant-probe` writes that
+          matrix.
 
   -r, --resolution <RESOLUTION>
           UMI resolution mode
@@ -250,7 +268,7 @@ Quantification Options:
           which applies `cr-like` (winner-take-all) semantics regardless of `--resolution`. Pass 0
           to resolve every cell with the requested strategy.
 
-          Left unset, alevin-fry's own default applies
+          Left unset, alevin-fry's own default applies.
 
 Piscem Mapping Options:
       --skipping-strategy <SKIPPING_STRATEGY>
@@ -293,6 +311,12 @@ Piscem Mapping Options:
           8}}`, the number of threads that must be free per gzip input before the parallel decoder
           is engaged at all.
 
+Permit List Options:
+      --min-reads <MIN_READS>
+          Minimum read count threshold for unfiltered permit list
+
+          [default: 10]
+
 Output Options:
       --anndata-out
           Generate an anndata (h5ad format) count matrix from the standard (matrix-market format)
@@ -303,8 +327,8 @@ Output Options:
           molecule (cell barcode, UMI, feature, supporting reads, status), before molecules are
           summed into the count matrix.
 
-          Requires an alevin-fry whose `quant` has `--dump-molecules`; simpleaf checks this before
-          any work starts.
+          Requires an alevin-fry whose `quant-probe` (or `quant`, for a run quantified per gene) has
+          `--dump-molecules`; simpleaf checks this before any work starts.
 
       --probe-mtx
           Also write the probe x cell count matrix that the gene matrix is summed from
@@ -414,7 +438,7 @@ Four things keep a run on `quant` instead:
 - the reference is not a probe set. `--t2g-map` marks a transcriptome, where resolving per target would discard UMIs shared by the isoforms of one gene; a pre-built `--index` given without `--probe-set` is quantified per probe only when simpleaf's own metadata says it holds a probe set (`probe_set_info.json` beside a `multiplex-quant` probe index, or `args.probe-csv` in the `index_info.json` of a `simpleaf index --probe-csv` output). Any other index could hold either kind of reference, so it is quantified per gene, and the log says so; pass `--probe-set` with the probe set it was built from to quantify it per probe.
 - the configured `alevin-fry` has no `quant-probe` (releases before 0.19.0). `simpleaf` reads this from `alevin-fry quant-probe --help`, because the version string does not tell builds apart, and says so in the log when it falls back.
 - `--usa`, which resolves spliced and unspliced counts over a 3-column map. The probe axis has no counterpart for that and rejects such a map outright, so a USA run is quantified per gene exactly as before.
-- `--gene-level`, which asks for the gene axis to reproduce a run made before per-probe quantification became the default.
+- `--gene-level`, which asks for the gene axis. Together with `--excluded-probes ignore` it reproduces a run made before per-probe quantification and excluded-probe decoys became the defaults; `--gene-level` alone still drops the reads of excluded probes, which changes a few counts.
 
 `--resolution parsimony-gene` and `parsimony-gene-em` build equivalence classes with reads already projected to genes, so no per-probe assignment survives to sum. On a run that goes to `quant-probe` they are refused before any work starts, pointing at `parsimony` / `parsimony-em`, or at `--gene-level`.
 
