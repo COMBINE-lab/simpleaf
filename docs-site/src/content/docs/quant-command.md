@@ -129,7 +129,7 @@ Options:
           Path to the output directory
 
   -t, --threads <THREADS>
-          Number of threads to use when running
+          Number of threads to use when running. Values below two warn and use two
 
           [default: 16]
 
@@ -276,6 +276,20 @@ Advanced Resource Options:
       --collate-memory-limit <SIZE>
           Collation buffer budget (inherited default: 2 GiB)
 
+      --compress [<CODEC>]
+          Compress the collated RAD file with a per-chunk codec. Compression is ON by default (lz4);
+          pass `--compress none` to disable it, or `--compress zstd` (needs an alevin-fry build with
+          the `zstd` feature — otherwise alevin-fry rejects `zstd` when the collate step runs).
+          `--compress` with no value also selects lz4. The per-chunk framing keeps the collated RAD
+          chunk-seekable, so the parallel reader still engages
+
+          Possible values:
+          - lz4:  lz4 (pure-Rust; always available in alevin-fry)
+          - zstd: zstd (needs an alevin-fry built with the `zstd` feature)
+          - none: No compression
+
+          [default: lz4]
+
 UMI Resolution Options:
   -m, --t2g-map <T2G_MAP>
           Path to a transcript to gene map file
@@ -291,7 +305,7 @@ UMI Resolution Options:
           which applies `cr-like` (winner-take-all) semantics regardless of `--resolution`. Pass 0
           to resolve every cell with the requested strategy.
 
-          Left unset, alevin-fry's own default applies
+          Left unset, alevin-fry's own default applies.
 
 Output Options:
       --anndata-out

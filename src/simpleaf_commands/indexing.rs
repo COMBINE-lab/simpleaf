@@ -322,6 +322,10 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     let mut threads = opts.threads;
     let output = opts.output;
     let rp: ReqProgs = context::load_required_programs(af_home_path)?;
+    // Before the reference is built or anything is written: an older piscem
+    // would quietly build an index in a format that the piscem simpleaf maps
+    // with refuses.
+    prog_utils::ensure_piscem_version(&rp)?;
 
     // we are building a custom spliced+intronic reference
     // make sure that a read length is available / was provided.
@@ -654,8 +658,9 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     decoy_paths.extend(probe_decoy_path);
     let had_decoys = !decoy_paths.is_empty();
     if !decoy_paths.is_empty() {
-        // No version gate here any more: `set-paths` refuses a piscem older
-        // than `min_versions::PISCEM`, so `--decoy-paths` is always supported
+        // No version gate here any more: `set-paths` and the preflight in
+        // `build_ref_and_index` refuse a piscem older than `min_versions::PISCEM`, so
+        // `--decoy-paths` is always supported
         // and the silent-drop branch could never be taken. Silently ignoring a
         // requested poison table was the worst of the three soft gates: it
         // produced an index that looked fine and simply lacked the decoys.
