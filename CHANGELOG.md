@@ -6,10 +6,6 @@
 
 ## [Unreleased]
 
-> Entries marked *(pending: `<branch>`)* describe changes in separate pull
-> requests that were still open when this section was written. Drop or adjust
-> any of them that do not merge before the release.
-
 ### Breaking changes
 
 * **piscem >= 0.24.0 and alevin-fry >= 0.19.0 are now hard requirements (RAD
@@ -36,7 +32,7 @@
   Requiring piscem 0.24 keeps the piscem that builds an index and the piscem
   that maps against it format-consistent, and makes the excluded-probe decoy
   default (below) cost almost no mapping time.
-* *(pending: `feat/multiplex-quant-new-alevin-fry-options`)* **Flex gene
+* **Flex gene
   counts now come from per-probe resolution.** `multiplex-quant` quantifies a
   probe-set reference with alevin-fry's `quant-probe`, which resolves UMIs over
   the probes the reads hit and sums each gene's probes into its count. A
@@ -70,7 +66,7 @@
   paralog probe. They never enter the reference, the t2g map, or the gene set.
   Auto-built probe indices cache decoy builds separately (`<plist>_<k>_decoy`).
   Pass `--excluded-probes ignore` for the previous drop behavior.
-* *(pending: `feat/multiplex-quant-new-alevin-fry-options`)* New
+* New
   `--dump-molecules` (`quant`, `multiplex-quant`) writes alevin-fry's molecule
   table, and `--probe-mtx` (`multiplex-quant`) the probe x cell matrix that
   `quant-probe` sums the gene matrix from. Each is forwarded only when given and
@@ -82,27 +78,27 @@
 
 ### Bug fixes
 
-* *(pending: `fix/version-checks-prerelease`)* Pre-release builds can be
+* Pre-release builds can be
   registered: a version such as `0.24.0-rc.1` or `0.19.0-dev` satisfies a
   requirement when its release version does (logged at info level), except
   against a comparator that names a pre-release of the same version. Valid
   semver with a dotted pre-release tag is no longer truncated (`0.24.0-rc.1` was
   read as `0.24.0-rc`). `set-paths` and the cached checks before each run apply
   one rule, and a failing `<prog> --version` reports its cause.
-* *(pending: `fix/thread-policy-inline-json`)* An inline `--thread-policy` JSON
+* An inline `--thread-policy` JSON
   value now works on `quant` and `atac process` as well: it is written to
   `<output>/thread_policy.json` and that path is passed to piscem. Before, the
   raw string was forwarded and piscem failed after loading the index (also in
   0.30.0). Malformed inline JSON is rejected before piscem runs, and `quant`
   checks the index and read files before writing anything.
-* *(pending: `fix/multiplex-quant-validation-workdir`)* `multiplex-quant`
+* `multiplex-quant`
   validates its inputs before mapping: `--expected-ori` must be `fw`, `rc` or
   `both` (`either` is an alias), `-1`/`-2` are required, and the R1/R2 lists
   must have the same length with every file present (before, piscem silently
   mapped only as many pairs as the shorter list had). Each probe-index build gets its own piscem work
   directory under the index directory, so nothing is left in the current
   directory and concurrent builds no longer corrupt each other's indexes.
-* *(pending: `fix/probe-index-cache-invalidation`)* Flex probe indexes
+* Flex probe indexes
   auto-built under `$ALEVIN_FRY_HOME/probe_indices` carry a build record (piscem
   version and executable, k, excluded-probe mode) and are rebuilt when it does
   not match the run, so an index cached by an earlier piscem or simpleaf is
@@ -111,19 +107,19 @@
   index that cannot be rebuilt is used with a warning; a piscem registered by
   bare name is found on `PATH`; and staging directories left by killed builds
   are removed after an hour.
-* *(pending: `fix/cli-hygiene`)* `simpleaf --help`, `--version` and
+* `simpleaf --help`, `--version` and
   `<command> --help` work without `ALEVIN_FRY_HOME`. `workflow` steps with
   invalid arguments or an unsupported `simpleaf` command are reported as errors
   instead of exiting the process, and `simpleaf multiplex-quant` or
   `simpleaf atac index` steps are no longer run as `quant` or `index`.
   `quant --map-dir` records the real mapping statistics from `map_info.json`
   when that file exists. Dead code and stale messages are removed.
-* *(pending: `fix/atomic-verified-downloads`)* Downloads are written to a
+* Downloads are written to a
   temporary file and renamed into place, so an interrupted download no longer
   leaves a truncated permit list, barcode list or probe set that later runs
   reuse. `multiplex-quant` checks downloaded barcode lists and probe sets
   against the registry's content hash and warns on a mismatch.
-* *(pending: `fix/index-files-dotted-prefix`)* An index at a dotted prefix
+* An index at a dotted prefix
   (`-i idx/gencode.v49`) is now checked at `idx/gencode.v49.ssi`, `.ctab`, …,
   the names written by piscem built on piscem-rs 0.11.1 or later. Indexes
   written by piscem built on piscem-rs 0.11.0 or earlier (`idx/gencode.ssi`, …)
