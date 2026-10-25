@@ -16,8 +16,8 @@ warns about that discrepancy and still attempts two. The effective value is
 resolved once per pipeline and reused by mapping, permit-list generation,
 collation or ATAC sorting, and quantification.
 
-This page explains the two options that steer it. Both are forwarded verbatim to
-`piscem`, and both are available on [quant](/simpleaf/quant-command/),
+This page explains the two options that steer it. Both are forwarded to `piscem`,
+and both are available on [quant](/simpleaf/quant-command/),
 [multiplex-quant](/simpleaf/flex-quant-command/), and `simpleaf atac process`.
 
 :::note
@@ -70,11 +70,16 @@ profile of the run to be predictable rather than responsive to load.
 
 ```sh
 simpleaf quant -t 32 --thread-policy policy.json ...
+simpleaf quant -t 32 --thread-policy '{"parallel_decode": {"min_threads_per_stream": 4}}' ...
 ```
 
-A JSON file overriding the measured defaults. Every field is optional; an
-unrecognised field is an **error**, not a silently ignored no-op, so a typo fails the
-run instead of quietly doing nothing.
+A JSON policy overriding the measured defaults, given either as a path to a JSON
+file or inline: a value beginning with `{` is treated as inline JSON. `piscem` reads
+the policy only from a file, so simpleaf checks that an inline value is valid JSON,
+writes it to `thread_policy.json` in the run's output directory and passes that
+path; a path is passed through unchanged. Every field is optional; an unrecognised
+field is an **error**, not a silently ignored no-op, so a typo fails the run instead
+of quietly doing nothing.
 
 Currently understood:
 

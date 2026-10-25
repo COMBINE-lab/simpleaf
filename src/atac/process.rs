@@ -256,7 +256,8 @@ pub(crate) fn map_reads(af_home_path: &Path, opts: &ProcessOpts) -> anyhow::Resu
     // `min_versions::PISCEM`, so the branch that quietly dropped these options
     // for pre-0.18.0 piscem could never be taken.
     push_advanced_piscem_options(&mut piscem_map_cmd, opts)?;
-    opts.decode.append_to(&mut piscem_map_cmd);
+    opts.decode
+        .append_to(&mut piscem_map_cmd, &opts.output, None)?;
 
     let map_cmd_string = prog_utils::get_cmd_line_string(&piscem_map_cmd);
     info!("map command : {}", map_cmd_string);

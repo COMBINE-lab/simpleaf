@@ -416,6 +416,14 @@ fn run_mapping_stage(
                     setup.rp.piscem.as_ref().context(
                         "A piscem index is being used, but piscem program info is missing.",
                     )?;
+                // Check the inputs before building the command: `append_to`
+                // writes an inline thread policy into the output directory.
+                prog_utils::check_piscem_index_files(index_base.as_path())?;
+                let mut read_inputs = Vec::new();
+                read_inputs.extend_from_slice(reads1);
+                read_inputs.extend_from_slice(reads2);
+                prog_utils::check_files_exist(&read_inputs)?;
+
                 let mut piscem_quant_cmd =
                     std::process::Command::new(format!("{}", piscem_prog_info.exe_path.display()));
                 let index_path = format!("{}", index_base.display());
@@ -438,7 +446,8 @@ fn run_mapping_stage(
                 // 0.18.0 these options needed, so the fallback that quietly
                 // dropped them could never be reached.
                 push_advanced_piscem_options(&mut piscem_quant_cmd, opts)?;
-                opts.decode.append_to(&mut piscem_quant_cmd);
+                opts.decode
+                    .append_to(&mut piscem_quant_cmd, &opts.output, None)?;
 
                 add_fragment_library_to_piscem(
                     setup.chem.fragment_geometry_str(),
@@ -449,11 +458,6 @@ fn run_mapping_stage(
 
                 let map_cmd_string = prog_utils::get_cmd_line_string(&piscem_quant_cmd);
                 info!("piscem map-sc cmd : {}", map_cmd_string);
-                prog_utils::check_piscem_index_files(index_base.as_path())?;
-                let mut read_inputs = Vec::new();
-                read_inputs.extend_from_slice(reads1);
-                read_inputs.extend_from_slice(reads2);
-                prog_utils::check_files_exist(&read_inputs)?;
 
                 let map_start = Instant::now();
                 exec::run_checked(&mut piscem_quant_cmd, "piscem [mapping phase]")?;
