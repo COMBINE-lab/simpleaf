@@ -467,6 +467,7 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
     // can take a while, and a bad read list would otherwise only fail (or, with
     // unequal counts, silently lose reads) once piscem runs.
     check_read_pairs(&opts.reads1, &opts.reads2)?;
+    opts.decode.check_thread_policy()?;
 
     // Load runtime context (program paths)
     let rt = context::load_runtime_context(af_home)?;

@@ -319,6 +319,7 @@ fn resolve_quant_setup(
                 );
             }
             crate::utils::prog_utils::ensure_piscem_version(&rp)?;
+            opts.decode.check_thread_policy()?;
         }
         IndexType::NoIndex => {}
     }
