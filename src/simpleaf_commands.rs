@@ -126,6 +126,46 @@ impl PiscemDecoderOpts {
         }
         Ok(())
     }
+
+    /// Preflight for `--thread-policy`, run before any long work: the value,
+    /// inline or read from its file, must be a JSON object.
+    ///
+    /// piscem reads the policy only after it has loaded the index, and on the
+    /// `multiplex-quant` path the index may first have to be downloaded or
+    /// built, so a typo or a wrong path would otherwise surface minutes in.
+    /// The field names are left to piscem, which rejects unknown ones, so a
+    /// newer piscem can add fields without a simpleaf release.
+    pub fn check_thread_policy(&self) -> anyhow::Result<()> {
+        let Some(policy) = self.thread_policy.as_deref() else {
+            return Ok(());
+        };
+        if is_inline_policy(policy) {
+            parse_policy_object(policy)
+                .with_context(|| format!("--thread-policy {policy} is not valid"))
+        } else {
+            let text = std::fs::read_to_string(policy)
+                .with_context(|| format!("could not read --thread-policy file {policy}"))?;
+            parse_policy_object(&text)
+                .with_context(|| format!("--thread-policy file {policy} is not valid"))
+        }
+    }
+}
+
+/// A `--thread-policy` value whose first non-whitespace byte is `{` is inline
+/// JSON; anything else is a path.
+fn is_inline_policy(policy: &str) -> bool {
+    policy.trim_start().starts_with('{')
+}
+
+/// Parse a thread policy and require a JSON object, the only shape piscem
+/// accepts.
+fn parse_policy_object(text: &str) -> anyhow::Result<()> {
+    let value: serde_json::Value = serde_json::from_str(text).context("not valid JSON")?;
+    anyhow::ensure!(
+        value.is_object(),
+        "a thread policy must be a JSON object, such as {FLEX_DECODE_THREAD_POLICY}"
+    );
+    Ok(())
 }
 
 /// Return a filesystem path for a thread-policy value. Inline JSON (a value
@@ -139,9 +179,9 @@ impl PiscemDecoderOpts {
 /// Inline JSON is checked for syntax only, so a typo fails here rather than
 /// after piscem has loaded the index; piscem still checks the fields.
 fn materialize_thread_policy(policy: &str, output_dir: &Path) -> anyhow::Result<PathBuf> {
-    if policy.trim_start().starts_with('{') {
-        serde_json::from_str::<serde_json::Value>(policy)
-            .with_context(|| format!("--thread-policy {policy} is not valid JSON"))?;
+    if is_inline_policy(policy) {
+        parse_policy_object(policy)
+            .with_context(|| format!("--thread-policy {policy} is not valid"))?;
         std::fs::create_dir_all(output_dir)?;
         let path = output_dir.join("thread_policy.json");
         std::fs::write(&path, policy)
@@ -1686,8 +1726,41 @@ mod decoder_opts_tests {
             &output,
         )
         .unwrap_err();
-        assert!(format!("{error:#}").contains("is not valid JSON"));
+        assert!(format!("{error:#}").contains("not valid JSON"));
         assert!(!output.exists());
+    }
+
+    #[test]
+    fn thread_policy_preflight_checks_inline_values_and_files() {
+        let dir = tempdir().unwrap();
+        // no policy, or a well-formed one inline or in a file, passes
+        assert!(decoder_opts(None).check_thread_policy().is_ok());
+        let policy = r#"{"parallel_decode": {"min_threads_per_stream": 4}}"#;
+        assert!(decoder_opts(Some(policy)).check_thread_policy().is_ok());
+        let good = dir.path().join("good.json");
+        fs::write(&good, policy).unwrap();
+        assert!(decoder_opts(good.to_str()).check_thread_policy().is_ok());
+
+        let message = |policy: &str| {
+            format!(
+                "{:#}",
+                decoder_opts(Some(policy))
+                    .check_thread_policy()
+                    .unwrap_err()
+            )
+        };
+        // malformed inline JSON, and JSON that is not an object
+        assert!(message(r#"{"parallel_decode": "#).contains("not valid JSON"));
+        assert!(message("  { ] ").contains("not valid JSON"));
+        let array = dir.path().join("array.json");
+        fs::write(&array, "[]").unwrap();
+        assert!(message(array.to_str().unwrap()).contains("must be a JSON object"));
+        // a missing file, and a file that is not JSON
+        let missing = dir.path().join("missing.json");
+        assert!(message(missing.to_str().unwrap()).contains("could not read"));
+        let garbage = dir.path().join("garbage.json");
+        fs::write(&garbage, "min_threads_per_stream = 4").unwrap();
+        assert!(message(garbage.to_str().unwrap()).contains("not valid JSON"));
     }
 
     #[test]

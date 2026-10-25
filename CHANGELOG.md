@@ -90,9 +90,11 @@
 * An inline `--thread-policy` JSON value now works on `quant` and `atac process`
   as well: it is written to `<output>/thread_policy.json` and that path is
   passed to piscem. Before, the raw string was forwarded and piscem failed after
-  loading the index (also in 0.30.0). Malformed inline JSON is rejected before
-  piscem runs, and `quant` checks the index and read files before writing
-  anything.
+  loading the index (also in 0.30.0). `quant`, `multiplex-quant` and `atac
+  process` now check before any work (for `multiplex-quant`, before the probe
+  index is downloaded or built) that the policy, inline or in its file, is a
+  readable JSON object; piscem still checks the field names. `quant` also checks
+  the index and read files before writing anything.
 * `multiplex-quant` validates its inputs before mapping: `--expected-ori` must
   be `fw`, `rc` or `both` (`either` is an alias), `-1`/`-2` are required, and
   the R1/R2 lists must have the same length with every file present (before,

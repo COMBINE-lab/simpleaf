@@ -210,6 +210,8 @@ pub(crate) fn check_progs<P: AsRef<Path>>(
         info!("found macs3 version {:#}, proceeding", macs_ver);
     }
 
+    opts.decode.check_thread_policy()?;
+
     Ok(())
 }
 
