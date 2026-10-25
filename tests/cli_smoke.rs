@@ -65,3 +65,52 @@ fn index_requires_gtf_when_fasta_is_provided() {
 fn atac_command_requires_subcommand() {
     assert_parse_error(&["atac"]);
 }
+
+fn run_simpleaf_without_af_home(args: &[&str]) -> Output {
+    let binary = env!("CARGO_BIN_EXE_simpleaf");
+    let mut cmd = Command::new(binary);
+    cmd.args(args);
+    cmd.env_remove("ALEVIN_FRY_HOME");
+    cmd.output().expect("failed to execute simpleaf")
+}
+
+#[test]
+fn help_and_version_do_not_require_af_home() {
+    for args in [
+        &["--version"][..],
+        &["--help"][..],
+        &["index", "--help"][..],
+        &["quant", "--version"][..],
+    ] {
+        let output = run_simpleaf_without_af_home(args);
+        assert!(
+            output.status.success(),
+            "expected success for args {:?} without ALEVIN_FRY_HOME, got status {:?}\nstderr:\n{}",
+            args,
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("simpleaf"),
+            "expected help/version text for {:?}, got:\n{}",
+            args,
+            stdout
+        );
+    }
+}
+
+#[test]
+fn commands_still_require_af_home() {
+    let output = run_simpleaf_without_af_home(&["inspect"]);
+    assert!(
+        !output.status.success(),
+        "expected `inspect` to fail without ALEVIN_FRY_HOME"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("$ALEVIN_FRY_HOME is unset"),
+        "expected the ALEVIN_FRY_HOME error, got:\n{}",
+        stderr
+    );
+}

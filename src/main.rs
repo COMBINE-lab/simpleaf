@@ -46,7 +46,12 @@ fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    // Before we do anything else, ensure that the user has
+    // Parse the command line first, so that `--help` and `--version`
+    // (which clap handles, and exits on, inside `parse()`) work even
+    // when `AF_HOME` is not set.
+    let cli_args = Cli::parse();
+
+    // Before we dispatch, ensure that the user has
     // their `AF_HOME` variable set in the environment, as we
     // will be using this with mostly every command.
     // TODO: Should, instead of requiring a specific `AF_HOME`
@@ -63,8 +68,6 @@ fn main() -> anyhow::Result<()> {
             );
         }
     };
-
-    let cli_args = Cli::parse();
 
     // Based on the command we parsed, dispatch
     // to the appropriate function.

@@ -237,10 +237,6 @@ fn push_advanced_piscem_options(
     Ok(())
 }
 
-fn validate_map_and_quant_opts(_opts: &MapQuantOpts) -> anyhow::Result<()> {
-    Ok(())
-}
-
 #[derive(Debug)]
 struct QuantSetup {
     rp: ReqProgs,
@@ -485,6 +481,37 @@ fn run_mapping_stage(
     }
 }
 
+/// Mapping statistics to record when mapping was skipped (`--map-dir`).
+///
+/// If the mapper left its `map_info.json` in the mapped directory (piscem
+/// does), report those statistics, marked as `pre_mapped`. Otherwise (e.g. the
+/// file is missing or unreadable) fall back to the zeroed placeholder.
+fn pre_mapped_map_info(map_dir: &Path) -> serde_json::Value {
+    let piscem_map_log_path = map_dir.join("map_info.json");
+    if piscem_map_log_path.is_file() {
+        match prog_parsing_utils::construct_json_from_piscem_log(&piscem_map_log_path) {
+            Ok(mut mapping_log) => {
+                mapping_log["pre_mapped"] = json!(true);
+                return mapping_log;
+            }
+            Err(e) => {
+                warn!(
+                    "could not read mapping statistics from {}; recording placeholder values instead: {:#}",
+                    piscem_map_log_path.display(),
+                    e
+                );
+            }
+        }
+    }
+    serde_json::json!({
+        "mapper" : "pre_mapped",
+        "num_mapped": 0,
+        "num_poisoned": 0,
+        "num_reads": 0,
+        "percent_mapped": 0.
+    })
+}
+
 fn run_quant_stage(
     opts: &MapQuantOpts,
     setup: &QuantSetup,
@@ -504,15 +531,7 @@ fn run_quant_stage(
             let piscem_map_log_path = mapping.map_output.join("map_info.json");
             prog_parsing_utils::construct_json_from_piscem_log(piscem_map_log_path)?
         }
-        IndexType::NoIndex => {
-            serde_json::json!({
-                "mapper" : "pre_mapped",
-                "num_mapped": 0,
-                "num_poisoned": 0,
-                "num_reads": 0,
-                "percent_mapped": 0.
-            })
-        }
+        IndexType::NoIndex => pre_mapped_map_info(&mapping.map_output),
     };
     let map_info_path = gpl_output.join("simpleaf_map_info.json");
     let map_info_file = std::fs::File::create(map_info_path)?;
@@ -587,7 +606,7 @@ fn run_quant_stage(
         match std::fs::copy(gene_name_path, &target_path) {
             Ok(_) => {
                 info!(
-                    "successfully copied the gene_name_to_id.tsv file into the quantification directory."
+                    "successfully copied the gene_id_to_name.tsv file into the quantification directory."
                 );
             }
             Err(err) => {
@@ -649,7 +668,6 @@ fn write_quant_log(
 }
 
 pub fn map_and_quant(af_home_path: &Path, opts: MapQuantOpts) -> anyhow::Result<()> {
-    validate_map_and_quant_opts(&opts)?;
     let (setup, mut pl_info) = resolve_quant_setup(af_home_path, &opts)?;
     let mapping = run_mapping_stage(&opts, &setup)?;
     let quant_stage = run_quant_stage(&opts, &setup, &mapping, &mut pl_info)?;
@@ -860,5 +878,46 @@ mod tests {
             .collect();
         // Compression is on by default (lz4), so the parsed opts forward it too.
         assert_eq!(collate_args, ["--memory-limit", "3GiB", "--compress=lz4"]);
+    }
+
+    #[test]
+    fn pre_mapped_map_info_uses_map_info_json_when_present() {
+        let map_dir = tempfile::tempdir().unwrap();
+        // piscem-rs writes `percent_mapped` as a string; it is kept as is.
+        std::fs::write(
+            map_dir.path().join("map_info.json"),
+            r#"{"num_mapped": 569358, "num_poisoned": 0, "num_reads": 1000000, "percent_mapped": "56.94"}"#,
+        )
+        .unwrap();
+
+        let info = pre_mapped_map_info(map_dir.path());
+        assert_eq!(
+            info,
+            json!({
+                "mapper": "piscem",
+                "pre_mapped": true,
+                "num_mapped": 569358,
+                "num_poisoned": 0,
+                "num_reads": 1000000,
+                "percent_mapped": "56.94"
+            })
+        );
+    }
+
+    #[test]
+    fn pre_mapped_map_info_falls_back_to_placeholder() {
+        let placeholder = json!({
+            "mapper": "pre_mapped",
+            "num_mapped": 0,
+            "num_poisoned": 0,
+            "num_reads": 0,
+            "percent_mapped": 0.0
+        });
+
+        let map_dir = tempfile::tempdir().unwrap();
+        assert_eq!(pre_mapped_map_info(map_dir.path()), placeholder);
+
+        std::fs::write(map_dir.path().join("map_info.json"), "not json").unwrap();
+        assert_eq!(pre_mapped_map_info(map_dir.path()), placeholder);
     }
 }

@@ -472,21 +472,6 @@ pub fn get_which_executable(prog_name: &str) -> Result<PathBuf> {
     }
 }
 
-#[allow(dead_code)]
-pub fn search_for_executable(env_key: &str, prog_name: &str) -> Result<PathBuf> {
-    match env::var(env_key) {
-        Ok(p) => Ok(PathBuf::from(p)),
-        Err(e) => {
-            eprintln!("${} is unset {}, trying default path.", env_key, e);
-            eprintln!(
-                "If a satisfactory version is not found, consider setting the ${} variable.",
-                env_key
-            );
-            get_which_executable(prog_name)
-        }
-    }
-}
-
 pub fn get_required_progs_from_paths(
     piscem_exe: Option<PathBuf>,
     alevin_fry_exe: Option<PathBuf>,
@@ -558,17 +543,6 @@ pub fn get_required_progs_from_paths(
     });
 
     Ok(rp)
-}
-
-#[allow(dead_code)]
-pub fn get_required_progs() -> Result<ReqProgs> {
-    // First look for any environment variables
-    // then check the path.
-    let piscem_exe = Some(search_for_executable("PISCEM", "piscem")?);
-    let alevin_fry_exe = Some(search_for_executable("ALEVIN_FRY", "alevin-fry")?);
-    let macs_exe = Some(search_for_executable("MACS3", "macs3")?);
-
-    get_required_progs_from_paths(piscem_exe, alevin_fry_exe, macs_exe)
 }
 
 /// Check that all files in `file_vec` exist.

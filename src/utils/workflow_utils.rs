@@ -397,9 +397,12 @@ pub fn validate_manifest_structure(workflow: &Value) -> anyhow::Result<()> {
                         )
                     })?;
 
+                    // Only the exact names are accepted: a prefix/suffix test
+                    // would let e.g. `simpleaf multiplex-quant` or
+                    // `simpleaf atac index` through, to be run as plain
+                    // `simpleaf quant` / `simpleaf index`.
                     if program_name.starts_with("simpleaf")
-                        && !program_name.ends_with("index")
-                        && !program_name.ends_with("quant")
+                        && ProgramName::from_str(program_name).is_external()
                     {
                         bail!(
                             "Unsupported workflow command `{}` at {}. Only `simpleaf index` and `simpleaf quant` are currently supported.",
@@ -1248,11 +1251,13 @@ pub enum ProgramName {
 }
 
 impl ProgramName {
-    /// Instantiate a ProgramName enum according to a str
+    /// Instantiate a ProgramName enum according to a str.
+    /// Only the exact names `simpleaf index` and `simpleaf quant` map to
+    /// simpleaf commands; anything else is treated as an external program.
     pub fn from_str(field_name: &str) -> ProgramName {
-        if field_name.starts_with("simpleaf") && field_name.ends_with("index") {
+        if field_name == SystemFields::SimpleafIndex.as_str() {
             ProgramName::Index
-        } else if field_name.starts_with("simpleaf") && field_name.ends_with("quant") {
+        } else if field_name == SystemFields::SimpleafQuant.as_str() {
             ProgramName::Quant
         } else {
             ProgramName::External(field_name.to_string())
@@ -1311,7 +1316,14 @@ impl ProgramName {
 
         // check if empty
         if arg_vec.len() > 2 {
-            let cmd = Cli::parse_from(arg_vec).command;
+            // `try_parse_from`, not `parse_from`: an invalid argument in one
+            // step must come back as an error (which the caller reports with
+            // the step number) rather than exit the whole process from inside clap.
+            // clap's message ends in a newline; drop it so the caller's error
+            // does not end with a blank line.
+            let cmd = Cli::try_parse_from(arg_vec)
+                .map_err(|e| anyhow!("{}", e.to_string().trim_end()))?
+                .command;
             Ok(WFCommand::SimpleafCommand(Box::new(cmd)))
         } else {
             bail!(
@@ -1977,6 +1989,93 @@ mod tests {
                 .contains("Only `simpleaf index` and `simpleaf quant` are currently supported"),
             "unexpected error: {:#}",
             err
+        );
+    }
+
+    #[test]
+    fn test_program_name_requires_exact_simpleaf_command() {
+        // These used to match the old `starts_with("simpleaf") && ends_with(..)`
+        // test and were silently run as `simpleaf quant` / `simpleaf index`.
+        for name in [
+            "simpleaf multiplex-quant",
+            "simpleaf atac index",
+            "simpleaf_quant",
+        ] {
+            assert_eq!(
+                ProgramName::from_str(name),
+                ProgramName::External(name.to_string()),
+                "`{}` must not be treated as a simpleaf index/quant command",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_manifest_structure_rejects_near_miss_simpleaf_commands() {
+        for name in ["simpleaf multiplex-quant", "simpleaf atac index"] {
+            let manifest = json!({
+                "rna": {
+                    "step_one": {
+                        "step": 1,
+                        "program_name": name,
+                        "--output": "out"
+                    }
+                }
+            });
+
+            let err = validate_manifest_structure(&manifest).unwrap_err();
+            assert!(
+                format!("{:#}", err)
+                    .contains("Only `simpleaf index` and `simpleaf quant` are currently supported"),
+                "unexpected error for `{}`: {:#}",
+                name,
+                err
+            );
+        }
+    }
+
+    #[test]
+    fn test_create_simpleaf_cmd_returns_error_on_invalid_arguments() {
+        // With `Cli::parse_from` this would exit the test process with code 2.
+        let err = ProgramName::Index
+            .create_simpleaf_cmd(&json!({"--bogus-flag": "x"}))
+            .unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("--bogus-flag"), "unexpected error: {}", msg);
+        assert!(!msg.ends_with('\n'), "trailing newline in: {:?}", msg);
+    }
+
+    #[test]
+    fn test_initialize_workflow_reports_step_of_invalid_simpleaf_arguments() {
+        let tmp = tempdir().unwrap();
+        let manifest = json!({
+            "rna": {
+                "simpleaf_index": {
+                    "step": 1,
+                    "program_name": "simpleaf index",
+                    "--bogus-flag": "x"
+                }
+            }
+        });
+
+        let err = initialize_workflow(
+            tmp.path(),
+            Path::new("invalid_args_template.jsonnet"),
+            tmp.path(),
+            manifest,
+            1,
+            vec![],
+            false,
+        )
+        .err()
+        .expect("invalid simpleaf arguments must be reported as an error");
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("Could not parse simpleaf command")
+                && msg.contains("for step 1")
+                && msg.contains("--bogus-flag"),
+            "unexpected error: {}",
+            msg
         );
     }
 

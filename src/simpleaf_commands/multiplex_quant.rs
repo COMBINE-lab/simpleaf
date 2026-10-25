@@ -159,12 +159,7 @@ fn resolve_t2g_from_candidates(
     output_dir: &Path,
     mode: probe_utils::ProbeT2gMode,
 ) -> anyhow::Result<Option<PathBuf>> {
-    let selected = match mode {
-        probe_utils::ProbeT2gMode::Usa => existing_path(candidates),
-        probe_utils::ProbeT2gMode::Gene => existing_path(candidates),
-    };
-
-    if let Some(candidate) = selected {
+    if let Some(candidate) = existing_path(candidates) {
         return Ok(Some(probe_utils::ensure_t2g_mode(
             &candidate, output_dir, mode,
         )?));

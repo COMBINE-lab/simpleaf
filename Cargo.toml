@@ -41,12 +41,9 @@ categories = ["command-line-utilities", "science"]
 # `.cargo/config.toml` patch this comment used to describe is long gone (there
 # is no such file in this repository).
 seq_geom_parser = "1.1"
-# Old seq_geom_parser 0.3.0 (pest-based) — still used by simpleaf quant for
-# PiscemGeomDesc/SalmonGeomDesc command-line arg generation and FIFO transforms.
-# Imported as `seq_geom_parser_legacy`. Will be migrated to 1.0 incrementally.
 # Legacy seq_geom_parser 0.3.0 and seq_geom_xform removed — salmon single-cell
 # mapping is deprecated, and piscem handles geometry strings directly.
-# All geometry validation uses seq_geom_parser 1.0 (above).
+# All geometry validation uses seq_geom_parser 1.x (above).
 roers = { version = "0.5.1" }
 af-anndata = { version = "0.5.1" }
 
