@@ -1190,8 +1190,9 @@ pub struct MultiplexQuantOpts {
     /// do not single out one probe of its gene (they tie between two of its
     /// probes, or every read matches both) has no winning probe: `cr-like`
     /// drops it and the EM strategies divide it between those probes, while
-    /// the gene axis counts it once. Pass this to reproduce a run made before
-    /// per-probe quantification became the default. `--probe-mtx` is not
+    /// the gene axis counts it once. Pass this, together with
+    /// `--excluded-probes ignore`, to reproduce a run made before per-probe
+    /// quantification and excluded-probe decoys became the defaults. `--probe-mtx` is not
     /// available with it, since only `quant-probe` writes that matrix.
     #[arg(long, help_heading = "Quantification Options")]
     pub gene_level: bool,
@@ -1303,8 +1304,8 @@ pub struct MultiplexQuantOpts {
     /// molecule (cell barcode, UMI, feature, supporting reads, status), before molecules are
     /// summed into the count matrix.
     ///
-    /// Requires an alevin-fry whose `quant` has `--dump-molecules`; simpleaf checks this before
-    /// any work starts.
+    /// Requires an alevin-fry whose `quant-probe` (or `quant`, for a run quantified per gene)
+    /// has `--dump-molecules`; simpleaf checks this before any work starts.
     #[arg(long, help_heading = "Output Options")]
     pub dump_molecules: bool,
 

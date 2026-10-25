@@ -318,6 +318,7 @@ fn resolve_quant_setup(
                     "A piscem index is being used, but no piscem executable is provided. Please set one with `simpleaf set-paths`."
                 );
             }
+            crate::utils::prog_utils::ensure_piscem_version(&rp)?;
         }
         IndexType::NoIndex => {}
     }
@@ -453,10 +454,11 @@ fn run_mapping_stage(
                     .arg("-o")
                     .arg(&map_output);
 
-                // No version gate here any more: `set-paths` refuses a piscem
-                // older than `min_versions::PISCEM`, which is well past the
-                // 0.18.0 these options needed, so the fallback that quietly
-                // dropped them could never be reached.
+                // No version gate here any more: `set-paths` and the preflight
+                // in `resolve_quant_setup` refuse a piscem older than
+                // `min_versions::PISCEM`, which is well past the 0.18.0 these
+                // options needed, so the fallback that quietly dropped them
+                // could never be reached.
                 push_advanced_piscem_options(&mut piscem_quant_cmd, opts)?;
                 opts.decode
                     .append_to(&mut piscem_quant_cmd, &opts.output, None)?;

@@ -479,6 +479,9 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
         .piscem
         .as_ref()
         .context("piscem is required for mapping; please run `simpleaf set-paths`")?;
+    // Likewise for piscem: one below the floor would build or map with the old
+    // index format and without the decoy speedups.
+    crate::utils::prog_utils::ensure_piscem_version(&rt.progs)?;
     let alevin_fry_info = rt
         .progs
         .alevin_fry
@@ -498,7 +501,7 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
     // needs no announcement.
     match gene_axis {
         Some(GeneAxis::Usa) => {
-            info!("Falling back to `quant`: USA mode is only available there.");
+            info!("Quantifying per gene with `quant`: USA mode is only available there.");
         }
         Some(GeneAxis::UnknownIndex) => {
             info!(

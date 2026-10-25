@@ -435,6 +435,29 @@ pub fn ensure_alevin_fry_version(rp: &ReqProgs) -> Result<()> {
     Ok(())
 }
 
+/// Preflight: confirm the piscem recorded in the cached program info satisfies
+/// [`min_versions::PISCEM`], the counterpart of [`ensure_alevin_fry_version`].
+///
+/// A home registered by an earlier simpleaf can hold a piscem below the floor
+/// even when its alevin-fry passes (a user who upgraded alevin-fry first).
+/// Such a piscem would build an index in the old format, which a current
+/// piscem then refuses with a "must be rebuilt" error that blames the index,
+/// or map Flex reads without the decoy speedups. Like the alevin-fry check,
+/// this reads the cached version string and spawns no subprocess.
+pub fn ensure_piscem_version(rp: &ReqProgs) -> Result<()> {
+    let piscem = rp
+        .piscem
+        .as_ref()
+        .context("piscem program info is missing; please run `simpleaf set-paths`.")?;
+    check_version_constraints("piscem", min_versions::PISCEM, &piscem.version).with_context(
+        || {
+            "the registered piscem does not meet this simpleaf's minimum; install a newer \
+             piscem and re-run `simpleaf set-paths`"
+        },
+    )?;
+    Ok(())
+}
+
 /// Optional alevin-fry capabilities that simpleaf uses only on a build that
 /// has them.
 ///
@@ -643,7 +666,7 @@ pub fn get_required_progs_from_paths(
             Ok(p) => Some(p),
             Err(_e) => {
                 info!(
-                    "Could not find macs3 executable, peak calling cannot be peformed by simpleaf"
+                    "Could not find macs3 executable, peak calling cannot be performed by simpleaf"
                 );
                 None
             }
@@ -1145,7 +1168,7 @@ pub fn inspect_af_home(af_home_path: &Path) -> anyhow::Result<serde_json::Value>
 mod tests {
     use super::{
         AlevinFryCapabilities, ProgInfo, ReqProgs, check_files_exist, check_piscem_index_files,
-        ensure_alevin_fry_version, help_defines_flag,
+        ensure_alevin_fry_version, ensure_piscem_version, help_defines_flag,
     };
     use cmd_lib::run_fun;
     use semver::Version;
@@ -1335,6 +1358,25 @@ Options:
             macs: None,
         };
         assert!(ensure_alevin_fry_version(&none).is_err());
+    }
+
+    #[test]
+    fn ensure_piscem_version_accepts_current_and_rejects_old_or_missing() {
+        let with_piscem = |version: &str| ReqProgs {
+            piscem: Some(ProgInfo {
+                exe_path: "/bin/echo".into(),
+                version: version.to_string(),
+            }),
+            alevin_fry: None,
+            macs: None,
+        };
+        // meets the >=0.24.0 floor
+        assert!(ensure_piscem_version(&with_piscem("0.24.0")).is_ok());
+        assert!(ensure_piscem_version(&with_piscem("0.25.1")).is_ok());
+        // below the floor: builds the old index format
+        assert!(ensure_piscem_version(&with_piscem("0.23.0")).is_err());
+        // not registered at all -> error pointing at set-paths
+        assert!(ensure_piscem_version(&req_progs_with_af("0.19.0")).is_err());
     }
 
     /// Yields `data` and then fails, like a connection dropped mid-download.
