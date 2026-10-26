@@ -4,7 +4,7 @@
 > (2024-07-01); releases 0.18.0 through 0.26.2 are not recorded here. See the
 > git history and the GitHub releases page for that range.
 
-## Unreleased
+## [0.32.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.31.0...v0.32.0) (2026-10-26)
 
 ### Features
 
@@ -20,6 +20,11 @@
   corrected resolver, so an explicit `--small-thresh` has no effect and
   simpleaf warns about it
   ([alevin-fry#212](https://github.com/COMBINE-lab/alevin-fry/issues/212)).
+  ([#224](https://github.com/COMBINE-lab/simpleaf/pull/224))
+
+### Notes
+
+Requirements are unchanged from 0.31.0: piscem >= 0.24.0, alevin-fry >= 0.19.0.
 
 ## [0.31.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.30.0...v0.31.0) (2026-10-25)
 
