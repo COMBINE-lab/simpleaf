@@ -789,6 +789,16 @@ pub struct MapQuantOpts {
     #[arg(long, value_name = "N", help_heading = "UMI Resolution Options")]
     pub small_thresh: Option<usize>,
 
+    /// Hamming distance within which UMIs of the same cell and feature are
+    /// collapsed before resolution, forwarded to alevin-fry as
+    /// `--umi-edit-dist`. With `cr-like` or `cr-like-em`, 1 collapses UMIs that
+    /// differ at one position, as Cell Ranger does.
+    ///
+    /// Left unset, alevin-fry's own default applies (0 for `cr-like` and
+    /// `cr-like-em`, 1 for the `parsimony` strategies).
+    #[arg(long, value_name = "N", help_heading = "UMI Resolution Options")]
+    pub umi_edit_dist: Option<u32>,
+
     /// Generate an anndata (h5ad format) count matrix from the standard (matrix-market format)
     /// output.
     #[arg(long, help_heading = "Output Options")]
@@ -1299,6 +1309,16 @@ pub struct MultiplexQuantOpts {
     /// Left unset, alevin-fry's own default applies.
     #[arg(long, value_name = "N", help_heading = "Quantification Options")]
     pub small_thresh: Option<usize>,
+
+    /// Hamming distance within which UMIs of the same cell and feature are
+    /// collapsed before resolution, forwarded to alevin-fry as
+    /// `--umi-edit-dist`. With `cr-like` or `cr-like-em`, 1 collapses UMIs that
+    /// differ at one position, as Cell Ranger does.
+    ///
+    /// Left unset, alevin-fry's own default applies (0 for `cr-like` and
+    /// `cr-like-em`, 1 for the `parsimony` strategies).
+    #[arg(long, value_name = "N", help_heading = "Quantification Options")]
+    pub umi_edit_dist: Option<u32>,
 
     /// k-mer length for probe index building
     #[arg(long, default_value_t = 23, help_heading = "Probe Set Options")]

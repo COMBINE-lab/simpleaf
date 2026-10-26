@@ -612,6 +612,11 @@ fn run_quant_stage(
             .arg("--small-thresh")
             .arg(small_thresh.to_string());
     }
+    if let Some(umi_edit_dist) = opts.umi_edit_dist {
+        alevin_quant_cmd
+            .arg("--umi-edit-dist")
+            .arg(umi_edit_dist.to_string());
+    }
     // Forwarded only when requested; support was checked before any work.
     if opts.dump_molecules {
         alevin_quant_cmd.arg("--dump-molecules");

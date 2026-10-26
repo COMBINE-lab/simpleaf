@@ -768,6 +768,11 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
             .arg("--small-thresh")
             .arg(small_thresh.to_string());
     }
+    if let Some(umi_edit_dist) = opts.umi_edit_dist {
+        quant_cmd
+            .arg("--umi-edit-dist")
+            .arg(umi_edit_dist.to_string());
+    }
     // Optional outputs, forwarded only when requested; support was checked
     // before any work started.
     if opts.dump_molecules {
@@ -2320,6 +2325,23 @@ GATCCTCT\tGATCCTCT\tBC003
         assert!(
             kept[0].join("probe_index").join("index.partial").is_file(),
             "the failed build's files should be kept"
+        );
+    }
+
+    #[test]
+    fn umi_edit_dist_is_unset_unless_given() {
+        let ued = |args: &[&str]| {
+            let mut cli = vec!["-o", "."];
+            cli.extend_from_slice(args);
+            parse_multiplex_quant_opts(&cli).umi_edit_dist
+        };
+        // Unset: nothing is forwarded, so alevin-fry's own default applies.
+        assert_eq!(ued(&[]), None);
+        assert_eq!(ued(&["--umi-edit-dist", "1"]), Some(1));
+        assert_eq!(ued(&["--umi-edit-dist", "0"]), Some(0));
+        assert!(
+            try_parse_multiplex_quant(&["-1", "r1.fq", "-2", "r2.fq", "--umi-edit-dist", "x"])
+                .is_err()
         );
     }
 }

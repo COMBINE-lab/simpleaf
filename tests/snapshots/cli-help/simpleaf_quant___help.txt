@@ -189,6 +189,14 @@ UMI Resolution Options:
 
           Left unset, alevin-fry's own default applies.
 
+      --umi-edit-dist <N>
+          Hamming distance within which UMIs of the same cell and feature are collapsed before
+          resolution, forwarded to alevin-fry as `--umi-edit-dist`. With `cr-like` or `cr-like-em`,
+          1 collapses UMIs that differ at one position, as Cell Ranger does.
+
+          Left unset, alevin-fry's own default applies (0 for `cr-like` and `cr-like-em`, 1 for the
+          `parsimony` strategies).
+
 Output Options:
       --anndata-out
           Generate an anndata (h5ad format) count matrix from the standard (matrix-market format)
