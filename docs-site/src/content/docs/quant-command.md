@@ -307,6 +307,18 @@ UMI Resolution Options:
 
           Left unset, alevin-fry's own default applies.
 
+      --umi-edit-dist <N>
+          UMI edit distance (0 or 1), forwarded to alevin-fry as `--umi-edit-dist`.
+
+          With `cr-like` or `cr-like-em`, 1 merges UMIs of the same cell and feature that differ at
+          one position before resolution, as Cell Ranger does. That correction is not available in
+          USA mode (a 3-column t2g map), and it turns off alevin-fry's small-cell fast path, so
+          `--small-thresh` has no effect. With the `parsimony` strategies, 1 links UMIs one mismatch
+          apart in the UMI graph and 0 links only identical ones.
+
+          Left unset, alevin-fry's own default applies (0 for `cr-like` and `cr-like-em`, 1 for the
+          `parsimony` strategies).
+
 Output Options:
       --anndata-out
           Generate an anndata (h5ad format) count matrix from the standard (matrix-market format)

@@ -4,6 +4,23 @@
 > (2024-07-01); releases 0.18.0 through 0.26.2 are not recorded here. See the
 > git history and the GitHub releases page for that range.
 
+## Unreleased
+
+### Features
+
+* `--umi-edit-dist <N>` on `quant` and `multiplex-quant`, forwarded to
+  alevin-fry `quant` / `quant-probe` as `--umi-edit-dist`. With `cr-like` or
+  `cr-like-em`, `--umi-edit-dist 1` turns on Cell Ranger-style Hamming-1 UMI
+  collapsing, which alevin-fry supports but simpleaf could not request. Left
+  unset, nothing is forwarded and alevin-fry's default applies (0 for `cr-like`).
+  What alevin-fry would reject only at its final quant step is rejected before
+  mapping: a value other than 0 or 1, and `cr-like`/`cr-like-em` with 1 in USA
+  mode (`multiplex-quant --usa`, or a `quant` run whose t2g map has 3
+  columns). With that correction on, alevin-fry resolves every cell with the
+  corrected resolver, so an explicit `--small-thresh` has no effect and
+  simpleaf warns about it
+  ([alevin-fry#212](https://github.com/COMBINE-lab/alevin-fry/issues/212)).
+
 ## [0.31.0](https://github.com/COMBINE-lab/simpleaf/compare/v0.30.0...v0.31.0) (2026-10-25)
 
 ### Breaking changes

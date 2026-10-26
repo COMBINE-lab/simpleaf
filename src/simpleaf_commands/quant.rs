@@ -1,6 +1,7 @@
 use crate::utils::af_utils::*;
 
 use crate::core::{context, exec, index_meta, io, runtime};
+use crate::utils::probe_utils;
 use crate::utils::prog_parsing_utils;
 use crate::utils::prog_utils;
 use crate::utils::prog_utils::ReqProgs;
@@ -268,6 +269,29 @@ struct QuantStageOutput {
     quant_duration: Duration,
 }
 
+/// Checks `--umi-edit-dist` against the t2g map quant will be given, which
+/// decides USA mode, before any mapping is done.
+fn check_umi_edit_dist_for_map(opts: &MapQuantOpts, t2g_map_file: &Path) -> anyhow::Result<()> {
+    // Only the cr-like correction depends on the map, so only then is it read.
+    let usa_mode = if crlike_umi_correction(&opts.resolution, opts.umi_edit_dist)
+        && probe_utils::t2g_has_usa_mapping(t2g_map_file)
+            .with_context(|| format!("could not read the t2g map {}", t2g_map_file.display()))?
+    {
+        Some(format!(
+            "the t2g map {} has 3 columns (spliced/unspliced/ambiguous)",
+            t2g_map_file.display()
+        ))
+    } else {
+        None
+    };
+    check_umi_edit_dist(
+        &opts.resolution,
+        opts.umi_edit_dist,
+        opts.small_thresh,
+        usa_mode.as_deref(),
+    )
+}
+
 fn resolve_quant_setup(
     af_home_path: &Path,
     opts: &MapQuantOpts,
@@ -310,6 +334,7 @@ fn resolve_quant_setup(
         not be inferred from the index. Please provide a t2g map explicitly to the quant command.",
     )?;
     prog_utils::check_files_exist(std::slice::from_ref(&t2g_map_file))?;
+    check_umi_edit_dist_for_map(opts, &t2g_map_file)?;
 
     match index_type {
         IndexType::Piscem(_) => {
@@ -612,6 +637,11 @@ fn run_quant_stage(
             .arg("--small-thresh")
             .arg(small_thresh.to_string());
     }
+    if let Some(umi_edit_dist) = opts.umi_edit_dist {
+        alevin_quant_cmd
+            .arg("--umi-edit-dist")
+            .arg(umi_edit_dist.to_string());
+    }
     // Forwarded only when requested; support was checked before any work.
     if opts.dump_molecules {
         alevin_quant_cmd.arg("--dump-molecules");
@@ -746,6 +776,55 @@ mod tests {
             filter_meth: CellFilterMethod::KneeFinding,
             threads: 1,
         }
+    }
+
+    #[test]
+    fn umi_edit_dist_is_checked_against_the_t2g_map_before_mapping() {
+        let td = tempfile::tempdir().unwrap();
+        let t2g2 = td.path().join("t2g.tsv");
+        std::fs::write(&t2g2, "tx1\tg1\n").unwrap();
+        let t2g3 = td.path().join("t2g_3col.tsv");
+        std::fs::write(&t2g3, "tx1\tg1\tS\ntx1-I\tg1\tU\n").unwrap();
+        let opts = |args: &[&str]| {
+            let mut cli = vec!["quant", "-c", "10xv3", "-o", "/tmp/out", "--knee"];
+            cli.extend_from_slice(args);
+            cli.extend_from_slice(&["--map-dir", "/tmp/mapped"]);
+            parse_quant_opts(&cli)
+        };
+
+        let ued1 = opts(&["-r", "cr-like", "--umi-edit-dist", "1"]);
+        let err = check_umi_edit_dist_for_map(&ued1, &t2g3).expect_err("USA mode must be rejected");
+        assert!(format!("{err:#}").contains("has 3 columns"), "{err:#}");
+        assert!(check_umi_edit_dist_for_map(&ued1, &t2g2).is_ok());
+        // Without the cr-like correction the map is not even read.
+        let missing = td.path().join("missing.tsv");
+        for args in [
+            &["-r", "cr-like"][..],
+            &["-r", "cr-like", "--umi-edit-dist", "0"],
+            &["-r", "parsimony", "--umi-edit-dist", "1"],
+        ] {
+            assert!(check_umi_edit_dist_for_map(&opts(args), &missing).is_ok());
+        }
+
+        // Only 0 and 1 parse.
+        assert_eq!(ued1.umi_edit_dist, Some(1));
+        assert_eq!(opts(&["-r", "cr-like"]).umi_edit_dist, None);
+        let bad = Cli::try_parse_from([
+            "simpleaf",
+            "quant",
+            "-c",
+            "10xv3",
+            "-o",
+            "/tmp/out",
+            "--knee",
+            "-r",
+            "cr-like",
+            "--map-dir",
+            "/tmp/mapped",
+            "--umi-edit-dist",
+            "2",
+        ]);
+        assert!(bad.is_err());
     }
 
     #[test]

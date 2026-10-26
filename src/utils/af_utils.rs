@@ -590,5 +590,46 @@ pub fn parse_resource_json_file(p: &Path, url: Option<&str>) -> Result<Value> {
     })
 }
 
+/// Whether `--umi-edit-dist` turns on alevin-fry's Cell Ranger-style
+/// Hamming-1 UMI correction, which only `cr-like` and `cr-like-em` have.
+pub fn crlike_umi_correction(resolution: &str, umi_edit_dist: Option<u32>) -> bool {
+    umi_edit_dist == Some(1) && matches!(resolution, "cr-like" | "cr-like-em")
+}
+
+/// Checks `--umi-edit-dist` against the run it is forwarded to, so that a
+/// combination alevin-fry rejects fails before mapping rather than at the
+/// final quant step. The parser already limits the value to 0 or 1.
+///
+/// `usa_mode` says why this run quantifies over a 3-column (USA-mode) map, or
+/// is `None` when it does not.
+pub fn check_umi_edit_dist(
+    resolution: &str,
+    umi_edit_dist: Option<u32>,
+    small_thresh: Option<usize>,
+    usa_mode: Option<&str>,
+) -> Result<()> {
+    if !crlike_umi_correction(resolution, umi_edit_dist) {
+        return Ok(());
+    }
+    if let Some(why) = usa_mode {
+        bail!(
+            "`--umi-edit-dist 1` with `--resolution {resolution}` is not supported in USA mode, \
+             and this run is in USA mode because {why}. alevin-fry applies its Cell \
+             Ranger-style UMI correction only over a spliced-only (2-column) map; drop \
+             `--umi-edit-dist 1` to resolve with exact UMIs."
+        );
+    }
+    // alevin-fry turns its small-cell fast path off, rather than skip the
+    // correction there (COMBINE-lab/alevin-fry#212).
+    if let Some(n) = small_thresh.filter(|&n| n > 0) {
+        warn!(
+            "`--small-thresh {n}` has no effect with `--umi-edit-dist 1`: alevin-fry then \
+             resolves every cell with the corrected `{resolution}` resolver, however few reads \
+             it has."
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests;

@@ -164,3 +164,32 @@ fn all_registry_geometries_validate() {
         failures.join("\n  ")
     );
 }
+
+#[test]
+fn umi_edit_dist_check_rejects_crlike_correction_in_usa_mode_only() {
+    let usa = Some("`--usa` was given");
+    for r in ["cr-like", "cr-like-em"] {
+        let err = check_umi_edit_dist(r, Some(1), None, usa).expect_err("must be rejected");
+        let err = format!("{err:#}");
+        assert!(err.contains("not supported in USA mode"), "{err}");
+        assert!(err.contains("`--usa` was given"), "{err}");
+        // A spliced-only map, or no correction, is fine.
+        assert!(check_umi_edit_dist(r, Some(1), None, None).is_ok());
+        assert!(check_umi_edit_dist(r, Some(0), None, usa).is_ok());
+        assert!(check_umi_edit_dist(r, None, None, usa).is_ok());
+        // An overridden --small-thresh only warns.
+        assert!(check_umi_edit_dist(r, Some(1), Some(50), None).is_ok());
+    }
+    // The parsimony strategies link UMIs one mismatch apart by default, in USA
+    // mode too, so alevin-fry accepts both values there.
+    for r in [
+        "parsimony",
+        "parsimony-em",
+        "parsimony-gene",
+        "parsimony-gene-em",
+    ] {
+        for ued in [None, Some(0), Some(1)] {
+            assert!(check_umi_edit_dist(r, ued, Some(50), usa).is_ok());
+        }
+    }
+}
