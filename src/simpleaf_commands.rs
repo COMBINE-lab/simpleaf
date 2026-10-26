@@ -789,14 +789,24 @@ pub struct MapQuantOpts {
     #[arg(long, value_name = "N", help_heading = "UMI Resolution Options")]
     pub small_thresh: Option<usize>,
 
-    /// Hamming distance within which UMIs of the same cell and feature are
-    /// collapsed before resolution, forwarded to alevin-fry as
-    /// `--umi-edit-dist`. With `cr-like` or `cr-like-em`, 1 collapses UMIs that
-    /// differ at one position, as Cell Ranger does.
+    /// UMI edit distance (0 or 1), forwarded to alevin-fry as `--umi-edit-dist`.
+    ///
+    /// With `cr-like` or `cr-like-em`, 1 merges UMIs of the same cell and
+    /// feature that differ at one position before resolution, as Cell Ranger
+    /// does. That correction is not available in USA mode (a 3-column t2g
+    /// map), and it turns off alevin-fry's small-cell fast path, so
+    /// `--small-thresh` has no effect. With the `parsimony` strategies, 1 links
+    /// UMIs one mismatch apart in the UMI graph and 0 links only identical
+    /// ones.
     ///
     /// Left unset, alevin-fry's own default applies (0 for `cr-like` and
     /// `cr-like-em`, 1 for the `parsimony` strategies).
-    #[arg(long, value_name = "N", help_heading = "UMI Resolution Options")]
+    #[arg(
+        long,
+        value_name = "N",
+        value_parser = clap::value_parser!(u32).range(..=1),
+        help_heading = "UMI Resolution Options"
+    )]
     pub umi_edit_dist: Option<u32>,
 
     /// Generate an anndata (h5ad format) count matrix from the standard (matrix-market format)
@@ -1310,14 +1320,23 @@ pub struct MultiplexQuantOpts {
     #[arg(long, value_name = "N", help_heading = "Quantification Options")]
     pub small_thresh: Option<usize>,
 
-    /// Hamming distance within which UMIs of the same cell and feature are
-    /// collapsed before resolution, forwarded to alevin-fry as
-    /// `--umi-edit-dist`. With `cr-like` or `cr-like-em`, 1 collapses UMIs that
-    /// differ at one position, as Cell Ranger does.
+    /// UMI edit distance (0 or 1), forwarded to alevin-fry as `--umi-edit-dist`.
+    ///
+    /// With `cr-like` or `cr-like-em`, 1 merges UMIs of the same cell and
+    /// feature that differ at one position before resolution, as Cell Ranger
+    /// does. That correction is not available with `--usa`, and it turns off
+    /// alevin-fry's small-cell fast path, so `--small-thresh` has no effect.
+    /// With the `parsimony` strategies, 1 links UMIs one mismatch apart in the
+    /// UMI graph and 0 links only identical ones.
     ///
     /// Left unset, alevin-fry's own default applies (0 for `cr-like` and
     /// `cr-like-em`, 1 for the `parsimony` strategies).
-    #[arg(long, value_name = "N", help_heading = "Quantification Options")]
+    #[arg(
+        long,
+        value_name = "N",
+        value_parser = clap::value_parser!(u32).range(..=1),
+        help_heading = "Quantification Options"
+    )]
     pub umi_edit_dist: Option<u32>,
 
     /// k-mer length for probe index building

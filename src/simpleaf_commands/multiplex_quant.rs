@@ -196,6 +196,12 @@ fn validate_alevin_fry_options(
             );
         }
     }
+    crate::utils::af_utils::check_umi_edit_dist(
+        &opts.resolution,
+        opts.umi_edit_dist,
+        opts.small_thresh,
+        opts.usa.then_some("`--usa` was given"),
+    )?;
     if opts.dump_molecules {
         // Checked against the subcommand this run will actually invoke, not
         // against `quant` always: the two need not carry the same options.
@@ -2339,9 +2345,32 @@ GATCCTCT\tGATCCTCT\tBC003
         assert_eq!(ued(&[]), None);
         assert_eq!(ued(&["--umi-edit-dist", "1"]), Some(1));
         assert_eq!(ued(&["--umi-edit-dist", "0"]), Some(0));
-        assert!(
-            try_parse_multiplex_quant(&["-1", "r1.fq", "-2", "r2.fq", "--umi-edit-dist", "x"])
-                .is_err()
-        );
+        for bad in ["x", "2"] {
+            assert!(
+                try_parse_multiplex_quant(&["-1", "r1.fq", "-2", "r2.fq", "--umi-edit-dist", bad])
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn umi_edit_dist_with_usa_is_rejected_up_front() {
+        let check = |args: &[&str]| {
+            let mut cli = vec!["-o", ".", "--probe-set", "p.csv"];
+            cli.extend_from_slice(args);
+            let opts = parse_multiplex_quant_opts(&cli);
+            let af_caps = caps(true, true);
+            let axis = gene_axis_reason(&opts, &af_caps);
+            validate_alevin_fry_options(&opts, &af_caps, axis, Path::new("alevin-fry"))
+                .map_err(|e| format!("{e:#}"))
+        };
+        for r in ["cr-like", "cr-like-em"] {
+            let err = check(&["--usa", "-r", r, "--umi-edit-dist", "1"]).expect_err("rejected");
+            assert!(err.contains("`--usa` was given"), "{err}");
+            assert!(check(&["--usa", "-r", r, "--umi-edit-dist", "0"]).is_ok());
+            assert!(check(&["-r", r, "--umi-edit-dist", "1"]).is_ok());
+            assert!(check(&["--gene-level", "-r", r, "--umi-edit-dist", "1"]).is_ok());
+        }
+        assert!(check(&["--usa", "-r", "parsimony", "--umi-edit-dist", "1"]).is_ok());
     }
 }
