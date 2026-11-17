@@ -11,11 +11,16 @@ pub struct QuantIndexMetadata {
     pub index_type: IndexType,
     pub inferred_t2g: Option<PathBuf>,
     pub inferred_gene_id_to_name: Option<PathBuf>,
+    /// The copy of the original probe-set CSV that `simpleaf index
+    /// --probe-csv` keeps in the index (`probe_set_file`). `None` for an index
+    /// built from another reference, or before simpleaf kept this copy.
+    pub inferred_probe_set: Option<PathBuf>,
 }
 
 pub fn resolve_quant_index(index: Option<PathBuf>) -> anyhow::Result<QuantIndexMetadata> {
     let mut inferred_t2g = None;
     let mut inferred_gene_id_to_name = None;
+    let mut inferred_probe_set = None;
     let index_type;
 
     if let Some(mut index) = index {
@@ -53,6 +58,12 @@ pub fn resolve_quant_index(index: Option<PathBuf>) -> anyhow::Result<QuantIndexM
                     inferred_t2g = Some(index.join(t2g_rel));
                 }
 
+                let probe_set_opt: Option<PathBuf> =
+                    serde_json::from_value(v["probe_set_file"].clone())?;
+                if let Some(probe_set_rel) = probe_set_opt {
+                    inferred_probe_set = Some(index.join(probe_set_rel));
+                }
+
                 if index.join("gene_id_to_name.tsv").exists() {
                     inferred_gene_id_to_name = Some(index.join("gene_id_to_name.tsv"));
                 } else if let Some(index_parent) = index.parent() {
@@ -78,6 +89,7 @@ pub fn resolve_quant_index(index: Option<PathBuf>) -> anyhow::Result<QuantIndexM
         index_type,
         inferred_t2g,
         inferred_gene_id_to_name,
+        inferred_probe_set,
     })
 }
 
@@ -146,6 +158,50 @@ mod tests {
             "unexpected error: {:#}",
             err
         );
+    }
+
+    fn write_piscem_index_json(idx_dir: &std::path::Path, json: serde_json::Value) {
+        fs::create_dir_all(idx_dir).expect("failed to create index dir");
+        fs::write(
+            idx_dir.join("simpleaf_index.json"),
+            serde_json::to_string_pretty(&json).expect("failed to serialize json"),
+        )
+        .expect("failed to write simpleaf_index.json");
+    }
+
+    #[test]
+    fn resolve_quant_index_resolves_probe_set_file_against_the_index_dir() {
+        let td = tempdir().expect("failed to create tempdir");
+        let idx_dir = td.path().join("index");
+        write_piscem_index_json(
+            &idx_dir,
+            json!({
+                "index_type": "piscem",
+                "t2g_file": "t2g_3col.tsv",
+                "probe_set_file": "probe_set.csv"
+            }),
+        );
+
+        let meta = resolve_quant_index(Some(idx_dir.clone())).expect("failed to resolve index");
+
+        assert_eq!(meta.inferred_probe_set, Some(idx_dir.join("probe_set.csv")));
+        assert_eq!(meta.inferred_t2g, Some(idx_dir.join("t2g_3col.tsv")));
+    }
+
+    #[test]
+    fn resolve_quant_index_without_probe_set_file_infers_none() {
+        let td = tempdir().expect("failed to create tempdir");
+        // An index written before simpleaf kept the CSV has no key at all; a
+        // non-probe index written now records `null`.
+        for json in [
+            json!({"index_type": "piscem", "t2g_file": "t2g_3col.tsv"}),
+            json!({"index_type": "piscem", "t2g_file": null, "probe_set_file": null}),
+        ] {
+            let idx_dir = td.path().join("index");
+            write_piscem_index_json(&idx_dir, json);
+            let meta = resolve_quant_index(Some(idx_dir)).expect("failed to resolve index");
+            assert_eq!(meta.inferred_probe_set, None);
+        }
     }
 
     #[test]
