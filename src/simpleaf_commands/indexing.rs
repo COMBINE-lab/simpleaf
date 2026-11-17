@@ -185,6 +185,32 @@ mod tests {
         );
     }
 
+    /// `std::fs::copy` onto the same file empties it; the CSV that already is
+    /// the index copy must stay as it is.
+    #[cfg(unix)]
+    #[test]
+    fn probe_csv_that_is_the_index_copy_is_not_emptied() {
+        let td = tempdir().expect("failed to create tempdir");
+        let af_home = af_home_with_fake_piscem(td.path());
+        let out = td.path().join("idx");
+        let index_dir = out.join("index");
+        fs::create_dir_all(&index_dir).expect("failed to create index dir");
+        let csv = index_dir.join("probe_set.csv");
+        let body = "gene_id,probe_seq,probe_id,included\n\
+                    G1,ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTAC,G1|A|1,TRUE\n";
+        fs::write(&csv, body).expect("failed to write probe csv");
+        let opts = parse_index_opts(&[
+            "-o",
+            out.to_str().unwrap(),
+            "--probe-csv",
+            csv.to_str().unwrap(),
+        ]);
+
+        build_ref_and_index(&af_home, opts).expect("index build should succeed");
+
+        assert_eq!(fs::read_to_string(&csv).expect("missing CSV"), body);
+    }
+
     #[cfg(unix)]
     #[test]
     fn ref_seq_index_records_no_probe_set() {
@@ -828,7 +854,10 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     if let Some(probe_set_file) = reference_stage.probe_set.clone() {
         let index_probe_set_path = output_index_dir.join("probe_set.csv");
         probe_set_out_path = Some(PathBuf::from("probe_set.csv"));
-        std::fs::copy(probe_set_file, index_probe_set_path)?;
+        // The CSV may already be this copy (`--probe-csv <index>/probe_set.csv`).
+        if !probe_utils::same_file(&probe_set_file, &index_probe_set_path) {
+            std::fs::copy(probe_set_file, index_probe_set_path)?;
+        }
     }
 
     let index_json_file = output_index_dir.join("simpleaf_index.json");

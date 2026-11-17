@@ -148,6 +148,15 @@ pub fn insert_gene_name(
     Ok(())
 }
 
+/// Whether `a` and `b` are the same existing file. `std::fs::copy` onto the
+/// same file empties it, so the probe-set CSV copies check this first.
+pub fn same_file(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
+}
+
 /// Write a `gene_id -> gene_name` map as a 2-column TSV (rows sorted by `gene_id`,
 /// since the map is a `BTreeMap`). Shared by both probe-index build paths.
 pub fn write_gene_id_to_name(map: &BTreeMap<String, String>, path: &Path) -> anyhow::Result<()> {

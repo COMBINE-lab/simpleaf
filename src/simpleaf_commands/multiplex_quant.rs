@@ -361,6 +361,10 @@ fn check_probe_set_source(probe_set: Option<&Path>, probe_reference: bool) -> an
 fn copy_probe_set_into(probe_set: Option<&Path>, quant_output: &Path) -> anyhow::Result<()> {
     if let Some(probe_set_path) = probe_set {
         let target_path = quant_output.join("probe_set.csv");
+        // The CSV may already be this copy (`--probe-set af_quant/probe_set.csv`).
+        if probe_utils::same_file(probe_set_path, &target_path) {
+            return Ok(());
+        }
         std::fs::copy(probe_set_path, &target_path).with_context(|| {
             format!(
                 "could not copy the probe set from {} to {}",
@@ -1212,7 +1216,10 @@ fn build_index_from_probe_set(
     let mut probe_set_copy = None;
     if is_probe_csv(probe_set) {
         let index_probe_set_path = index_dir.join("probe_set.csv");
-        std::fs::copy(probe_set, &index_probe_set_path)?;
+        // The CSV may already be this copy (`--probe-set probe_index/probe_set.csv`).
+        if !probe_utils::same_file(probe_set, &index_probe_set_path) {
+            std::fs::copy(probe_set, &index_probe_set_path)?;
+        }
         probe_set_copy = Some(index_probe_set_path);
     }
     let fasta_path = probe_set_files.fasta_path.clone();
@@ -2572,6 +2579,31 @@ GATCCTCT\tGATCCTCT\tBC003
         );
     }
 
+    /// `std::fs::copy` onto the same file empties it; a `--probe-set` that
+    /// already is the index copy must stay as it is.
+    #[cfg(unix)]
+    #[test]
+    fn probe_set_that_is_the_probe_index_copy_is_not_emptied() {
+        let td = tempdir().expect("failed to create tempdir");
+        let out = td.path().join("out");
+        let probe_index = out.join("probe_index");
+        fs::create_dir_all(&probe_index).expect("failed to create probe index dir");
+        let probes = probe_index.join("probe_set.csv");
+        fs::write(&probes, TOY_PROBE_CSV).expect("failed to write probes");
+        let opts = parse_multiplex_quant_opts(&["-o", out.to_str().unwrap()]);
+        let piscem = fake_piscem_that_builds(td.path());
+
+        let resolved =
+            super::build_index_from_probe_set(&probes, &opts, &piscem, ProbeT2gMode::Gene)
+                .expect("fake build should succeed");
+
+        assert_eq!(resolved.3, Some(probes.clone()));
+        assert_eq!(
+            fs::read_to_string(&probes).expect("missing CSV"),
+            TOY_PROBE_CSV
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn probe_index_built_from_a_fasta_has_no_probe_set() {
@@ -2661,6 +2693,24 @@ GATCCTCT\tGATCCTCT\tBC003
             fs::read_to_string(quant_output.join("probe_set.csv")).expect("missing copy"),
             TOY_PROBE_CSV,
             "the copy must be the original CSV, header lines included"
+        );
+    }
+
+    #[test]
+    fn probe_set_that_is_the_quant_output_copy_is_not_emptied() {
+        let td = tempdir().expect("failed to create tempdir");
+        let quant_output = td.path().join("af_quant");
+        fs::create_dir_all(&quant_output).expect("failed to create af_quant");
+        let csv = quant_output.join("probe_set.csv");
+        fs::write(&csv, TOY_PROBE_CSV).expect("failed to write probe csv");
+
+        // The same file, also when it is named another way.
+        let other_name = td.path().join("af_quant").join(".").join("probe_set.csv");
+        super::copy_probe_set_into(Some(&other_name), &quant_output).expect("no copy needed");
+
+        assert_eq!(
+            fs::read_to_string(&csv).expect("missing CSV"),
+            TOY_PROBE_CSV
         );
     }
 
