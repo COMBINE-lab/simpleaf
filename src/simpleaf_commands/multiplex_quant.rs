@@ -344,17 +344,22 @@ fn gene_id_to_name_for_dir(dir: Option<&Path>) -> Option<PathBuf> {
 /// Check, before mapping, the probe-set CSV that the run copies into
 /// `af_quant/` after quant: fail now if it does not exist, and tell the user
 /// when a probe-set run has no CSV to copy. The probe h5ad (`probe_h5ad`)
-/// needs the CSV to map probes to genes, so without one it is an error.
+/// needs the CSV to map probes to genes, so without one it is an error;
+/// `fasta_probe_set` tells if the user gave a FASTA `--probe-set`.
 fn check_probe_set_source(
     probe_set: Option<&Path>,
     probe_reference: bool,
     probe_h5ad: bool,
+    fasta_probe_set: bool,
 ) -> anyhow::Result<()> {
     match probe_set {
         Some(p) if !p.is_file() => bail!("The probe-set CSV {} does not exist.", p.display()),
         Some(_) => {}
+        None if probe_h5ad && fasta_probe_set => bail!(
+            "--anndata-out with --probe-mtx writes the probe h5ad, but a FASTA probe set has no probe-to-gene map; give the 10x probe-set CSV with --probe-set."
+        ),
         None if probe_h5ad => bail!(
-            "--anndata-out with --probe-mtx writes the probe h5ad, which needs the 10x probe-set CSV to map probes to genes, but the index has no probe-set CSV. Give the CSV with --probe-set."
+            "--anndata-out with --probe-mtx writes the probe h5ad, but this index has no probe_set.csv (built before simpleaf 0.33.0); give the 10x probe-set CSV with --probe-set (it can be used together with --index <index dir>)."
         ),
         None if probe_reference => info!(
             "af_quant/probe_set.csv is not written because the index has no probe-set CSV; give one with --probe-set."
@@ -687,6 +692,7 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
         probe_set_opt.as_deref(),
         is_probe_set_reference(&opts),
         opts.anndata_out && opts.probe_mtx,
+        opts.probe_set.as_deref().is_some_and(|p| !is_probe_csv(p)),
     )?;
     // --t2g-map overrides any probe-derived or inferred t2g.
     let t2g_path = if let Some(t2g_map) = opts.t2g_map.clone() {
@@ -946,10 +952,11 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
             .as_ref()
             .expect("anndata_path must exist when --anndata-out is set");
         af_anndata::convert_csr_to_anndata(&quant_output, opath)?;
+        // The gene conversion only, as before the probe h5ad.
+        convert_duration_secs = Some(convert_start.elapsed().as_secs_f64());
         if opts.probe_mtx {
             write_probe_h5ad(&quant_output, probe_set_opt.as_deref())?;
         }
-        convert_duration_secs = Some(convert_start.elapsed().as_secs_f64());
     }
 
     // === Rewrite pipeline metadata with final timing information ===
@@ -2765,7 +2772,7 @@ GATCCTCT\tGATCCTCT\tBC003
     fn missing_probe_set_source_fails_before_mapping() {
         let td = tempdir().expect("failed to create tempdir");
         let missing = td.path().join("missing.csv");
-        let err = super::check_probe_set_source(Some(&missing), true, false)
+        let err = super::check_probe_set_source(Some(&missing), true, false, false)
             .expect_err("a missing probe set must fail");
         assert!(
             format!("{err:#}").contains("missing.csv"),
@@ -2778,11 +2785,12 @@ GATCCTCT\tGATCCTCT\tBC003
         let td = tempdir().expect("failed to create tempdir");
         let csv = td.path().join("probes.csv");
         fs::write(&csv, TOY_PROBE_CSV).expect("failed to write probe csv");
-        super::check_probe_set_source(Some(&csv), true, true).expect("an existing CSV passes");
+        super::check_probe_set_source(Some(&csv), true, true, false)
+            .expect("an existing CSV passes");
         // An index without the CSV (e.g. an old cache slot) only logs that
         // nothing is copied.
-        super::check_probe_set_source(None, true, false).expect("no CSV is not an error");
-        super::check_probe_set_source(None, false, false).expect("no CSV is not an error");
+        super::check_probe_set_source(None, true, false, false).expect("no CSV is not an error");
+        super::check_probe_set_source(None, false, false, false).expect("no CSV is not an error");
     }
 
     /// A `--probe-set` CSV given with `--index` that does not exist fails at
@@ -2813,16 +2821,81 @@ GATCCTCT\tGATCCTCT\tBC003
             super::resolve_probe_index(td.path(), None, &opts, &piscem, ProbeT2gMode::Gene)
                 .expect("the index alone resolves");
         assert!(t2g.is_some() && names.is_some(), "the index supplies both");
-        let err = super::check_probe_set_source(probe_set.as_deref(), true, false)
+        let err = super::check_probe_set_source(probe_set.as_deref(), true, false, false)
             .expect_err("the missing CSV must fail");
         assert!(format!("{err:#}").contains("missing.csv"), "{err:#}");
     }
 
     #[test]
     fn probe_h5ad_without_a_probe_set_csv_fails_before_mapping() {
-        let err = super::check_probe_set_source(None, true, true)
+        // An index (or cache slot) without probe_set.csv.
+        let err = super::check_probe_set_source(None, true, true, false)
             .expect_err("the probe h5ad needs the CSV");
-        assert!(format!("{err:#}").contains("--probe-set"), "{err:#}");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("this index has no probe_set.csv"), "{msg}");
+        assert!(
+            msg.contains("--probe-set") && msg.contains("--index"),
+            "{msg}"
+        );
+        // A FASTA --probe-set.
+        let err = super::check_probe_set_source(None, true, true, true)
+            .expect_err("the probe h5ad needs the CSV");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("FASTA probe set has no probe-to-gene map"),
+            "{msg}"
+        );
+        assert!(msg.contains("--probe-set"), "{msg}");
+    }
+
+    /// What the index error tells the user works: `--index <dir>` of an index
+    /// without probe_set.csv, together with `--probe-set <csv>`, gives the CSV
+    /// that the probe h5ad needs.
+    #[test]
+    fn probe_set_csv_with_an_index_that_has_none_passes_the_probe_h5ad_check() {
+        use crate::utils::prog_utils::ProgInfo;
+        let td = tempdir().expect("failed to create tempdir");
+        // A multiplex-quant probe index (like a cache slot) built before
+        // simpleaf kept the CSV.
+        let probe_index_dir = td.path().join("probe_index");
+        fs::create_dir_all(&probe_index_dir).expect("failed to create probe index dir");
+        write_piscem_index(&probe_index_dir.join("index"));
+        fs::write(probe_index_dir.join("probe_t2g.tsv"), "P1\tG1\n")
+            .expect("failed to write gene t2g");
+        fs::write(probe_index_dir.join("gene_id_to_name.tsv"), "G1\tGene1\n")
+            .expect("failed to write gene names");
+        let csv = td.path().join("probes.csv");
+        fs::write(&csv, TOY_PROBE_CSV).expect("failed to write probe csv");
+        let piscem = ProgInfo {
+            exe_path: PathBuf::from("/bin/false"),
+            version: "0.24.0".to_string(),
+        };
+        let out = td.path().join("out");
+
+        for (with_csv, ok) in [(false, false), (true, true)] {
+            let mut args = vec![
+                "-o",
+                out.to_str().unwrap(),
+                "-i",
+                probe_index_dir.to_str().unwrap(),
+                "--anndata-out",
+                "--probe-mtx",
+            ];
+            if with_csv {
+                args.extend(["--probe-set", csv.to_str().unwrap()]);
+            }
+            let opts = parse_multiplex_quant_opts(&args);
+            let (_, _, _, probe_set) =
+                super::resolve_probe_index(td.path(), None, &opts, &piscem, ProbeT2gMode::Gene)
+                    .expect("the index resolves");
+            let check = super::check_probe_set_source(
+                probe_set.as_deref(),
+                super::is_probe_set_reference(&opts),
+                opts.anndata_out && opts.probe_mtx,
+                false,
+            );
+            assert_eq!(check.is_ok(), ok, "with --probe-set: {with_csv}: {check:?}");
+        }
     }
 
     /// The smallest `af_quant` of a `quant-probe --probe-mtx` run: 2 cells x 2
