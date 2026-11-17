@@ -262,6 +262,8 @@ Output Options:
           Generate an anndata (h5ad format) count matrix from the standard (matrix-market format)
           output
 
+          With `--probe-mtx`, also write the probe matrix as `alevin/probe_quants.h5ad`.
+
       --dump-molecules
           Also write alevin-fry's molecule table (`alevin/molecules.parquet`): one row per resolved
           molecule (cell barcode, UMI, feature, supporting reads, status), before molecules are
@@ -279,3 +281,5 @@ Output Options:
           built from a probe CSV; not `--t2g-map`), neither `--usa` nor `--gene-level`, and an
           alevin-fry whose `quant-probe` has `--probe-mtx`. simpleaf checks all of these before any
           work starts.
+
+          With `--anndata-out`, also write it as `alevin/probe_quants.h5ad`.

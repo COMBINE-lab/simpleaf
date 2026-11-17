@@ -1376,6 +1376,8 @@ pub struct MultiplexQuantOpts {
     pub min_reads: usize,
 
     /// Generate an anndata (h5ad format) count matrix from the standard (matrix-market format) output
+    ///
+    /// With `--probe-mtx`, also write the probe matrix as `alevin/probe_quants.h5ad`.
     #[arg(long, help_heading = "Output Options")]
     pub anndata_out: bool,
 
@@ -1397,6 +1399,8 @@ pub struct MultiplexQuantOpts {
     /// `--t2g-map`), neither `--usa` nor `--gene-level`, and an alevin-fry whose
     /// `quant-probe` has `--probe-mtx`. simpleaf checks all of these before any
     /// work starts.
+    ///
+    /// With `--anndata-out`, also write it as `alevin/probe_quants.h5ad`.
     #[arg(long, help_heading = "Output Options")]
     pub probe_mtx: bool,
 }

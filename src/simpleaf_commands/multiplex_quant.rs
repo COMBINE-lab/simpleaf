@@ -343,17 +343,38 @@ fn gene_id_to_name_for_dir(dir: Option<&Path>) -> Option<PathBuf> {
 
 /// Check, before mapping, the probe-set CSV that the run copies into
 /// `af_quant/` after quant: fail now if it does not exist, and tell the user
-/// when a probe-set run has no CSV to copy.
-fn check_probe_set_source(probe_set: Option<&Path>, probe_reference: bool) -> anyhow::Result<()> {
+/// when a probe-set run has no CSV to copy. The probe h5ad (`probe_h5ad`)
+/// needs the CSV to map probes to genes, so without one it is an error.
+fn check_probe_set_source(
+    probe_set: Option<&Path>,
+    probe_reference: bool,
+    probe_h5ad: bool,
+) -> anyhow::Result<()> {
     match probe_set {
         Some(p) if !p.is_file() => bail!("The probe-set CSV {} does not exist.", p.display()),
         Some(_) => {}
+        None if probe_h5ad => bail!(
+            "--anndata-out with --probe-mtx writes the probe h5ad, which needs the 10x probe-set CSV to map probes to genes, but the index has no probe-set CSV. Give the CSV with --probe-set."
+        ),
         None if probe_reference => info!(
             "af_quant/probe_set.csv is not written because the index has no probe-set CSV; give one with --probe-set."
         ),
         None => {}
     }
     Ok(())
+}
+
+/// Write the probe matrix of a `--probe-mtx` run as `alevin/probe_quants.h5ad`,
+/// with `var` from the probe-set CSV, and return its path.
+fn write_probe_h5ad(quant_output: &Path, probe_set: Option<&Path>) -> anyhow::Result<PathBuf> {
+    let probe_path = quant_output.join("alevin").join("probe_quants.h5ad");
+    af_anndata::convert_probe_csr_to_anndata(
+        quant_output,
+        probe_path.as_path(),
+        probe_set,
+        af_anndata::ConvertOpts::default(),
+    )?;
+    Ok(probe_path)
 }
 
 /// Copy the original probe-set CSV, if there is one, into the quant output
@@ -662,7 +683,11 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
     // === Step 1: Resolve index and t2g ===
     let (index_path, probe_t2g_path_opt, gene_id_to_name_opt, probe_set_opt) =
         resolve_probe_index(af_home, chem.as_ref(), &opts, piscem_info, t2g_mode(&opts))?;
-    check_probe_set_source(probe_set_opt.as_deref(), is_probe_set_reference(&opts))?;
+    check_probe_set_source(
+        probe_set_opt.as_deref(),
+        is_probe_set_reference(&opts),
+        opts.anndata_out && opts.probe_mtx,
+    )?;
     // --t2g-map overrides any probe-derived or inferred t2g.
     let t2g_path = if let Some(t2g_map) = opts.t2g_map.clone() {
         t2g_map
@@ -921,6 +946,9 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
             .as_ref()
             .expect("anndata_path must exist when --anndata-out is set");
         af_anndata::convert_csr_to_anndata(&quant_output, opath)?;
+        if opts.probe_mtx {
+            write_probe_h5ad(&quant_output, probe_set_opt.as_deref())?;
+        }
         convert_duration_secs = Some(convert_start.elapsed().as_secs_f64());
     }
 
@@ -2737,7 +2765,7 @@ GATCCTCT\tGATCCTCT\tBC003
     fn missing_probe_set_source_fails_before_mapping() {
         let td = tempdir().expect("failed to create tempdir");
         let missing = td.path().join("missing.csv");
-        let err = super::check_probe_set_source(Some(&missing), true)
+        let err = super::check_probe_set_source(Some(&missing), true, false)
             .expect_err("a missing probe set must fail");
         assert!(
             format!("{err:#}").contains("missing.csv"),
@@ -2750,11 +2778,11 @@ GATCCTCT\tGATCCTCT\tBC003
         let td = tempdir().expect("failed to create tempdir");
         let csv = td.path().join("probes.csv");
         fs::write(&csv, TOY_PROBE_CSV).expect("failed to write probe csv");
-        super::check_probe_set_source(Some(&csv), true).expect("an existing CSV passes");
+        super::check_probe_set_source(Some(&csv), true, true).expect("an existing CSV passes");
         // An index without the CSV (e.g. an old cache slot) only logs that
         // nothing is copied.
-        super::check_probe_set_source(None, true).expect("no CSV is not an error");
-        super::check_probe_set_source(None, false).expect("no CSV is not an error");
+        super::check_probe_set_source(None, true, false).expect("no CSV is not an error");
+        super::check_probe_set_source(None, false, false).expect("no CSV is not an error");
     }
 
     /// A `--probe-set` CSV given with `--index` that does not exist fails at
@@ -2785,9 +2813,70 @@ GATCCTCT\tGATCCTCT\tBC003
             super::resolve_probe_index(td.path(), None, &opts, &piscem, ProbeT2gMode::Gene)
                 .expect("the index alone resolves");
         assert!(t2g.is_some() && names.is_some(), "the index supplies both");
-        let err = super::check_probe_set_source(probe_set.as_deref(), true)
+        let err = super::check_probe_set_source(probe_set.as_deref(), true, false)
             .expect_err("the missing CSV must fail");
         assert!(format!("{err:#}").contains("missing.csv"), "{err:#}");
+    }
+
+    #[test]
+    fn probe_h5ad_without_a_probe_set_csv_fails_before_mapping() {
+        let err = super::check_probe_set_source(None, true, true)
+            .expect_err("the probe h5ad needs the CSV");
+        assert!(format!("{err:#}").contains("--probe-set"), "{err:#}");
+    }
+
+    /// The smallest `af_quant` of a `quant-probe --probe-mtx` run: 2 cells x 2
+    /// probes of one gene, and the files af-anndata reads for `uns`.
+    fn write_probe_af_quant(root: &Path) {
+        let alevin = root.join("alevin");
+        fs::create_dir_all(&alevin).expect("failed to create alevin dir");
+        fs::write(
+            alevin.join("probe_quants_mat.mtx"),
+            "%%MatrixMarket matrix coordinate real general\n2 2 2\n1 1 3\n2 2 1\n",
+        )
+        .expect("failed to write mtx");
+        // The probe rows file is a byte copy of the gene rows file, which
+        // featureDump.txt follows; af-anndata checks this.
+        for rows in ["quants_mat_rows.txt", "probe_quants_mat_rows.txt"] {
+            fs::write(alevin.join(rows), "S1_AAAA\nS1_CCCC\n").expect("failed to write rows");
+        }
+        fs::write(alevin.join("probe_quants_mat_cols.txt"), "G1|A|1\nG1|A|2\n")
+            .expect("failed to write cols");
+        fs::write(
+            root.join("featureDump.txt"),
+            "CB\tsample_name\tCorrectedReads\tMappedReads\tDeduplicatedReads\tMappingRate\tDedupRate\tMeanByMax\tNumGenesExpressed\tNumGenesOverMean\n\
+             AAAA\tS1\t3\t3\t3\t1\t0\t1\t1\t1\n\
+             CCCC\tS1\t1\t1\t1\t1\t0\t1\t1\t1\n",
+        )
+        .expect("failed to write featureDump");
+        fs::write(
+            root.join("quant.json"),
+            r#"{"usa_mode": false, "num_genes": 1}"#,
+        )
+        .expect("failed to write quant.json");
+        fs::write(root.join("collate.json"), r#"{"multi_barcode": true}"#)
+            .expect("failed to write collate.json");
+        fs::write(root.join("generate_permit_list.json"), "{}").expect("failed to write gpl json");
+    }
+
+    #[test]
+    fn probe_h5ad_is_written_next_to_the_gene_h5ad() {
+        let td = tempdir().expect("failed to create tempdir");
+        let quant_output = td.path().join("af_quant");
+        write_probe_af_quant(&quant_output);
+        let csv = td.path().join("probes.csv");
+        fs::write(
+            &csv,
+            "#probe_set_file_format=3.0\ngene_id,probe_seq,probe_id,included,region,gene_name\n\
+             G1,ACGT,G1|A|1,TRUE,spliced,Gene1\nG1,TTGC,G1|A|2,TRUE,unspliced,Gene1\n",
+        )
+        .expect("failed to write probe csv");
+
+        let path = super::write_probe_h5ad(&quant_output, Some(&csv))
+            .expect("the probe h5ad must be written");
+
+        assert_eq!(path, quant_output.join("alevin").join("probe_quants.h5ad"));
+        assert!(path.is_file(), "missing {}", path.display());
     }
 
     #[test]

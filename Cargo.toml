@@ -45,7 +45,7 @@ seq_geom_parser = "1.1"
 # mapping is deprecated, and piscem handles geometry strings directly.
 # All geometry validation uses seq_geom_parser 1.x (above).
 roers = { version = "0.5.1" }
-af-anndata = { version = "0.5.1" }
+af-anndata = { version = "0.6.0" }
 
 anyhow = "^1.0"
 clap = { version = "4.5.37", features = [
