@@ -341,6 +341,21 @@ fn gene_id_to_name_for_dir(dir: Option<&Path>) -> Option<PathBuf> {
     })
 }
 
+/// Check, before mapping, the probe-set CSV that the run copies into
+/// `af_quant/` after quant: fail now if it does not exist, and tell the user
+/// when a probe-set run has no CSV to copy.
+fn check_probe_set_source(probe_set: Option<&Path>, probe_reference: bool) -> anyhow::Result<()> {
+    match probe_set {
+        Some(p) if !p.is_file() => bail!("The probe-set CSV {} does not exist.", p.display()),
+        Some(_) => {}
+        None if probe_reference => info!(
+            "af_quant/probe_set.csv is not written because the index has no probe-set CSV; give one with --probe-set."
+        ),
+        None => {}
+    }
+    Ok(())
+}
+
 /// Copy the original probe-set CSV, if there is one, into the quant output
 /// dir as `probe_set.csv`, as `gene_id_to_name.tsv` is copied.
 fn copy_probe_set_into(probe_set: Option<&Path>, quant_output: &Path) -> anyhow::Result<()> {
@@ -643,6 +658,7 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
     // === Step 1: Resolve index and t2g ===
     let (index_path, probe_t2g_path_opt, gene_id_to_name_opt, probe_set_opt) =
         resolve_probe_index(af_home, chem.as_ref(), &opts, piscem_info, t2g_mode(&opts))?;
+    check_probe_set_source(probe_set_opt.as_deref(), is_probe_set_reference(&opts))?;
     // --t2g-map overrides any probe-derived or inferred t2g.
     let t2g_path = if let Some(t2g_map) = opts.t2g_map.clone() {
         t2g_map
@@ -2665,6 +2681,63 @@ GATCCTCT\tGATCCTCT\tBC003
             format!("{err:#}").contains("missing.csv"),
             "the error must name the source: {err:#}"
         );
+    }
+
+    #[test]
+    fn missing_probe_set_source_fails_before_mapping() {
+        let td = tempdir().expect("failed to create tempdir");
+        let missing = td.path().join("missing.csv");
+        let err = super::check_probe_set_source(Some(&missing), true)
+            .expect_err("a missing probe set must fail");
+        assert!(
+            format!("{err:#}").contains("missing.csv"),
+            "the error must name the file: {err:#}"
+        );
+    }
+
+    #[test]
+    fn existing_or_absent_probe_set_source_passes_the_check() {
+        let td = tempdir().expect("failed to create tempdir");
+        let csv = td.path().join("probes.csv");
+        fs::write(&csv, TOY_PROBE_CSV).expect("failed to write probe csv");
+        super::check_probe_set_source(Some(&csv), true).expect("an existing CSV passes");
+        // An index without the CSV (e.g. an old cache slot) only logs that
+        // nothing is copied.
+        super::check_probe_set_source(None, true).expect("no CSV is not an error");
+        super::check_probe_set_source(None, false).expect("no CSV is not an error");
+    }
+
+    /// A `--probe-set` CSV given with `--index` that does not exist fails at
+    /// index resolution, before mapping, although the index has all it needs.
+    #[test]
+    fn missing_probe_set_given_with_a_complete_index_fails_before_mapping() {
+        use crate::utils::prog_utils::ProgInfo;
+        let td = tempdir().expect("failed to create tempdir");
+        let root = td.path().join("simpleaf_output");
+        let index_dir = write_simpleaf_probe_index(&root);
+        fs::write(index_dir.join("gene_id_to_name.tsv"), "G1\tGene1\n")
+            .expect("failed to write gene names");
+        let missing = td.path().join("missing.csv");
+        let opts = parse_multiplex_quant_opts(&[
+            "-o",
+            td.path().join("out").to_str().unwrap(),
+            "-i",
+            root.to_str().unwrap(),
+            "--probe-set",
+            missing.to_str().unwrap(),
+        ]);
+        let piscem = ProgInfo {
+            exe_path: PathBuf::from("/bin/false"),
+            version: "0.24.0".to_string(),
+        };
+
+        let (_, t2g, names, probe_set) =
+            super::resolve_probe_index(td.path(), None, &opts, &piscem, ProbeT2gMode::Gene)
+                .expect("the index alone resolves");
+        assert!(t2g.is_some() && names.is_some(), "the index supplies both");
+        let err = super::check_probe_set_source(probe_set.as_deref(), true)
+            .expect_err("the missing CSV must fail");
+        assert!(format!("{err:#}").contains("missing.csv"), "{err:#}");
     }
 
     #[test]
