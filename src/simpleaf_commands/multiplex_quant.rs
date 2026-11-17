@@ -341,6 +341,22 @@ fn gene_id_to_name_for_dir(dir: Option<&Path>) -> Option<PathBuf> {
     })
 }
 
+/// Copy the original probe-set CSV, if there is one, into the quant output
+/// dir as `probe_set.csv`, as `gene_id_to_name.tsv` is copied.
+fn copy_probe_set_into(probe_set: Option<&Path>, quant_output: &Path) -> anyhow::Result<()> {
+    if let Some(probe_set_path) = probe_set {
+        let target_path = quant_output.join("probe_set.csv");
+        std::fs::copy(probe_set_path, &target_path).with_context(|| {
+            format!(
+                "could not copy the probe set from {} to {}",
+                probe_set_path.display(),
+                target_path.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
 /// The copy of the original probe-set CSV kept in a probe index dir.
 fn probe_set_for_dir(dir: Option<&Path>) -> Option<PathBuf> {
     dir.and_then(|d| {
@@ -834,16 +850,7 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
         })?;
     }
 
-    if let Some(probe_set_path) = &probe_set_opt {
-        let target_path = quant_output.join("probe_set.csv");
-        std::fs::copy(probe_set_path, &target_path).with_context(|| {
-            format!(
-                "could not copy the probe set from {} to {}",
-                probe_set_path.display(),
-                target_path.display()
-            )
-        })?;
-    }
+    copy_probe_set_into(probe_set_opt.as_deref(), &quant_output)?;
 
     let anndata_path = opts
         .anndata_out
@@ -2622,6 +2629,42 @@ GATCCTCT\tGATCCTCT\tBC003
                 "{run}"
             );
         }
+    }
+
+    #[test]
+    fn probe_set_is_copied_into_the_quant_output_unchanged() {
+        let td = tempdir().expect("failed to create tempdir");
+        let src = td.path().join("10x_probes.csv");
+        fs::write(&src, TOY_PROBE_CSV).expect("failed to write probe csv");
+        let quant_output = td.path().join("af_quant");
+        fs::create_dir_all(&quant_output).expect("failed to create af_quant");
+
+        super::copy_probe_set_into(Some(&src), &quant_output).expect("copy should succeed");
+
+        assert_eq!(
+            fs::read_to_string(quant_output.join("probe_set.csv")).expect("missing copy"),
+            TOY_PROBE_CSV,
+            "the copy must be the original CSV, header lines included"
+        );
+    }
+
+    #[test]
+    fn no_probe_set_means_no_copy_in_the_quant_output() {
+        let td = tempdir().expect("failed to create tempdir");
+        super::copy_probe_set_into(None, td.path()).expect("nothing to copy");
+        assert!(!td.path().join("probe_set.csv").exists());
+    }
+
+    #[test]
+    fn missing_probe_set_fails_the_copy_and_names_the_file() {
+        let td = tempdir().expect("failed to create tempdir");
+        let missing = td.path().join("missing.csv");
+        let err = super::copy_probe_set_into(Some(&missing), td.path())
+            .expect_err("a missing source must fail");
+        assert!(
+            format!("{err:#}").contains("missing.csv"),
+            "the error must name the source: {err:#}"
+        );
     }
 
     #[test]
