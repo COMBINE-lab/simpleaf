@@ -27,7 +27,7 @@ The command needs:
 
 If the chemistry registry contains the needed metadata, `simpleaf` can automatically download and cache the probe set, the cell barcode whitelist, and the sample barcode list. If you already have local resources, you can override these defaults with `--index`, `--probe-set`, `--cell-bc-list`, or `--sample-bc-list`.
 
-The default output is the standard Matrix Market directory under `af_quant/alevin`. If you pass `--anndata-out`, `simpleaf` will additionally write an AnnData `.h5ad` file at `af_quant/alevin/quants.h5ad`. If you also pass `--probe-mtx`, it writes the probe matrix as `af_quant/alevin/probe_quants.h5ad`, with `var` (`probe_id`, `gene_ids`, `gene_names`, `region`) from the probe-set CSV `af_quant/probe_set.csv`.
+The default output is the standard Matrix Market directory under `af_quant/alevin`. If you pass `--anndata-out`, `simpleaf` will additionally write an AnnData `.h5ad` file at `af_quant/alevin/quants.h5ad`. If you also pass `--probe-mtx`, it writes the probe matrix as `af_quant/alevin/probe_quants.h5ad`, with `var` from the columns of the 10x probe-set CSV (`af_quant/probe_set.csv`).
 
 ## Barcode-correction controls
 
