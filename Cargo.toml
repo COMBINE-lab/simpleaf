@@ -105,3 +105,7 @@ file-requirements = "0.1.0"
 # The profile that 'cargo dist' will build with
 [profile.dist]
 inherits = "release"
+
+# DO NOT MERGE: local patch until af-anndata 0.6.0 is released.
+[patch.crates-io]
+af-anndata = { git = "https://github.com/an-altosian/af-anndata", rev = "8619966d46ae87431e4a9964ed455150ce73fbe0" }
