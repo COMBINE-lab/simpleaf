@@ -10,9 +10,8 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "af-anndata"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "492e870f18e170a3f3c103eb1dfb5718e1556fbd6f201c6ffba8f06339faf73d"
+version = "0.6.0"
+source = "git+https://github.com/an-altosian/af-anndata?rev=d169c674be2e708c49bd7a017cea09f5611df0b3#d169c674be2e708c49bd7a017cea09f5611df0b3"
 dependencies = [
  "anndata",
  "anndata-hdf5",
@@ -3410,7 +3409,6 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "fast-float2",
- "flate2",
  "fs4",
  "futures",
  "glob",
@@ -3437,11 +3435,9 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "simd-json",
  "simdutf8",
  "tokio",
  "zmij",
- "zstd",
 ]
 
 [[package]]

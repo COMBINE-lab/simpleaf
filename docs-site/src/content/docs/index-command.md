@@ -16,7 +16,7 @@ In direct-ref mode, if `--refseq` is passed, the provided FASTA file will be pro
 If the probe set CSV carries a gene-name column in addition to `gene_id`, `simpleaf`
 writes a two-column `gene_id_to_name.tsv` beside the generated FASTA and t2g files.
 It is picked up automatically by [multiplex-quant](/simpleaf/flex-quant-command/),
-which uses it to populate `var["gene_symbol"]` in the AnnData output. No option is
+which uses it to populate `var["gene_names"]` in the AnnData output. No option is
 needed to enable this; it is written whenever the column is present.
 
 ## Controlling index build resources

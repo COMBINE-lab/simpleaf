@@ -35,6 +35,10 @@ struct ResolvedProbeSetFiles {
     decoy_fasta_path: Option<PathBuf>,
 }
 
+/// A resolved probe index: the index prefix, the t2g, the gene-name file and
+/// the original probe-set CSV (copied into `af_quant/` as `probe_set.csv`).
+type ResolvedIndex = (PathBuf, Option<PathBuf>, Option<PathBuf>, Option<PathBuf>);
+
 fn t2g_mode(opts: &MultiplexQuantOpts) -> probe_utils::ProbeT2gMode {
     if opts.usa {
         probe_utils::ProbeT2gMode::Usa
@@ -287,9 +291,7 @@ fn prepare_probe_set_files(
     output_dir: &Path,
     excluded_mode: probe_utils::ExcludedProbeMode,
 ) -> anyhow::Result<ResolvedProbeSetFiles> {
-    let ext = probe_set.extension().and_then(|e| e.to_str()).unwrap_or("");
-
-    if ext.eq_ignore_ascii_case("csv") {
+    if is_probe_csv(probe_set) {
         let converted = probe_utils::convert_probe_csv_to_reference_files(
             probe_set,
             output_dir,
@@ -318,6 +320,12 @@ fn prepare_probe_set_files(
     })
 }
 
+/// Whether a probe set file is a 10x probe-set CSV, not a FASTA.
+fn is_probe_csv(probe_set: &Path) -> bool {
+    let ext = probe_set.extension().and_then(|e| e.to_str()).unwrap_or("");
+    ext.eq_ignore_ascii_case("csv")
+}
+
 fn probe_index_base_exists(index_base: &Path) -> bool {
     prog_utils::check_piscem_index_files(index_base).is_ok()
 }
@@ -329,6 +337,75 @@ fn existing_path(paths: &[PathBuf]) -> Option<PathBuf> {
 fn gene_id_to_name_for_dir(dir: Option<&Path>) -> Option<PathBuf> {
     dir.and_then(|d| {
         let candidate = d.join("gene_id_to_name.tsv");
+        candidate.exists().then_some(candidate)
+    })
+}
+
+/// Check, before mapping, the probe-set CSV that the run copies into
+/// `af_quant/` after quant: fail now if it does not exist, and tell the user
+/// when a probe-set run has no CSV to copy. The probe h5ad (`probe_h5ad`)
+/// needs the CSV to map probes to genes, so without one it is an error;
+/// `fasta_probe_set` tells if the user gave a FASTA `--probe-set`.
+fn check_probe_set_source(
+    probe_set: Option<&Path>,
+    probe_reference: bool,
+    probe_h5ad: bool,
+    fasta_probe_set: bool,
+) -> anyhow::Result<()> {
+    match probe_set {
+        Some(p) if !p.is_file() => bail!("The probe-set CSV {} does not exist.", p.display()),
+        Some(_) => {}
+        None if probe_h5ad && fasta_probe_set => bail!(
+            "--anndata-out with --probe-mtx writes the probe h5ad, but a FASTA probe set has no probe-to-gene map; give the 10x probe-set CSV with --probe-set."
+        ),
+        None if probe_h5ad => bail!(
+            "--anndata-out with --probe-mtx writes the probe h5ad, but this index has no probe_set.csv (built before simpleaf 0.33.0); give the 10x probe-set CSV with --probe-set (it can be used together with --index <index dir>)."
+        ),
+        None if probe_reference => info!(
+            "af_quant/probe_set.csv is not written because the index has no probe-set CSV; give one with --probe-set."
+        ),
+        None => {}
+    }
+    Ok(())
+}
+
+/// Write the probe matrix of a `--probe-mtx` run as `alevin/probe_quants.h5ad`,
+/// with `var` from the probe-set CSV, and return its path.
+fn write_probe_h5ad(quant_output: &Path, probe_set: Option<&Path>) -> anyhow::Result<PathBuf> {
+    let probe_path = quant_output.join("alevin").join("probe_quants.h5ad");
+    af_anndata::convert_probe_csr_to_anndata(
+        quant_output,
+        probe_path.as_path(),
+        probe_set,
+        af_anndata::ConvertOpts::default(),
+    )?;
+    Ok(probe_path)
+}
+
+/// Copy the original probe-set CSV, if there is one, into the quant output
+/// dir as `probe_set.csv`, as `gene_id_to_name.tsv` is copied.
+fn copy_probe_set_into(probe_set: Option<&Path>, quant_output: &Path) -> anyhow::Result<()> {
+    if let Some(probe_set_path) = probe_set {
+        let target_path = quant_output.join("probe_set.csv");
+        // The CSV may already be this copy (`--probe-set af_quant/probe_set.csv`).
+        if probe_utils::same_file(probe_set_path, &target_path) {
+            return Ok(());
+        }
+        std::fs::copy(probe_set_path, &target_path).with_context(|| {
+            format!(
+                "could not copy the probe set from {} to {}",
+                probe_set_path.display(),
+                target_path.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+/// The copy of the original probe-set CSV kept in a probe index dir.
+fn probe_set_for_dir(dir: Option<&Path>) -> Option<PathBuf> {
+    dir.and_then(|d| {
+        let candidate = d.join("probe_set.csv");
         candidate.exists().then_some(candidate)
     })
 }
@@ -381,7 +458,7 @@ fn resolve_user_supplied_index(
     index: &Path,
     output_dir: &Path,
     mode: probe_utils::ProbeT2gMode,
-) -> anyhow::Result<(PathBuf, Option<PathBuf>, Option<PathBuf>)> {
+) -> anyhow::Result<ResolvedIndex> {
     let simpleaf_index_dir = if index.join("simpleaf_index.json").exists() {
         Some(index.to_path_buf())
     } else if index.join("index").join("simpleaf_index.json").exists() {
@@ -413,7 +490,12 @@ fn resolve_user_supplied_index(
         let candidates =
             multiplex_t2g_candidates_for(meta.inferred_t2g, Some(index_dir.as_path()), mode);
         let t2g = resolve_t2g_from_candidates(&candidates, output_dir, mode)?;
-        return Ok((index_path, t2g, meta.inferred_gene_id_to_name));
+        return Ok((
+            index_path,
+            t2g,
+            meta.inferred_gene_id_to_name,
+            meta.inferred_probe_set,
+        ));
     }
 
     if index.is_dir() {
@@ -421,7 +503,12 @@ fn resolve_user_supplied_index(
         if probe_index_base_exists(&prefix) {
             let candidates = multiplex_t2g_candidates_for(None, Some(index), mode);
             let t2g = resolve_t2g_from_candidates(&candidates, output_dir, mode)?;
-            return Ok((prefix, t2g, gene_id_to_name_for_dir(Some(index))));
+            return Ok((
+                prefix,
+                t2g,
+                gene_id_to_name_for_dir(Some(index)),
+                probe_set_for_dir(Some(index)),
+            ));
         }
     }
 
@@ -433,6 +520,7 @@ fn resolve_user_supplied_index(
             index.to_path_buf(),
             t2g,
             gene_id_to_name_for_dir(sibling_dir),
+            probe_set_for_dir(sibling_dir),
         ));
     }
 
@@ -598,8 +686,14 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
     std::fs::create_dir_all(&quant_output)?;
 
     // === Step 1: Resolve index and t2g ===
-    let (index_path, probe_t2g_path_opt, gene_id_to_name_opt) =
+    let (index_path, probe_t2g_path_opt, gene_id_to_name_opt, probe_set_opt) =
         resolve_probe_index(af_home, chem.as_ref(), &opts, piscem_info, t2g_mode(&opts))?;
+    check_probe_set_source(
+        probe_set_opt.as_deref(),
+        is_probe_set_reference(&opts),
+        opts.anndata_out && opts.probe_mtx,
+        opts.probe_set.as_deref().is_some_and(|p| !is_probe_csv(p)),
+    )?;
     // --t2g-map overrides any probe-derived or inferred t2g.
     let t2g_path = if let Some(t2g_map) = opts.t2g_map.clone() {
         t2g_map
@@ -807,6 +901,8 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
         })?;
     }
 
+    copy_probe_set_into(probe_set_opt.as_deref(), &quant_output)?;
+
     let anndata_path = opts
         .anndata_out
         .then(|| quant_output.join("alevin").join("quants.h5ad"));
@@ -856,7 +952,11 @@ pub fn multiplex_map_and_quant(af_home: &Path, mut opts: MultiplexQuantOpts) -> 
             .as_ref()
             .expect("anndata_path must exist when --anndata-out is set");
         af_anndata::convert_csr_to_anndata(&quant_output, opath)?;
+        // The gene conversion only, as before the probe h5ad.
         convert_duration_secs = Some(convert_start.elapsed().as_secs_f64());
+        if opts.probe_mtx {
+            write_probe_h5ad(&quant_output, probe_set_opt.as_deref())?;
+        }
     }
 
     // === Rewrite pipeline metadata with final timing information ===
@@ -880,12 +980,12 @@ fn resolve_probe_index(
     opts: &MultiplexQuantOpts,
     piscem: &prog_utils::ProgInfo,
     mode: probe_utils::ProbeT2gMode,
-) -> anyhow::Result<(PathBuf, Option<PathBuf>, Option<PathBuf>)> {
+) -> anyhow::Result<ResolvedIndex> {
     let piscem_path = piscem.exe_path.as_path();
     // If user provided a pre-built index, use it directly.
     if let Some(ref index) = opts.index {
         info!("Using user-provided probe index: {}", index.display());
-        let (index_path, inferred_t2g, inferred_gene_id_to_name) =
+        let (index_path, inferred_t2g, inferred_gene_id_to_name, inferred_probe_set) =
             resolve_user_supplied_index(index, &opts.output.join("resolved_t2g"), mode)?;
         let t2g = if inferred_t2g.is_some() {
             inferred_t2g
@@ -913,15 +1013,21 @@ fn resolve_probe_index(
         } else {
             None
         };
-        return Ok((index_path, t2g, gene_id_to_name));
+        // A `--probe-set` CSV is the file the user named for this run, so it
+        // wins over the copy in the index.
+        let probe_set = match opts.probe_set.as_deref() {
+            Some(ps) if is_probe_csv(ps) => Some(ps.to_path_buf()),
+            _ => inferred_probe_set,
+        };
+        return Ok((index_path, t2g, gene_id_to_name, probe_set));
     }
 
     // If user provided a probe set file, build index from it.
     if let Some(ref probe_set) = opts.probe_set {
         warn!("Using user-provided probe set: {}.", probe_set.display(),);
-        let (index_path, t2g, gene_id_to_name) =
+        let (index_path, t2g, gene_id_to_name, probe_set) =
             build_index_from_probe_set(probe_set, opts, piscem_path, mode)?;
-        return Ok((index_path, Some(t2g), gene_id_to_name));
+        return Ok((index_path, Some(t2g), gene_id_to_name, probe_set));
     }
 
     // Auto mode: look up probe set in chemistry registry
@@ -1019,6 +1125,7 @@ fn resolve_probe_index(
         let t2g =
             resolve_t2g_from_candidates(&candidates, &opts.output.join("resolved_t2g"), mode)?;
         let gene_id_to_name = gene_id_to_name_for_dir(Some(&cached_probe_index_dir));
+        let probe_set = probe_set_for_dir(Some(&cached_probe_index_dir));
         info!("Using cached probe index: {}", cached_probe_index.display());
         // Re-emit the empty-poison warning on cache hits too: otherwise a user
         // who first built at a k with an empty poison table would only ever see
@@ -1026,7 +1133,7 @@ fn resolve_probe_index(
         if opts.excluded_probes == probe_utils::ExcludedProbeMode::Decoy {
             probe_utils::warn_if_empty_poison_table(&cached_probe_index, opts.kmer_length);
         }
-        return Ok((cached_probe_index, t2g, gene_id_to_name));
+        return Ok((cached_probe_index, t2g, gene_id_to_name, probe_set));
     }
 
     build_cached_probe_index(
@@ -1055,7 +1162,7 @@ fn build_cached_probe_index(
     piscem_path: &Path,
     mode: probe_utils::ProbeT2gMode,
     keep_failed_build: bool,
-) -> anyhow::Result<(PathBuf, Option<PathBuf>, Option<PathBuf>)> {
+) -> anyhow::Result<ResolvedIndex> {
     // The index is built in a private directory next to the cache slot and
     // the finished index moved into place, so no run ever sees a half-built
     // one.
@@ -1119,6 +1226,7 @@ fn build_cached_probe_index(
             in_cache(result.0),
             Some(in_cache(result.1)),
             result.2.map(in_cache),
+            result.3.map(in_cache),
         ))
     } else {
         bail!(
@@ -1134,10 +1242,21 @@ fn build_index_from_probe_set(
     opts: &MultiplexQuantOpts,
     piscem_path: &Path,
     mode: probe_utils::ProbeT2gMode,
-) -> anyhow::Result<(PathBuf, PathBuf, Option<PathBuf>)> {
+) -> anyhow::Result<(PathBuf, PathBuf, Option<PathBuf>, Option<PathBuf>)> {
     let index_dir = opts.output.join("probe_index");
     std::fs::create_dir_all(&index_dir)?;
     let probe_set_files = prepare_probe_set_files(probe_set, &index_dir, opts.excluded_probes)?;
+    // Keep the original CSV with the index, as `simpleaf index --probe-csv`
+    // does. A FASTA probe set has no CSV to keep.
+    let mut probe_set_copy = None;
+    if is_probe_csv(probe_set) {
+        let index_probe_set_path = index_dir.join("probe_set.csv");
+        // The CSV may already be this copy (`--probe-set probe_index/probe_set.csv`).
+        if !probe_utils::same_file(probe_set, &index_probe_set_path) {
+            std::fs::copy(probe_set, &index_probe_set_path)?;
+        }
+        probe_set_copy = Some(index_probe_set_path);
+    }
     let fasta_path = probe_set_files.fasta_path.clone();
     let t2g_path = select_probe_set_t2g(&probe_set_files, mode)?;
 
@@ -1218,7 +1337,12 @@ fn build_index_from_probe_set(
         probe_utils::warn_if_empty_poison_table(&index_prefix, opts.kmer_length);
     }
 
-    Ok((index_prefix, t2g_path, probe_set_files.gene_id_to_name_path))
+    Ok((
+        index_prefix,
+        t2g_path,
+        probe_set_files.gene_id_to_name_path,
+        probe_set_copy,
+    ))
 }
 
 /// Download a file the chemistry registry lists to `dest`. When the registry
@@ -1558,7 +1682,7 @@ GATCCTCT\tGATCCTCT\tBC003
         )
         .expect("failed to write simpleaf index json");
 
-        let (resolved_index, t2g, gene_id_to_name) = resolve_user_supplied_index(
+        let (resolved_index, t2g, gene_id_to_name, probe_set) = resolve_user_supplied_index(
             &output_root,
             &td.path().join("resolved"),
             ProbeT2gMode::Gene,
@@ -1572,6 +1696,117 @@ GATCCTCT\tGATCCTCT\tBC003
             "P1\tG1\n"
         );
         assert!(gene_id_to_name.is_none());
+        // An index built before simpleaf kept the CSV records no probe set.
+        assert!(probe_set.is_none());
+    }
+
+    /// A `simpleaf index --probe-csv` output, with its `probe_set.csv` copy
+    /// recorded in `simpleaf_index.json`; returns the index dir.
+    fn write_simpleaf_probe_index(root: &Path) -> PathBuf {
+        let index_dir = root.join("index");
+        fs::create_dir_all(&index_dir).expect("failed to create index dir");
+        write_piscem_index(&index_dir.join("piscem_idx"));
+        fs::write(index_dir.join("t2g_3col.tsv"), "P1\tG1\tS\n").expect("failed to write t2g");
+        fs::write(
+            index_dir.join("probe_set.csv"),
+            "gene_id,probe_seq,probe_id\n",
+        )
+        .expect("failed to write probe set copy");
+        fs::write(
+            index_dir.join("simpleaf_index.json"),
+            serde_json::to_string_pretty(&json!({
+                "index_type": "piscem",
+                "t2g_file": "t2g_3col.tsv",
+                "probe_set_file": "probe_set.csv"
+            }))
+            .expect("failed to serialize index json"),
+        )
+        .expect("failed to write simpleaf index json");
+        index_dir
+    }
+
+    #[test]
+    fn simpleaf_index_supplies_its_probe_set_copy() {
+        let td = tempdir().expect("failed to create tempdir");
+        let root = td.path().join("simpleaf_output");
+        let index_dir = write_simpleaf_probe_index(&root);
+
+        let resolved =
+            resolve_user_supplied_index(&root, &td.path().join("resolved"), ProbeT2gMode::Gene)
+                .expect("failed to resolve simpleaf index");
+
+        assert_eq!(resolved.3, Some(index_dir.join("probe_set.csv")));
+    }
+
+    #[test]
+    fn multiplex_probe_index_dir_supplies_its_probe_set_copy() {
+        let td = tempdir().expect("failed to create tempdir");
+        let probe_index_dir = td.path().join("probe_index");
+        fs::create_dir_all(&probe_index_dir).expect("failed to create probe index dir");
+        write_piscem_index(&probe_index_dir.join("index"));
+        fs::write(probe_index_dir.join("probe_t2g.tsv"), "P1\tG1\n")
+            .expect("failed to write gene t2g");
+        fs::write(
+            probe_index_dir.join("probe_set.csv"),
+            "gene_id,probe_seq,probe_id\n",
+        )
+        .expect("failed to write probe set copy");
+
+        // As a directory and as the bare `index` prefix inside it.
+        for index in [probe_index_dir.clone(), probe_index_dir.join("index")] {
+            let resolved = resolve_user_supplied_index(
+                &index,
+                &td.path().join("resolved"),
+                ProbeT2gMode::Gene,
+            )
+            .expect("failed to resolve probe index");
+            assert_eq!(
+                resolved.3,
+                Some(probe_index_dir.join("probe_set.csv")),
+                "for --index {}",
+                index.display()
+            );
+        }
+    }
+
+    #[test]
+    fn probe_set_csv_given_with_an_index_wins_over_the_index_copy() {
+        use crate::utils::prog_utils::ProgInfo;
+        let td = tempdir().expect("failed to create tempdir");
+        let root = td.path().join("simpleaf_output");
+        let index_dir = write_simpleaf_probe_index(&root);
+        let piscem = ProgInfo {
+            exe_path: PathBuf::from("/bin/false"),
+            version: "0.24.0".to_string(),
+        };
+        let out = td.path().join("out");
+        let resolve = |probe_set: Option<&str>| {
+            let mut args = vec!["-o", out.to_str().unwrap(), "-i", root.to_str().unwrap()];
+            if let Some(ps) = probe_set {
+                args.extend(["--probe-set", ps]);
+            }
+            let opts = parse_multiplex_quant_opts(&args);
+            super::resolve_probe_index(td.path(), None, &opts, &piscem, ProbeT2gMode::Gene)
+                .expect("failed to resolve the index")
+                .3
+        };
+
+        // The index has no gene names, so the run reads them from the probe set.
+        let csv = td.path().join("other_probes.csv");
+        fs::write(
+            &csv,
+            "gene_id,probe_seq,probe_id,included\nG1,ACGTACGT,P1,TRUE\n",
+        )
+        .expect("failed to write probe csv");
+        assert_eq!(resolve(Some(csv.to_str().unwrap())), Some(csv.clone()));
+        // A FASTA probe set has no CSV, so the index copy stays.
+        let fasta = td.path().join("probes.fa");
+        fs::write(&fasta, ">P1\nACGTACGT\n").expect("failed to write probe fasta");
+        assert_eq!(
+            resolve(Some(fasta.to_str().unwrap())),
+            Some(index_dir.join("probe_set.csv"))
+        );
+        assert_eq!(resolve(None), Some(index_dir.join("probe_set.csv")));
     }
 
     #[test]
@@ -1586,7 +1821,7 @@ GATCCTCT\tGATCCTCT\tBC003
         fs::write(probe_index_dir.join("probe_t2g_usa.tsv"), "P1\tG1\tS\n")
             .expect("failed to write USA t2g");
 
-        let (resolved_index, t2g, gene_id_to_name) = resolve_user_supplied_index(
+        let (resolved_index, t2g, gene_id_to_name, probe_set) = resolve_user_supplied_index(
             &probe_index_dir,
             &td.path().join("resolved"),
             ProbeT2gMode::Usa,
@@ -1599,6 +1834,7 @@ GATCCTCT\tGATCCTCT\tBC003
             "P1\tG1\tS\n"
         );
         assert!(gene_id_to_name.is_none());
+        assert!(probe_set.is_none());
     }
 
     /// Build `MultiplexQuantOpts` the way a user would: by parsing a command
@@ -2332,6 +2568,388 @@ GATCCTCT\tGATCCTCT\tBC003
             kept[0].join("probe_index").join("index.partial").is_file(),
             "the failed build's files should be kept"
         );
+    }
+
+    /// Write a stand-in for `piscem` whose build writes the index files of its
+    /// `-o` prefix and exits 0.
+    #[cfg(unix)]
+    fn fake_piscem_that_builds(dir: &Path) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let script = dir.join("fake_piscem_builds");
+        fs::write(
+            &script,
+            "#!/bin/sh\nwhile [ $# -gt 0 ]; do\n  if [ \"$1\" = \"-o\" ]; then\n    \
+             for e in ctab refinfo ssi ssi.mphf; do : > \"$2.$e\"; done\n  fi\n  shift\n\
+             done\nexit 0\n",
+        )
+        .expect("failed to write fake piscem");
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755))
+            .expect("failed to chmod fake piscem");
+        script
+    }
+
+    const TOY_PROBE_CSV: &str = "#probe_set_file_format=3.0\n\
+        gene_id,probe_seq,probe_id,included,region,gene_name\n\
+        G1,ACGTACGTACGTACGTACGTACGTA,G1|A|1,TRUE,spliced,Gene1\n";
+
+    #[cfg(unix)]
+    #[test]
+    fn probe_index_built_from_a_csv_keeps_the_csv() {
+        let td = tempdir().expect("failed to create tempdir");
+        let probes = td.path().join("probes.csv");
+        fs::write(&probes, TOY_PROBE_CSV).expect("failed to write probes");
+        let out = td.path().join("out");
+        let opts = parse_multiplex_quant_opts(&["-o", out.to_str().unwrap()]);
+        let piscem = fake_piscem_that_builds(td.path());
+
+        let resolved =
+            super::build_index_from_probe_set(&probes, &opts, &piscem, ProbeT2gMode::Gene)
+                .expect("fake build should succeed");
+
+        let copy = out.join("probe_index").join("probe_set.csv");
+        assert_eq!(resolved.3, Some(copy.clone()));
+        assert_eq!(
+            fs::read_to_string(&copy).expect("missing copy"),
+            TOY_PROBE_CSV
+        );
+    }
+
+    /// `std::fs::copy` onto the same file empties it; a `--probe-set` that
+    /// already is the index copy must stay as it is.
+    #[cfg(unix)]
+    #[test]
+    fn probe_set_that_is_the_probe_index_copy_is_not_emptied() {
+        let td = tempdir().expect("failed to create tempdir");
+        let out = td.path().join("out");
+        let probe_index = out.join("probe_index");
+        fs::create_dir_all(&probe_index).expect("failed to create probe index dir");
+        let probes = probe_index.join("probe_set.csv");
+        fs::write(&probes, TOY_PROBE_CSV).expect("failed to write probes");
+        let opts = parse_multiplex_quant_opts(&["-o", out.to_str().unwrap()]);
+        let piscem = fake_piscem_that_builds(td.path());
+
+        let resolved =
+            super::build_index_from_probe_set(&probes, &opts, &piscem, ProbeT2gMode::Gene)
+                .expect("fake build should succeed");
+
+        assert_eq!(resolved.3, Some(probes.clone()));
+        assert_eq!(
+            fs::read_to_string(&probes).expect("missing CSV"),
+            TOY_PROBE_CSV
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn probe_index_built_from_a_fasta_has_no_probe_set() {
+        let td = tempdir().expect("failed to create tempdir");
+        let probes = td.path().join("probes.fa");
+        fs::write(&probes, ">P1\nACGTACGTACGTACGTACGTACGTA\n").expect("failed to write probes");
+        let out = td.path().join("out");
+        let opts = parse_multiplex_quant_opts(&["-o", out.to_str().unwrap()]);
+        let piscem = fake_piscem_that_builds(td.path());
+
+        let resolved =
+            super::build_index_from_probe_set(&probes, &opts, &piscem, ProbeT2gMode::Gene)
+                .expect("fake build should succeed");
+
+        assert_eq!(resolved.3, None);
+        assert!(!out.join("probe_index").join("probe_set.csv").exists());
+    }
+
+    /// The auto-selected (chemistry registry) probe index keeps the CSV in the
+    /// cache slot: the path a fresh build returns points into the slot, not
+    /// into the staging dir it was built in, and a later cache hit finds it.
+    #[cfg(unix)]
+    #[test]
+    fn cached_probe_index_keeps_the_csv_in_its_slot() {
+        use crate::utils::chem_utils::CustomChemistry;
+        use crate::utils::prog_utils::ProgInfo;
+
+        let td = tempdir().expect("failed to create tempdir");
+        let piscem = fake_piscem_that_builds(td.path());
+        let piscem_info = ProgInfo {
+            exe_path: piscem.clone(),
+            version: "0.24.0".to_string(),
+        };
+        let af_home = td.path().join("af_home");
+        let downloads = af_home.join("probe_indices").join("downloads");
+        fs::create_dir_all(&downloads).expect("failed to create downloads dir");
+        // Already downloaded, so nothing is fetched.
+        fs::write(downloads.join("probes.csv"), TOY_PROBE_CSV).expect("failed to write probe set");
+        let chem: CustomChemistry = serde_json::from_value(json!({
+            "geometry": "1{b[16]u[12]x:}2{r:}",
+            "probe_sets": {"human": {
+                "name": "probes",
+                "plist_name": "abc",
+                "remote_url": "https://example.invalid/probes.csv"
+            }}
+        }))
+        .expect("failed to build chemistry");
+        let out = td.path().join("out");
+        let opts =
+            parse_multiplex_quant_opts(&["-o", out.to_str().unwrap(), "--organism", "human"]);
+        let slot_dir = af_home
+            .join("probe_indices")
+            .join(format!("abc_{}_decoy", opts.kmer_length))
+            .join("probe_index");
+
+        // First run: build and install. Second run: cache hit.
+        for run in ["build", "cache hit"] {
+            let resolved = super::resolve_probe_index(
+                &af_home,
+                Some(&chem),
+                &opts,
+                &piscem_info,
+                ProbeT2gMode::Gene,
+            )
+            .expect("failed to resolve the cached probe index");
+            let copy = slot_dir.join("probe_set.csv");
+            assert_eq!(resolved.3, Some(copy.clone()), "{run}");
+            assert_eq!(
+                fs::read_to_string(&copy).expect("missing copy"),
+                TOY_PROBE_CSV,
+                "{run}"
+            );
+        }
+    }
+
+    #[test]
+    fn probe_set_is_copied_into_the_quant_output_unchanged() {
+        let td = tempdir().expect("failed to create tempdir");
+        let src = td.path().join("10x_probes.csv");
+        fs::write(&src, TOY_PROBE_CSV).expect("failed to write probe csv");
+        let quant_output = td.path().join("af_quant");
+        fs::create_dir_all(&quant_output).expect("failed to create af_quant");
+
+        super::copy_probe_set_into(Some(&src), &quant_output).expect("copy should succeed");
+
+        assert_eq!(
+            fs::read_to_string(quant_output.join("probe_set.csv")).expect("missing copy"),
+            TOY_PROBE_CSV,
+            "the copy must be the original CSV, header lines included"
+        );
+    }
+
+    #[test]
+    fn probe_set_that_is_the_quant_output_copy_is_not_emptied() {
+        let td = tempdir().expect("failed to create tempdir");
+        let quant_output = td.path().join("af_quant");
+        fs::create_dir_all(&quant_output).expect("failed to create af_quant");
+        let csv = quant_output.join("probe_set.csv");
+        fs::write(&csv, TOY_PROBE_CSV).expect("failed to write probe csv");
+
+        // The same file, also when it is named another way.
+        let other_name = td.path().join("af_quant").join(".").join("probe_set.csv");
+        super::copy_probe_set_into(Some(&other_name), &quant_output).expect("no copy needed");
+
+        assert_eq!(
+            fs::read_to_string(&csv).expect("missing CSV"),
+            TOY_PROBE_CSV
+        );
+    }
+
+    #[test]
+    fn no_probe_set_means_no_copy_in_the_quant_output() {
+        let td = tempdir().expect("failed to create tempdir");
+        super::copy_probe_set_into(None, td.path()).expect("nothing to copy");
+        assert!(!td.path().join("probe_set.csv").exists());
+    }
+
+    #[test]
+    fn missing_probe_set_fails_the_copy_and_names_the_file() {
+        let td = tempdir().expect("failed to create tempdir");
+        let missing = td.path().join("missing.csv");
+        let err = super::copy_probe_set_into(Some(&missing), td.path())
+            .expect_err("a missing source must fail");
+        assert!(
+            format!("{err:#}").contains("missing.csv"),
+            "the error must name the source: {err:#}"
+        );
+    }
+
+    #[test]
+    fn missing_probe_set_source_fails_before_mapping() {
+        let td = tempdir().expect("failed to create tempdir");
+        let missing = td.path().join("missing.csv");
+        let err = super::check_probe_set_source(Some(&missing), true, false, false)
+            .expect_err("a missing probe set must fail");
+        assert!(
+            format!("{err:#}").contains("missing.csv"),
+            "the error must name the file: {err:#}"
+        );
+    }
+
+    #[test]
+    fn existing_or_absent_probe_set_source_passes_the_check() {
+        let td = tempdir().expect("failed to create tempdir");
+        let csv = td.path().join("probes.csv");
+        fs::write(&csv, TOY_PROBE_CSV).expect("failed to write probe csv");
+        super::check_probe_set_source(Some(&csv), true, true, false)
+            .expect("an existing CSV passes");
+        // An index without the CSV (e.g. an old cache slot) only logs that
+        // nothing is copied.
+        super::check_probe_set_source(None, true, false, false).expect("no CSV is not an error");
+        super::check_probe_set_source(None, false, false, false).expect("no CSV is not an error");
+    }
+
+    /// A `--probe-set` CSV given with `--index` that does not exist fails at
+    /// index resolution, before mapping, although the index has all it needs.
+    #[test]
+    fn missing_probe_set_given_with_a_complete_index_fails_before_mapping() {
+        use crate::utils::prog_utils::ProgInfo;
+        let td = tempdir().expect("failed to create tempdir");
+        let root = td.path().join("simpleaf_output");
+        let index_dir = write_simpleaf_probe_index(&root);
+        fs::write(index_dir.join("gene_id_to_name.tsv"), "G1\tGene1\n")
+            .expect("failed to write gene names");
+        let missing = td.path().join("missing.csv");
+        let opts = parse_multiplex_quant_opts(&[
+            "-o",
+            td.path().join("out").to_str().unwrap(),
+            "-i",
+            root.to_str().unwrap(),
+            "--probe-set",
+            missing.to_str().unwrap(),
+        ]);
+        let piscem = ProgInfo {
+            exe_path: PathBuf::from("/bin/false"),
+            version: "0.24.0".to_string(),
+        };
+
+        let (_, t2g, names, probe_set) =
+            super::resolve_probe_index(td.path(), None, &opts, &piscem, ProbeT2gMode::Gene)
+                .expect("the index alone resolves");
+        assert!(t2g.is_some() && names.is_some(), "the index supplies both");
+        let err = super::check_probe_set_source(probe_set.as_deref(), true, false, false)
+            .expect_err("the missing CSV must fail");
+        assert!(format!("{err:#}").contains("missing.csv"), "{err:#}");
+    }
+
+    #[test]
+    fn probe_h5ad_without_a_probe_set_csv_fails_before_mapping() {
+        // An index (or cache slot) without probe_set.csv.
+        let err = super::check_probe_set_source(None, true, true, false)
+            .expect_err("the probe h5ad needs the CSV");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("this index has no probe_set.csv"), "{msg}");
+        assert!(
+            msg.contains("--probe-set") && msg.contains("--index"),
+            "{msg}"
+        );
+        // A FASTA --probe-set.
+        let err = super::check_probe_set_source(None, true, true, true)
+            .expect_err("the probe h5ad needs the CSV");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("FASTA probe set has no probe-to-gene map"),
+            "{msg}"
+        );
+        assert!(msg.contains("--probe-set"), "{msg}");
+    }
+
+    /// What the index error tells the user works: `--index <dir>` of an index
+    /// without probe_set.csv, together with `--probe-set <csv>`, gives the CSV
+    /// that the probe h5ad needs.
+    #[test]
+    fn probe_set_csv_with_an_index_that_has_none_passes_the_probe_h5ad_check() {
+        use crate::utils::prog_utils::ProgInfo;
+        let td = tempdir().expect("failed to create tempdir");
+        // A multiplex-quant probe index (like a cache slot) built before
+        // simpleaf kept the CSV.
+        let probe_index_dir = td.path().join("probe_index");
+        fs::create_dir_all(&probe_index_dir).expect("failed to create probe index dir");
+        write_piscem_index(&probe_index_dir.join("index"));
+        fs::write(probe_index_dir.join("probe_t2g.tsv"), "P1\tG1\n")
+            .expect("failed to write gene t2g");
+        fs::write(probe_index_dir.join("gene_id_to_name.tsv"), "G1\tGene1\n")
+            .expect("failed to write gene names");
+        let csv = td.path().join("probes.csv");
+        fs::write(&csv, TOY_PROBE_CSV).expect("failed to write probe csv");
+        let piscem = ProgInfo {
+            exe_path: PathBuf::from("/bin/false"),
+            version: "0.24.0".to_string(),
+        };
+        let out = td.path().join("out");
+
+        for (with_csv, ok) in [(false, false), (true, true)] {
+            let mut args = vec![
+                "-o",
+                out.to_str().unwrap(),
+                "-i",
+                probe_index_dir.to_str().unwrap(),
+                "--anndata-out",
+                "--probe-mtx",
+            ];
+            if with_csv {
+                args.extend(["--probe-set", csv.to_str().unwrap()]);
+            }
+            let opts = parse_multiplex_quant_opts(&args);
+            let (_, _, _, probe_set) =
+                super::resolve_probe_index(td.path(), None, &opts, &piscem, ProbeT2gMode::Gene)
+                    .expect("the index resolves");
+            let check = super::check_probe_set_source(
+                probe_set.as_deref(),
+                super::is_probe_set_reference(&opts),
+                opts.anndata_out && opts.probe_mtx,
+                false,
+            );
+            assert_eq!(check.is_ok(), ok, "with --probe-set: {with_csv}: {check:?}");
+        }
+    }
+
+    /// The smallest `af_quant` of a `quant-probe --probe-mtx` run: 2 cells x 2
+    /// probes of one gene, and the files af-anndata reads for `uns`.
+    fn write_probe_af_quant(root: &Path) {
+        let alevin = root.join("alevin");
+        fs::create_dir_all(&alevin).expect("failed to create alevin dir");
+        fs::write(
+            alevin.join("probe_quants_mat.mtx"),
+            "%%MatrixMarket matrix coordinate real general\n2 2 2\n1 1 3\n2 2 1\n",
+        )
+        .expect("failed to write mtx");
+        // The probe rows file is a byte copy of the gene rows file, which
+        // featureDump.txt follows; af-anndata checks this.
+        for rows in ["quants_mat_rows.txt", "probe_quants_mat_rows.txt"] {
+            fs::write(alevin.join(rows), "S1_AAAA\nS1_CCCC\n").expect("failed to write rows");
+        }
+        fs::write(alevin.join("probe_quants_mat_cols.txt"), "G1|A|1\nG1|A|2\n")
+            .expect("failed to write cols");
+        fs::write(
+            root.join("featureDump.txt"),
+            "CB\tsample_name\tCorrectedReads\tMappedReads\tDeduplicatedReads\tMappingRate\tDedupRate\tMeanByMax\tNumGenesExpressed\tNumGenesOverMean\n\
+             AAAA\tS1\t3\t3\t3\t1\t0\t1\t1\t1\n\
+             CCCC\tS1\t1\t1\t1\t1\t0\t1\t1\t1\n",
+        )
+        .expect("failed to write featureDump");
+        fs::write(
+            root.join("quant.json"),
+            r#"{"usa_mode": false, "num_genes": 1}"#,
+        )
+        .expect("failed to write quant.json");
+        fs::write(root.join("collate.json"), r#"{"multi_barcode": true}"#)
+            .expect("failed to write collate.json");
+        fs::write(root.join("generate_permit_list.json"), "{}").expect("failed to write gpl json");
+    }
+
+    #[test]
+    fn probe_h5ad_is_written_next_to_the_gene_h5ad() {
+        let td = tempdir().expect("failed to create tempdir");
+        let quant_output = td.path().join("af_quant");
+        write_probe_af_quant(&quant_output);
+        let csv = td.path().join("probes.csv");
+        fs::write(
+            &csv,
+            "#probe_set_file_format=3.0\ngene_id,probe_seq,probe_id,included,region,gene_name\n\
+             G1,ACGT,G1|A|1,TRUE,spliced,Gene1\nG1,TTGC,G1|A|2,TRUE,unspliced,Gene1\n",
+        )
+        .expect("failed to write probe csv");
+
+        let path = super::write_probe_h5ad(&quant_output, Some(&csv))
+            .expect("the probe h5ad must be written");
+
+        assert_eq!(path, quant_output.join("alevin").join("probe_quants.h5ad"));
+        assert!(path.is_file(), "missing {}", path.display());
     }
 
     #[test]

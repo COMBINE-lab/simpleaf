@@ -22,6 +22,8 @@ struct ReferenceStageOutput {
     min_seq_len: Option<u32>,
     t2g: Option<PathBuf>,
     gene_id_to_name: Option<PathBuf>,
+    /// The `--probe-csv` file, kept in the index as `probe_set.csv`.
+    probe_set: Option<PathBuf>,
     roers_duration: Option<std::time::Duration>,
     roers_cmd: Option<roers::AugRefOpts>,
 }
@@ -91,7 +93,146 @@ fn write_index_log_stage(
 
 #[cfg(test)]
 mod tests {
-    use super::derive_kmer_and_minimizer;
+    use super::{build_ref_and_index, derive_kmer_and_minimizer};
+    use crate::core::index_meta;
+    use crate::simpleaf_commands::{Commands, IndexOpts};
+    use clap::Parser;
+    use serde_json::{Value, json};
+    use std::fs;
+    use std::path::Path;
+    use tempfile::tempdir;
+
+    fn parse_index_opts(args: &[&str]) -> IndexOpts {
+        let mut cli_args = vec!["simpleaf", "index"];
+        cli_args.extend_from_slice(args);
+        match crate::Cli::parse_from(cli_args).command {
+            Commands::Index(opts) => opts,
+            cmd => panic!("expected index command, found {:?}", cmd),
+        }
+    }
+
+    /// An ALEVIN_FRY_HOME whose registered piscem is a script that exits 0, so
+    /// `build_ref_and_index` runs every step except the real index build.
+    #[cfg(unix)]
+    fn af_home_with_fake_piscem(dir: &Path) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let af_home = dir.join("af_home");
+        fs::create_dir_all(&af_home).expect("failed to create af home");
+        let piscem = dir.join("fake_piscem");
+        fs::write(&piscem, "#!/bin/sh\nexit 0\n").expect("failed to write fake piscem");
+        fs::set_permissions(&piscem, fs::Permissions::from_mode(0o755))
+            .expect("failed to chmod fake piscem");
+        let af_info = json!({
+            "prog_info": {
+                "piscem": {"exe_path": piscem, "version": "0.24.0"},
+                "alevin_fry": {"exe_path": "/bin/echo", "version": "0.19.0"},
+                "macs": null
+            }
+        });
+        fs::write(
+            af_home.join("simpleaf_info.json"),
+            serde_json::to_string_pretty(&af_info).expect("failed to serialize af info"),
+        )
+        .expect("failed to write simpleaf_info.json");
+        af_home
+    }
+
+    fn read_index_json(index_dir: &Path) -> Value {
+        serde_json::from_str(
+            &fs::read_to_string(index_dir.join("simpleaf_index.json"))
+                .expect("missing simpleaf_index.json"),
+        )
+        .expect("simpleaf_index.json is not JSON")
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn probe_csv_index_keeps_the_original_csv_and_records_it() {
+        let td = tempdir().expect("failed to create tempdir");
+        let af_home = af_home_with_fake_piscem(td.path());
+        let csv = td.path().join("Chromium_Mouse_Probe_Set.csv");
+        let body = "#probe_set_file_format=3.0\n#panel_name=toy\n\
+                    gene_id,probe_seq,probe_id,included,region,gene_name\n\
+                    G1,ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTAC,G1|A|1,TRUE,spliced,Gene1\n\
+                    G2,TTGCATTGCATTGCATTGCATTGCATTGCATTGCATTGCATTGCATTGCA,G2|B|2,TRUE,unspliced,Gene2\n";
+        fs::write(&csv, body).expect("failed to write probe csv");
+        let out = td.path().join("idx");
+        let opts = parse_index_opts(&[
+            "-o",
+            out.to_str().unwrap(),
+            "--probe-csv",
+            csv.to_str().unwrap(),
+        ]);
+
+        build_ref_and_index(&af_home, opts).expect("index build should succeed");
+
+        let index_dir = out.join("index");
+        assert_eq!(
+            fs::read_to_string(index_dir.join("probe_set.csv")).expect("missing probe_set.csv"),
+            body,
+            "the index must keep the original CSV, header lines included"
+        );
+        assert_eq!(
+            read_index_json(&index_dir)["probe_set_file"],
+            json!("probe_set.csv")
+        );
+        // A later `--index` run finds the copy through the metadata.
+        let meta = index_meta::resolve_quant_index(Some(index_dir.clone()))
+            .expect("failed to resolve the new index");
+        assert_eq!(
+            meta.inferred_probe_set,
+            Some(index_dir.join("probe_set.csv"))
+        );
+    }
+
+    /// `std::fs::copy` onto the same file empties it; the CSV that already is
+    /// the index copy must stay as it is.
+    #[cfg(unix)]
+    #[test]
+    fn probe_csv_that_is_the_index_copy_is_not_emptied() {
+        let td = tempdir().expect("failed to create tempdir");
+        let af_home = af_home_with_fake_piscem(td.path());
+        let out = td.path().join("idx");
+        let index_dir = out.join("index");
+        fs::create_dir_all(&index_dir).expect("failed to create index dir");
+        let csv = index_dir.join("probe_set.csv");
+        let body = "gene_id,probe_seq,probe_id,included\n\
+                    G1,ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTAC,G1|A|1,TRUE\n";
+        fs::write(&csv, body).expect("failed to write probe csv");
+        let opts = parse_index_opts(&[
+            "-o",
+            out.to_str().unwrap(),
+            "--probe-csv",
+            csv.to_str().unwrap(),
+        ]);
+
+        build_ref_and_index(&af_home, opts).expect("index build should succeed");
+
+        assert_eq!(fs::read_to_string(&csv).expect("missing CSV"), body);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ref_seq_index_records_no_probe_set() {
+        let td = tempdir().expect("failed to create tempdir");
+        let af_home = af_home_with_fake_piscem(td.path());
+        let ref_seq = td.path().join("ref.fa");
+        fs::write(&ref_seq, ">t1\nACGTACGTACGTACGTACGTACGTACGTACGTACGT\n")
+            .expect("failed to write ref");
+        let out = td.path().join("idx");
+        let opts = parse_index_opts(&[
+            "-o",
+            out.to_str().unwrap(),
+            "--ref-seq",
+            ref_seq.to_str().unwrap(),
+        ]);
+
+        build_ref_and_index(&af_home, opts).expect("index build should succeed");
+
+        let index_dir = out.join("index");
+        assert!(!index_dir.join("probe_set.csv").exists());
+        assert_eq!(read_index_json(&index_dir)["probe_set_file"], Value::Null);
+    }
 
     #[test]
     fn derive_kmer_and_minimizer_fails_for_short_reference() {
@@ -356,6 +497,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
     // mutable.
     let mut t2g = None;
     let mut gene_id_to_name = None;
+    let mut probe_set = None;
     let mut roers_duration = None;
     let mut roers_aug_ref_opt = None;
     // decoy FASTA of excluded probes, produced only by the `--probe-csv` path
@@ -440,6 +582,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
 
         let mut csv_reader = if let Some(probe_csv) = &opts.probe_csv {
             index_info["args"]["probe-csv"] = json!(probe_csv);
+            probe_set = Some(probe_csv.clone());
             let rdr = csv::ReaderBuilder::new()
                 .comment(Some(b'#'))
                 .from_path(probe_csv)?;
@@ -593,6 +736,7 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
         min_seq_len,
         t2g,
         gene_id_to_name,
+        probe_set,
         roers_duration,
         roers_cmd: roers_aug_ref_opt,
     };
@@ -704,12 +848,25 @@ pub fn build_ref_and_index(af_home_path: &Path, opts: IndexOpts) -> anyhow::Resu
         std::fs::copy(gene_id_to_name_file, index_id2name_path)?;
     }
 
+    // Keep the original probe-set CSV in the index, so that `multiplex-quant`
+    // can copy it into its output for the loaders.
+    let mut probe_set_out_path: Option<PathBuf> = None;
+    if let Some(probe_set_file) = reference_stage.probe_set.clone() {
+        let index_probe_set_path = output_index_dir.join("probe_set.csv");
+        probe_set_out_path = Some(PathBuf::from("probe_set.csv"));
+        // The CSV may already be this copy (`--probe-csv <index>/probe_set.csv`).
+        if !probe_utils::same_file(&probe_set_file, &index_probe_set_path) {
+            std::fs::copy(probe_set_file, index_probe_set_path)?;
+        }
+    }
+
     let index_json_file = output_index_dir.join("simpleaf_index.json");
     let index_json = json!({
             "cmd" : index_cmd_string,
             "index_type" : "piscem",
             "t2g_file" : t2g_out_path,
             "gene_id_to_name_file" : gene_id_to_name_out_path,
+            "probe_set_file" : probe_set_out_path,
             "piscem_index_parameters" : {
                 "k" : kmer_length,
                 "m" : minimizer_length,

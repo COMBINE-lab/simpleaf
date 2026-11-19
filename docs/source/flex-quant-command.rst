@@ -27,15 +27,15 @@ The command needs:
 
 If the chemistry registry contains the needed metadata, ``simpleaf`` can automatically download and cache the probe set, the cell barcode whitelist, and the sample barcode list. If you already have local resources, you can override these defaults with ``--index``, ``--probe-set``, ``--cell-bc-list``, or ``--sample-bc-list``.
 
-The default output is the standard Matrix Market directory under ``af_quant/alevin``. If you pass ``--anndata-out``, ``simpleaf`` will additionally write an AnnData ``.h5ad`` file at ``af_quant/alevin/quants.h5ad``.
+The default output is the standard Matrix Market directory under ``af_quant/alevin``. If you pass ``--anndata-out``, ``simpleaf`` will additionally write an AnnData ``.h5ad`` file at ``af_quant/alevin/quants.h5ad``. If you also pass ``--probe-mtx``, it writes the probe matrix as ``af_quant/alevin/probe_quants.h5ad``, with ``var`` from the columns of the 10x probe-set CSV (``af_quant/probe_set.csv``).
 
 For multiplex output, the resulting AnnData object is intended to preserve the extra sample-level structure of the experiment:
 
 - ``obs_names`` are sample-qualified cell identifiers
 - ``obs["cell_barcode"]`` stores the corrected cell barcode without the sample prefix
 - ``obs["sample_name"]`` stores the sample / probe-barcode assignment
-- ``var["gene_id"]`` remains the matrix feature identifier
-- ``var["gene_symbol"]`` is added when a ``gene_id_to_name.tsv`` mapping is available from the probe set or index
+- ``var["gene_ids"]`` remains the matrix feature identifier
+- ``var["gene_names"]`` is added when a ``gene_id_to_name.tsv`` mapping is available from the probe set or index
 - ``uns`` stores the standard ``gpl_info``, ``collate_info``, ``quant_info``, and ``simpleaf_map_info`` records, and for multiplex runs it also stores ``sample_info`` plus ``simpleaf_multiplex_quant_info``
 
 The relevant options (which you can obtain by running ``simpleaf multiplex-quant -h``) are below:
@@ -293,6 +293,7 @@ The command creates the requested output directory and writes:
 - ``af_quant/simpleaf_multiplex_quant_info.json``: multiplex pipeline metadata copied into the quantification directory so it can be embedded into AnnData ``uns``
 - ``af_quant/gene_id_to_name.tsv``: optional gene ID to gene symbol/name mapping copied when available from the probe set or index
 - ``af_quant/alevin/quants.h5ad``: optional AnnData output written when ``--anndata-out`` is requested
+- ``af_quant/alevin/probe_quants.h5ad``: optional probe AnnData output written when both ``--anndata-out`` and ``--probe-mtx`` are requested
 - ``simpleaf_multiplex_quant_info.json``: a metadata record describing the resolved inputs, executed commands, and step timings
 
 Notes
